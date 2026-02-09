@@ -9,6 +9,7 @@ export interface ITenant extends Document {
     secondaryColor: string;
     fontFamily: string;
     isActive: boolean;
+    saasPlanId?: mongoose.Types.ObjectId;
     subscription: {
         plan: 'trial' | 'basic' | 'pro' | 'enterprise';
         status: 'active' | 'inactive' | 'suspended' | 'cancelled';
@@ -17,7 +18,14 @@ export interface ITenant extends Document {
         maxBranches: number;
         maxMembers: number;
         maxTrainers: number;
+        gracePeriodStart?: Date;
     };
+    lockState: 'none' | 'soft' | 'hard';
+    usageOverrides: {
+        featureId: string;
+        limit?: number;
+        enabled: boolean;
+    }[];
     features: {
         aiEnabled: boolean;
         onlineClasses: boolean;
@@ -66,6 +74,7 @@ const TenantSchema: Schema = new Schema(
         secondaryColor: { type: String, default: '#8b5cf6' },
         fontFamily: { type: String, default: 'Inter' },
         isActive: { type: Boolean, default: true },
+        saasPlanId: { type: Schema.Types.ObjectId, ref: 'SaaSPlan' },
         subscription: {
             plan: {
                 type: String,
@@ -82,7 +91,20 @@ const TenantSchema: Schema = new Schema(
             maxBranches: { type: Number, default: 1 },
             maxMembers: { type: Number, default: 100 },
             maxTrainers: { type: Number, default: 10 },
+            gracePeriodStart: { type: Date },
         },
+        lockState: {
+            type: String,
+            enum: ['none', 'soft', 'hard'],
+            default: 'none',
+        },
+        usageOverrides: [
+            {
+                featureId: { type: String, required: true },
+                limit: { type: Number },
+                enabled: { type: Boolean, required: true },
+            },
+        ],
         features: {
             aiEnabled: { type: Boolean, default: false },
             onlineClasses: { type: Boolean, default: false },

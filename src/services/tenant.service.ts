@@ -141,7 +141,7 @@ export class TenantService {
 
     // Get tenant by ID
     async getTenantById(tenantId: string): Promise<ITenant | null> {
-        return await Tenant.findById(tenantId);
+        return await Tenant.findById(tenantId).populate('saasPlanId');
     }
 
     // Update tenant
