@@ -104,6 +104,9 @@ export const requireRole = (...roles: UserRole[]) => {
     };
 };
 
+// Middleware to check if user has any of the required roles (alias for requireRole)
+export const requireAnyRole = requireRole;
+
 // Middleware to check if user has required permission
 export const requirePermission = (permission: string) => {
     return (req: AuthRequest, res: Response, next: NextFunction): void => {
