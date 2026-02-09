@@ -1,0 +1,79 @@
+import { Router } from 'express';
+import planController from '../controllers/plan.controller';
+import { authenticate } from '../middleware/auth.middleware';
+import { requireAnyRole } from '../middleware/rbac.middleware';
+
+const router = Router();
+
+// All routes require authentication
+router.use(authenticate);
+
+// Plan routes
+router.post(
+    '/plans',
+    requireAnyRole(['gym_owner', 'branch_manager']),
+    planController.createPlan.bind(planController)
+);
+
+router.get(
+    '/plans',
+    authenticate,
+    planController.getPlans.bind(planController)
+);
+
+router.get(
+    '/plans/:planId',
+    authenticate,
+    planController.getPlanById.bind(planController)
+);
+
+router.put(
+    '/plans/:planId',
+    requireAnyRole(['gym_owner', 'branch_manager']),
+    planController.updatePlan.bind(planController)
+);
+
+router.delete(
+    '/plans/:planId',
+    requireAnyRole(['gym_owner', 'branch_manager']),
+    planController.deactivatePlan.bind(planController)
+);
+
+// Subscription routes
+router.post(
+    '/subscriptions',
+    requireAnyRole(['gym_owner', 'branch_manager', 'staff']),
+    planController.createSubscription.bind(planController)
+);
+
+router.post(
+    '/subscriptions/:subscriptionId/freeze',
+    requireAnyRole(['gym_owner', 'branch_manager', 'staff']),
+    planController.freezeSubscription.bind(planController)
+);
+
+router.post(
+    '/subscriptions/:subscriptionId/unfreeze',
+    requireAnyRole(['gym_owner', 'branch_manager', 'staff']),
+    planController.unfreezeSubscription.bind(planController)
+);
+
+router.post(
+    '/subscriptions/:subscriptionId/cancel',
+    requireAnyRole(['gym_owner', 'branch_manager']),
+    planController.cancelSubscription.bind(planController)
+);
+
+router.post(
+    '/subscriptions/:subscriptionId/renew',
+    requireAnyRole(['gym_owner', 'branch_manager', 'staff']),
+    planController.renewSubscription.bind(planController)
+);
+
+router.get(
+    '/subscriptions/member/:memberId',
+    requireAnyRole(['gym_owner', 'branch_manager', 'staff', 'trainer', 'member']),
+    planController.getMemberSubscriptions.bind(planController)
+);
+
+export default router;

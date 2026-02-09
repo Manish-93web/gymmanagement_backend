@@ -1,0 +1,308 @@
+import OpenAI from 'openai';
+import { config } from '../config/config';
+import Member from '../models/Member.model';
+import Exercise from '../models/Exercise.model';
+
+const openai = new OpenAI({
+    apiKey: config.openai.apiKey,
+});
+
+export class AIService {
+    // Generate workout plan using AI
+    async generateWorkoutPlan(
+        memberId: string,
+        goal: string,
+        experience: 'beginner' | 'intermediate' | 'advanced',
+        daysPerWeek: number,
+        equipmentAvailable: string[]
+    ): Promise<any> {
+        const member = await Member.findById(memberId);
+
+        if (!member) {
+            throw new Error('Member not found');
+        }
+
+        const latestMeasurement = member.measurements[member.measurements.length - 1];
+        const healthInfo = member.healthInfo;
+
+        const prompt = `Create a ${daysPerWeek}-day per week workout plan for a ${experience} level individual with the following details:
+    
+Goal: ${goal}
+Age: ${member.dateOfBirth ? Math.floor((Date.now() - member.dateOfBirth.getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : 'Unknown'}
+Gender: ${member.gender || 'Unknown'}
+Weight: ${latestMeasurement?.weight || 'Unknown'} kg
+Height: ${latestMeasurement?.height || 'Unknown'} cm
+Medical Conditions: ${healthInfo?.medicalConditions?.join(', ') || 'None'}
+Injuries: ${healthInfo?.injuries?.join(', ') || 'None'}
+Available Equipment: ${equipmentAvailable.join(', ')}
+
+Please provide a structured workout plan with:
+1. Day-by-day breakdown
+2. Exercises with sets and reps
+3. Rest periods
+4. Progressive overload recommendations
+
+Format the response as JSON with the following structure:
+{
+  "plan": [
+    {
+      "day": 1,
+      "focus": "Upper Body",
+      "exercises": [
+        {
+          "name": "Bench Press",
+          "sets": 3,
+          "reps": "8-12",
+          "rest": 90,
+          "notes": "Focus on form"
+        }
+      ]
+    }
+  ],
+  "notes": "General recommendations"
+}`;
+
+        try {
+            const completion = await openai.chat.completions.create({
+                model: 'gpt-4',
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are a professional fitness trainer and exercise physiologist. Provide safe, effective workout plans.',
+                    },
+                    {
+                        role: 'user',
+                        content: prompt,
+                    },
+                ],
+                temperature: 0.7,
+                max_tokens: 2000,
+            });
+
+            const response = completion.choices[0].message.content;
+            return JSON.parse(response || '{}');
+        } catch (error) {
+            console.error('AI workout generation failed:', error);
+            throw new Error('Failed to generate AI workout plan');
+        }
+    }
+
+    // Generate diet plan using AI
+    async generateDietPlan(
+        memberId: string,
+        goal: string,
+        dietaryRestrictions: string[],
+        mealsPerDay: number,
+        calories: number,
+        macros: { protein: number; carbs: number; fats: number }
+    ): Promise<any> {
+        const member = await Member.findById(memberId);
+
+        if (!member) {
+            throw new Error('Member not found');
+        }
+
+        const prompt = `Create a ${mealsPerDay}-meal per day diet plan with the following requirements:
+
+Goal: ${goal}
+Daily Calories: ${calories}
+Protein: ${macros.protein}g
+Carbs: ${macros.carbs}g
+Fats: ${macros.fats}g
+Dietary Restrictions: ${dietaryRestrictions.join(', ') || 'None'}
+Preferences: ${member.preferences?.dietaryPreferences?.join(', ') || 'None'}
+
+Please provide a structured meal plan with:
+1. Meal timing
+2. Food items with quantities
+3. Macro breakdown per meal
+4. Preparation tips
+
+Format the response as JSON with the following structure:
+{
+  "meals": [
+    {
+      "name": "Breakfast",
+      "time": "08:00",
+      "foods": [
+        {
+          "name": "Oatmeal",
+          "quantity": 50,
+          "unit": "g",
+          "calories": 190,
+          "protein": 7,
+          "carbs": 32,
+          "fats": 3
+        }
+      ],
+      "notes": "Preparation tips"
+    }
+  ],
+  "notes": "General recommendations"
+}`;
+
+        try {
+            const completion = await openai.chat.completions.create({
+                model: 'gpt-4',
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are a certified nutritionist and dietitian. Provide balanced, healthy meal plans.',
+                    },
+                    {
+                        role: 'user',
+                        content: prompt,
+                    },
+                ],
+                temperature: 0.7,
+                max_tokens: 2000,
+            });
+
+            const response = completion.choices[0].message.content;
+            return JSON.parse(response || '{}');
+        } catch (error) {
+            console.error('AI diet generation failed:', error);
+            throw new Error('Failed to generate AI diet plan');
+        }
+    }
+
+    // AI fitness chatbot
+    async chat(memberId: string, message: string, conversationHistory: any[] = []): Promise<string> {
+        const member = await Member.findById(memberId);
+
+        if (!member) {
+            throw new Error('Member not found');
+        }
+
+        const systemPrompt = `You are a helpful AI fitness assistant for ${member.firstName}. 
+You have access to their profile:
+- Goals: ${member.goals?.join(', ') || 'General fitness'}
+- Current status: ${member.status}
+
+Provide helpful, encouraging, and accurate fitness advice. Keep responses concise and actionable.`;
+
+        try {
+            const completion = await openai.chat.completions.create({
+                model: 'gpt-4',
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    ...conversationHistory,
+                    { role: 'user', content: message },
+                ],
+                temperature: 0.8,
+                max_tokens: 500,
+            });
+
+            return completion.choices[0].message.content || 'Sorry, I could not generate a response.';
+        } catch (error) {
+            console.error('AI chat failed:', error);
+            throw new Error('Failed to get AI response');
+        }
+    }
+
+    // Predict churn risk
+    async predictChurn(memberId: string): Promise<{ risk: 'low' | 'medium' | 'high'; factors: string[] }> {
+        // This is a simplified version - in production, you'd use a trained ML model
+        const member = await Member.findById(memberId);
+
+        if (!member) {
+            throw new Error('Member not found');
+        }
+
+        const factors: string[] = [];
+        let riskScore = 0;
+
+        // Check attendance (would need to query Attendance model)
+        // For now, simplified logic
+
+        if (member.status === 'paused') {
+            riskScore += 30;
+            factors.push('Membership is paused');
+        }
+
+        if (member.status === 'expired') {
+            riskScore += 50;
+            factors.push('Membership has expired');
+        }
+
+        // Check last activity (simplified)
+        const daysSinceUpdate = Math.floor((Date.now() - member.updatedAt.getTime()) / (24 * 60 * 60 * 1000));
+        if (daysSinceUpdate > 30) {
+            riskScore += 20;
+            factors.push('No recent activity');
+        }
+
+        let risk: 'low' | 'medium' | 'high';
+        if (riskScore < 30) {
+            risk = 'low';
+        } else if (riskScore < 60) {
+            risk = 'medium';
+        } else {
+            risk = 'high';
+        }
+
+        return { risk, factors };
+    }
+
+    // Get AI insights for member progress
+    async getMemberInsights(memberId: string): Promise<string> {
+        const member = await Member.findById(memberId);
+
+        if (!member) {
+            throw new Error('Member not found');
+        }
+
+        const measurements = member.measurements.slice(-5); // Last 5 measurements
+
+        if (measurements.length < 2) {
+            return 'Not enough data to generate insights. Please add more measurements.';
+        }
+
+        const prompt = `Analyze the following fitness progress data and provide insights:
+
+Member: ${member.firstName}
+Goals: ${member.goals?.join(', ') || 'General fitness'}
+
+Measurements (most recent first):
+${measurements.reverse().map((m, i) => `
+${i + 1}. Date: ${m.date.toISOString().split('T')[0]}
+   Weight: ${m.weight}kg
+   BMI: ${m.bmi}
+   Body Fat: ${m.bodyFat || 'N/A'}%
+   Muscle Mass: ${m.muscleMass || 'N/A'}kg
+`).join('\n')}
+
+Provide:
+1. Progress summary
+2. Key achievements
+3. Areas for improvement
+4. Actionable recommendations
+
+Keep it concise and motivating.`;
+
+        try {
+            const completion = await openai.chat.completions.create({
+                model: 'gpt-4',
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are a fitness coach analyzing member progress. Be encouraging and provide actionable advice.',
+                    },
+                    {
+                        role: 'user',
+                        content: prompt,
+                    },
+                ],
+                temperature: 0.7,
+                max_tokens: 500,
+            });
+
+            return completion.choices[0].message.content || 'Unable to generate insights.';
+        } catch (error) {
+            console.error('AI insights generation failed:', error);
+            throw new Error('Failed to generate AI insights');
+        }
+    }
+}
+
+export default new AIService();
