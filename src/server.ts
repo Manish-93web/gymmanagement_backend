@@ -68,6 +68,34 @@ app.use('/api/auth', authRoutes);
 app.use('/api/tenants', tenantRoutes);
 app.use('/api/members', memberRoutes);
 
+// Import additional routes
+import paymentRoutes from './routes/payment.routes';
+import planRoutes from './routes/plan.routes';
+import attendanceRoutes from './routes/attendance.routes';
+import analyticsRoutes from './routes/analytics.routes';
+import posRoutes from './routes/pos.routes';
+import trainerRoutes from './routes/trainer.routes';
+import classRoutes from './routes/class.routes';
+import fitnessRoutes from './routes/fitness.routes';
+import aiCrmRoutes from './routes/ai-crm.routes';
+import notificationRoutes from './routes/notification.routes';
+import dashboardRoutes from './routes/dashboard.routes';
+import securityRoutes from './routes/security.routes';
+
+// Register additional routes
+app.use('/api/payments', paymentRoutes);
+app.use('/api/plans', planRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/pos', posRoutes);
+app.use('/api/trainers', trainerRoutes);
+app.use('/api/classes', classRoutes);
+app.use('/api/fitness', fitnessRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/security', securityRoutes);
+app.use('/api', aiCrmRoutes);
+
 // 404 handler
 app.use((req: Request, res: Response) => {
     res.status(404).json({
