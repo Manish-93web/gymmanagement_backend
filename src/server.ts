@@ -47,19 +47,19 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Logging
-if (config.nodeEnv === 'development') {
+if (config.env === 'development') {
     app.use(morgan('dev'));
 } else {
     app.use(morgan('combined'));
 }
 
 // Health check
-app.get('/health', (req: Request, res: Response) => {
+app.get('/health', (_req: Request, res: Response) => {
     res.status(200).json({
         status: 'OK',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
-        environment: config.nodeEnv,
+        environment: config.env,
     });
 });
 
@@ -97,7 +97,7 @@ app.use('/api/security', securityRoutes);
 app.use('/api', aiCrmRoutes);
 
 // 404 handler
-app.use((req: Request, res: Response) => {
+app.use((_req: Request, res: Response) => {
     res.status(404).json({
         success: false,
         message: 'Route not found',
@@ -105,7 +105,7 @@ app.use((req: Request, res: Response) => {
 });
 
 // Error handler
-app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     console.error('Error:', err);
 
     const statusCode = err.statusCode || 500;
@@ -114,7 +114,7 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
     res.status(statusCode).json({
         success: false,
         message,
-        ...(config.nodeEnv === 'development' && { stack: err.stack }),
+        ...(config.env === 'development' && { stack: err.stack }),
     });
 });
 
@@ -133,7 +133,7 @@ const startServer = async () => {
 
         // Start HTTP server (with WebSocket)
         httpServer.listen(PORT, () => {
-            console.log(`🚀 Server running on port ${PORT} in ${config.nodeEnv} mode`);
+            console.log(`🚀 Server running on port ${PORT} in ${config.env} mode`);
             console.log(`🔌 WebSocket server ready`);
         });
     } catch (error) {

@@ -1,0 +1,92 @@
+﻿node.exe : D:\Manish\
+gymmanagement\gymmana
+gement_backend\node_m
+odules\ts-node\src\in
+dex.ts:859
+At C:\Program Files\n
+odejs\npx.ps1:29 
+char:3
++   & $NODE_EXE 
+$NPX_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~
+    + CategoryInfo   
+           : NotSpe  
+  cified: (D:\Mani   
+ sh\gymma...rc\in    
+dex.ts:859:Strin    
+g) [], RemoteExc    
+eption
+    + FullyQualified 
+   ErrorId : Native  
+  CommandError
+ 
+    return new TSErro
+r(diagnosticText, 
+diagnosticCodes, 
+diagnostics);
+           ^
+TSError: Γ¿» Unable 
+to compile 
+TypeScript:
+src/middleware/auth.m
+iddleware.ts(50,5): 
+error TS6133: 'res' 
+is declared but its 
+value is never read.
+
+    at createTSError 
+(D:\Manish\gymmanagem
+ent\gymmanagement_bac
+kend\node_modules\ts-
+node\src\index.ts:859
+:12)
+    at reportTSError 
+(D:\Manish\gymmanagem
+ent\gymmanagement_bac
+kend\node_modules\ts-
+node\src\index.ts:863
+:19)
+    at getOutput (D:\
+Manish\gymmanagement\
+gymmanagement_backend
+\node_modules\ts-node
+\src\index.ts:1077:36
+)
+    at 
+Object.compile (D:\Ma
+nish\gymmanagement\gy
+mmanagement_backend\n
+ode_modules\ts-node\s
+rc\index.ts:1433:41)
+    at 
+Module.m._compile (D:
+\Manish\gymmanagement
+\gymmanagement_backen
+d\node_modules\ts-nod
+e\src\index.ts:1617:3
+0)
+    at node:internal/
+modules/cjs/loader:17
+06:10
+    at Object.require
+.extensions.<computed
+> [as .ts] (D:\Manish
+\gymmanagement\gymman
+agement_backend\node_
+modules\ts-node\src\i
+ndex.ts:1621:12)
+    at Module.load (n
+ode:internal/modules/
+cjs/loader:1289:32)
+    at 
+Function._load (node:
+internal/modules/cjs/
+loader:1108:12)
+    at TracingChannel
+.traceSync (node:diag
+nostics_channel:322:1
+4) {
+  diagnosticCodes: [ 
+6133 ]
+}

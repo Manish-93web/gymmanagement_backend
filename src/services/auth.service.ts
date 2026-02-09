@@ -1,7 +1,6 @@
 import User, { IUser } from '../models/User.model';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt.utils';
 import { generateOTP, storeOTP, verifyOTP } from '../utils/otp.utils';
-import { redisUtils } from '../config/redis';
 
 export interface RegisterDTO {
     email: string;

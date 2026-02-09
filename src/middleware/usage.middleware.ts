@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from 'express';
-import { AuthRequest } from './auth.middleware';
 import Tenant from '../models/Tenant.model';
 import SaaSPlan from '../models/SaaSPlan.model';
 import { FEATURES } from '../utils/FeatureRegistry';
@@ -8,7 +7,7 @@ import { FEATURES } from '../utils/FeatureRegistry';
  * Middleware to check if the tenant has access to a specific feature
  */
 export const requireFeature = (featureId: string) => {
-    return async (req: AuthRequest, res: Response, next: NextFunction) => {
+    return async (req: Request, res: Response, next: NextFunction) => {
         try {
             const tenantId = req.user?.tenantId;
             if (!tenantId) {
@@ -83,7 +82,7 @@ export const requireFeature = (featureId: string) => {
  * Middleware to enforce resource quotas (Members, Branches, etc.)
  */
 export const enforceQuota = (resourceType: 'branches' | 'members' | 'trainers') => {
-    return async (req: AuthRequest, res: Response, next: NextFunction) => {
+    return async (req: Request, res: Response, next: NextFunction) => {
         try {
             const tenantId = req.user?.tenantId;
             const tenant = await Tenant.findById(tenantId).populate('saasPlanId');

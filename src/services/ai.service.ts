@@ -14,7 +14,8 @@ export class AIService {
         goal: string,
         experience: 'beginner' | 'intermediate' | 'advanced',
         daysPerWeek: number,
-        equipmentAvailable: string[]
+        equipmentAvailable: string[],
+        tenantId: string
     ): Promise<any> {
         const member = await Member.findById(memberId);
 
@@ -28,8 +29,8 @@ export class AIService {
         const prompt = `Create a ${daysPerWeek}-day per week workout plan for a ${experience} level individual with the following details:
     
 Goal: ${goal}
-Age: ${member.dateOfBirth ? Math.floor((Date.now() - member.dateOfBirth.getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : 'Unknown'}
-Gender: ${member.gender || 'Unknown'}
+Age: ${member.personalInfo?.dateOfBirth ? Math.floor((Date.now() - member.personalInfo.dateOfBirth.getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : 'Unknown'}
+Gender: ${member.personalInfo?.gender || 'Unknown'}
 Weight: ${latestMeasurement?.weight || 'Unknown'} kg
 Height: ${latestMeasurement?.height || 'Unknown'} cm
 Medical Conditions: ${healthInfo?.medicalConditions?.join(', ') || 'None'}
@@ -91,10 +92,10 @@ Format the response as JSON with the following structure:
     async generateDietPlan(
         memberId: string,
         goal: string,
-        dietaryRestrictions: string[],
+        dietaryRestrictions: string[] | undefined,
+        allergies: string[] | undefined,
         mealsPerDay: number,
-        calories: number,
-        macros: { protein: number; carbs: number; fats: number }
+        tenantId: string
     ): Promise<any> {
         const member = await Member.findById(memberId);
 
@@ -109,8 +110,8 @@ Daily Calories: ${calories}
 Protein: ${macros.protein}g
 Carbs: ${macros.carbs}g
 Fats: ${macros.fats}g
-Dietary Restrictions: ${dietaryRestrictions.join(', ') || 'None'}
-Preferences: ${member.preferences?.dietaryPreferences?.join(', ') || 'None'}
+Dietary Restrictions: ${dietaryRestrictions?.join(', ') || 'None'}
+Preferences: ${member.preferences?.preferredClassTime || 'None'}
 
 Please provide a structured meal plan with:
 1. Meal timing
@@ -167,14 +168,15 @@ Format the response as JSON with the following structure:
     }
 
     // AI fitness chatbot
-    async chat(memberId: string, message: string, conversationHistory: any[] = []): Promise<string> {
-        const member = await Member.findById(memberId);
+    async chatbot(memberId: string, message: string, tenantId: string, conversationHistory: any[] = []): Promise<string> {
+        const member = await Member.findById(memberId).populate('userId');
 
         if (!member) {
             throw new Error('Member not found');
         }
 
-        const systemPrompt = `You are a helpful AI fitness assistant for ${member.firstName}. 
+        const user = member.userId as any;
+        const systemPrompt = `You are a helpful AI fitness assistant for ${user?.firstName}. 
 You have access to their profile:
 - Goals: ${member.goals?.join(', ') || 'General fitness'}
 - Current status: ${member.status}
@@ -245,13 +247,14 @@ Provide helpful, encouraging, and accurate fitness advice. Keep responses concis
     }
 
     // Get AI insights for member progress
-    async getMemberInsights(memberId: string): Promise<string> {
-        const member = await Member.findById(memberId);
+    async getProgressInsights(memberId: string, tenantId: string): Promise<string> {
+        const member = await Member.findById(memberId).populate('userId');
 
         if (!member) {
             throw new Error('Member not found');
         }
 
+        const user = member.userId as any;
         const measurements = member.measurements.slice(-5); // Last 5 measurements
 
         if (measurements.length < 2) {
@@ -260,7 +263,7 @@ Provide helpful, encouraging, and accurate fitness advice. Keep responses concis
 
         const prompt = `Analyze the following fitness progress data and provide insights:
 
-Member: ${member.firstName}
+Member: ${user?.firstName}
 Goals: ${member.goals?.join(', ') || 'General fitness'}
 
 Measurements (most recent first):

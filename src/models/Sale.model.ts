@@ -71,7 +71,6 @@ const SaleSchema: Schema = new Schema(
 
 // Indexes
 SaleSchema.index({ tenantId: 1, branchId: 1, createdAt: -1 });
-SaleSchema.index({ invoiceNumber: 1 });
 SaleSchema.index({ customerId: 1 });
 
 export default mongoose.model<ISale>('Sale', SaleSchema);

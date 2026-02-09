@@ -43,7 +43,7 @@ const addFollowUpSchema = z.object({
     date: z.string(),
     type: z.enum(['call', 'email', 'sms', 'whatsapp', 'visit']),
     notes: z.string(),
-    outcome: z.string().optional(),
+    outcome: z.enum(['interested', 'not_interested', 'callback', 'converted', 'no_response']).optional(),
     nextFollowUp: z.string().optional(),
 });
 
@@ -52,13 +52,13 @@ export class AIAndCRMController {
     async generateWorkoutPlan(req: Request, res: Response, next: NextFunction) {
         try {
             const validatedData = generateWorkoutSchema.parse(req.body);
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.tenantId?.toString() || '';
 
             const workoutPlan = await AIService.generateWorkoutPlan(
                 validatedData.memberId,
                 validatedData.goal,
-                validatedData.daysPerWeek,
                 validatedData.experience,
+                validatedData.daysPerWeek,
                 validatedData.equipmentAvailable,
                 tenantId
             );
@@ -72,7 +72,7 @@ export class AIAndCRMController {
     async generateDietPlan(req: Request, res: Response, next: NextFunction) {
         try {
             const validatedData = generateDietSchema.parse(req.body);
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.tenantId?.toString() || '';
 
             const dietPlan = await AIService.generateDietPlan(
                 validatedData.memberId,
@@ -92,7 +92,7 @@ export class AIAndCRMController {
     async chatbot(req: Request, res: Response, next: NextFunction) {
         try {
             const validatedData = chatbotSchema.parse(req.body);
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.tenantId?.toString() || '';
 
             const response = await AIService.chatbot(
                 validatedData.memberId,
@@ -110,9 +110,7 @@ export class AIAndCRMController {
     async predictChurn(req: Request, res: Response, next: NextFunction) {
         try {
             const { memberId } = req.params;
-            const tenantId = req.user!.tenantId.toString();
-
-            const prediction = await AIService.predictChurn(memberId, tenantId);
+            const prediction = await AIService.predictChurn(memberId);
 
             res.status(200).json({ success: true, data: prediction });
         } catch (error) {
@@ -123,7 +121,7 @@ export class AIAndCRMController {
     async getProgressInsights(req: Request, res: Response, next: NextFunction) {
         try {
             const { memberId } = req.params;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.tenantId?.toString() || '';
 
             const insights = await AIService.getProgressInsights(memberId, tenantId);
 
@@ -137,9 +135,9 @@ export class AIAndCRMController {
     async createLead(req: Request, res: Response, next: NextFunction) {
         try {
             const validatedData = createLeadSchema.parse(req.body);
-            const tenantId = req.user!.tenantId.toString();
-            const branchId = req.user!.branchId?.toString() || '';
-            const assignedTo = req.user!._id.toString();
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const branchId = req.user?.branchId?.toString() || '';
+            const assignedTo = req.user?._id?.toString() || '';
 
             const lead = await CRMService.createLead({
                 ...validatedData,
@@ -156,7 +154,7 @@ export class AIAndCRMController {
 
     async getLeads(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.tenantId?.toString() || '';
             const { branchId, status, source, assignedTo } = req.query;
 
             const leads = await CRMService.getLeads(
@@ -177,9 +175,10 @@ export class AIAndCRMController {
         try {
             const { leadId } = req.params;
             const { status, reason } = req.body;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const changedBy = req.user?._id?.toString() || 'system';
 
-            const lead = await CRMService.updateLeadStatus(leadId, status, tenantId, reason);
+            const lead = await CRMService.updateLeadStatus(leadId, status, tenantId, changedBy);
 
             res.status(200).json({ success: true, data: lead });
         } catch (error) {
@@ -191,13 +190,14 @@ export class AIAndCRMController {
         try {
             const { leadId } = req.params;
             const validatedData = addFollowUpSchema.parse(req.body);
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const userId = req.user?._id?.toString() || 'system';
 
             const lead = await CRMService.addFollowUp(leadId, {
                 ...validatedData,
                 date: new Date(validatedData.date),
                 nextFollowUp: validatedData.nextFollowUp ? new Date(validatedData.nextFollowUp) : undefined,
-            }, tenantId);
+            }, tenantId, userId);
 
             res.status(200).json({ success: true, data: lead });
         } catch (error) {
@@ -207,7 +207,7 @@ export class AIAndCRMController {
 
     async getLeadStats(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.tenantId?.toString() || '';
             const { branchId } = req.query;
 
             const stats = await CRMService.getLeadStats(tenantId, branchId as string);
@@ -220,7 +220,7 @@ export class AIAndCRMController {
 
     async getSalesFunnel(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.tenantId?.toString() || '';
             const { branchId } = req.query;
 
             const funnel = await CRMService.getSalesFunnel(tenantId, branchId as string);

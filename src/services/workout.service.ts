@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Exercise, { IExercise } from '../models/Exercise.model';
 import Workout, { IWorkout } from '../models/Workout.model';
 import WorkoutLog, { IWorkoutLog } from '../models/WorkoutLog.model';
@@ -124,10 +125,15 @@ export class WorkoutService {
     async getMemberWorkouts(
         memberId: string,
         tenantId: string,
-        isActive?: boolean
+        startDate?: Date,
+        endDate?: Date
     ): Promise<IWorkout[]> {
         const filter: any = { memberId, tenantId };
-        if (isActive !== undefined) filter.isActive = isActive;
+        if (startDate || endDate) {
+            filter.createdAt = {};
+            if (startDate) filter.createdAt.$gte = startDate;
+            if (endDate) filter.createdAt.$lte = endDate;
+        }
 
         return await Workout.find(filter)
             .populate('exercises.exerciseId')
@@ -255,14 +261,15 @@ export class WorkoutService {
             .populate('exercises.exerciseId')
             .sort({ date: -1 });
 
-        const prMap = new Map();
+        const prMap = new Map<string, any>();
 
-        logs.forEach(log => {
-            log.exercises.forEach(exercise => {
+        logs.forEach((log: any) => {
+            log.exercises.forEach((exercise: any) => {
                 if (exercise.personalRecord) {
                     const exerciseId = exercise.exerciseId.toString();
-                    if (!prMap.has(exerciseId) ||
-                        exercise.personalRecord.weight > prMap.get(exerciseId).weight) {
+                    const existingPR = prMap.get(exerciseId);
+
+                    if (!existingPR || (exercise.personalRecord.weight || 0) > (existingPR.weight || 0)) {
                         prMap.set(exerciseId, {
                             exercise: exercise.exerciseId,
                             ...exercise.personalRecord,

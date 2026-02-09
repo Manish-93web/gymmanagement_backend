@@ -69,14 +69,20 @@ class CustomReportService {
         const query = this.buildQuery(report.filters, additionalFilters);
 
         // Execute query
-        let data = await Model.find(query);
+        let queryBuilder = Model.find(query);
+        if (report.dataSource !== 'users') {
+            queryBuilder = queryBuilder.populate('userId');
+        }
+        let data = await queryBuilder;
 
         // Apply column selection
         if (report.columns && report.columns.length > 0) {
             data = data.map((item: any) => {
                 const obj: any = {};
                 report.columns.forEach((col: any) => {
-                    obj[col.label] = this.formatValue(item[col.field], col.type, col.format);
+                    // Handle nested fields like personalInfo.firstName or userId.firstName
+                    const value = col.field.split('.').reduce((acc: any, part: string) => acc && acc[part], item);
+                    obj[col.label] = this.formatValue(value, col.type, col.format);
                 });
                 return obj;
             });

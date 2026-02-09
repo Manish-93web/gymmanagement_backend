@@ -151,15 +151,15 @@ class StreakService {
         const sortField = type === 'attendance' ? 'gamification.currentStreak' : 'gamification.workoutStreak';
 
         const members = await Member.find({ tenantId })
-            .select('firstName lastName email gamification profilePicture')
+            .populate('userId')
             .sort({ [sortField]: -1 })
             .limit(limit);
 
-        return members.map((member, index) => ({
+        return members.map((member: any, index) => ({
             rank: index + 1,
             memberId: member._id,
-            name: `${member.firstName} ${member.lastName}`,
-            profilePicture: member.profilePicture,
+            name: `${member.userId?.firstName} ${member.userId?.lastName}`,
+            profilePicture: member.userId?.avatar,
             streak: type === 'attendance'
                 ? member.gamification?.currentStreak || 0
                 : member.gamification?.workoutStreak || 0,

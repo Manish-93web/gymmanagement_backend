@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { AuthRequest } from '../middleware/auth.middleware';
+
 import authService from '../services/auth.service';
 import { z } from 'zod';
 
@@ -187,7 +187,7 @@ export class AuthController {
     }
 
     // Logout
-    async logout(req: AuthRequest, res: Response): Promise<void> {
+    async logout(req: Request, res: Response): Promise<void> {
         try {
             const { refreshToken } = req.body;
 
@@ -208,7 +208,7 @@ export class AuthController {
     }
 
     // Logout from all devices
-    async logoutAll(req: AuthRequest, res: Response): Promise<void> {
+    async logoutAll(req: Request, res: Response): Promise<void> {
         try {
             if (req.user) {
                 await authService.logoutAll(req.user._id.toString());
@@ -227,7 +227,7 @@ export class AuthController {
     }
 
     // Get current user
-    async getCurrentUser(req: AuthRequest, res: Response): Promise<void> {
+    async getCurrentUser(req: Request, res: Response): Promise<void> {
         try {
             if (!req.user) {
                 res.status(401).json({

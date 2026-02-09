@@ -3,14 +3,18 @@ import jwt from 'jsonwebtoken';
 import { config } from '../config/config';
 import User, { IUser } from '../models/User.model';
 
-export interface AuthRequest extends Request {
-    user?: IUser;
-    tenantId?: string;
-    branchId?: string;
+declare global {
+    namespace Express {
+        interface Request {
+            user?: IUser;
+            tenantId?: string;
+            branchId?: string;
+        }
+    }
 }
 
 export const authenticate = async (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction
 ): Promise<void> => {
@@ -42,8 +46,8 @@ export const authenticate = async (
 };
 
 export const optionalAuth = async (
-    req: AuthRequest,
-    res: Response,
+    req: Request,
+    _res: Response,
     next: NextFunction
 ): Promise<void> => {
     try {

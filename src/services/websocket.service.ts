@@ -47,8 +47,8 @@ export class WebSocketService {
                 }
 
                 socket.userId = user._id.toString();
-                socket.tenantId = user.tenantId.toString();
-                socket.branchId = user.branchId?.toString();
+                if (user.tenantId) socket.tenantId = user.tenantId.toString();
+                if (user.branchId) socket.branchId = user.branchId.toString();
                 socket.role = user.role;
 
                 next();

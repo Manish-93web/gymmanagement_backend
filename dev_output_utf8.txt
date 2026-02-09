@@ -1,0 +1,125 @@
+﻿
+> gymmanagement_backend@1.0.0 dev
+> nodemon src/server.ts
+
+[33m[nodemon] 3.1.11[39m
+[33m[nodemon] to restart at any time, enter `rs`[39m
+[33m[nodemon] watching path(s): *.*[39m
+[33m[nodemon] watching extensions: ts,json[39m
+[32m[nodemon] starting `ts-node src/server.ts`[39m
+node.exe : Error: 
+Cannot find module 
+'../utils/jwt.util'
+At C:\Program Files\n
+odejs\npm.ps1:29 
+char:3
++   & $NODE_EXE 
+$NPM_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~
+    + CategoryInfo   
+           : NotSpe  
+  cified: (Error:    
+ Cannot f...utils    
+/jwt.util':Strin    
+g) [], RemoteExc    
+eption
+    + FullyQualified 
+   ErrorId : Native  
+  CommandError
+ 
+Require stack:
+- D:\Manish\gymmanage
+ment\gymmanagement_ba
+ckend\src\services\go
+ogle-auth.service.ts
+- D:\Manish\gymmanage
+ment\gymmanagement_ba
+ckend\src\controllers
+\security.controller.
+ts
+- D:\Manish\gymmanage
+ment\gymmanagement_ba
+ckend\src\routes\secu
+rity.routes.ts
+- D:\Manish\gymmanage
+ment\gymmanagement_ba
+ckend\src\server.ts
+    at 
+Function.<anonymous> 
+(node:internal/module
+s/cjs/loader:1225:15)
+    at Function.Modul
+e._resolveFilename.sh
+aredData.moduleResolv
+eFilenameHook.install
+edValue [as 
+_resolveFilename] (D:
+\Manish\gymmanagement
+\gymmanagement_backen
+d\node_modules\@cspot
+code\source-map-suppo
+rt\source-map-support
+.js:811:30)
+    at 
+Function._load (node:
+internal/modules/cjs/
+loader:1055:27)
+    at TracingChannel
+.traceSync (node:diag
+nostics_channel:322:1
+4)
+    at 
+wrapModuleLoad (node:
+internal/modules/cjs/
+loader:220:24)
+    at 
+Module.require (node:
+internal/modules/cjs/
+loader:1311:12)
+    at require (node:
+internal/modules/help
+ers:136:16)
+    at 
+Object.<anonymous> (D
+:\Manish\gymmanagemen
+t\gymmanagement_backe
+nd\src\services\googl
+e-auth.service.ts:3:1
+)
+    at 
+Module._compile (node
+:internal/modules/cjs
+/loader:1554:14)
+    at 
+Module.m._compile (D:
+\Manish\gymmanagement
+\gymmanagement_backen
+d\node_modules\ts-nod
+e\src\index.ts:1618:2
+3) {
+  code: 
+'MODULE_NOT_FOUND',
+  requireStack: [
+    'D:\\Manish\\gymm
+anagement\\gymmanagem
+ent_backend\\src\\ser
+vices\\google-auth.se
+rvice.ts',
+    'D:\\Manish\\gymm
+anagement\\gymmanagem
+ent_backend\\src\\con
+trollers\\security.co
+ntroller.ts',
+    'D:\\Manish\\gymm
+anagement\\gymmanagem
+ent_backend\\src\\rou
+tes\\security.routes.
+ts',
+    'D:\\Manish\\gymm
+anagement\\gymmanagem
+ent_backend\\src\\ser
+ver.ts'
+  ]
+}
+[31m[nodemon] app crashed - waiting for file changes before starting...[39m

@@ -71,8 +71,6 @@ const ProductSchema: Schema = new Schema(
 
 // Indexes
 ProductSchema.index({ tenantId: 1, branchId: 1, isActive: 1 });
-ProductSchema.index({ sku: 1 });
-ProductSchema.index({ barcode: 1 });
 ProductSchema.index({ 'inventory.currentStock': 1 });
 
 export default mongoose.model<IProduct>('Product', ProductSchema);

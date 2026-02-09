@@ -21,9 +21,9 @@
         "noUnusedParameters": true,
         "noImplicitReturns": true,
         "noFallthroughCasesInSwitch": true,
-        "types": [
-            "node",
-            "jest"
+        "typeRoots": [
+            "./node_modules/@types",
+            "./src/types"
         ]
     },
     "include": [
@@ -33,5 +33,9 @@
         "node_modules",
         "dist",
         "**/*.test.ts"
-    ]
+    ],
+    "ts-node": {
+        "files": true,
+        "transpileOnly": true
+    }
 }

@@ -143,7 +143,6 @@ const PaymentSchema: Schema = new Schema(
 // Indexes
 PaymentSchema.index({ tenantId: 1, status: 1, createdAt: -1 });
 PaymentSchema.index({ memberId: 1, createdAt: -1 });
-PaymentSchema.index({ invoiceNumber: 1 });
 PaymentSchema.index({ 'gateway.transactionId': 1 });
 
 export default mongoose.model<IPayment>('Payment', PaymentSchema);

@@ -148,8 +148,6 @@ const TenantSchema: Schema = new Schema(
 );
 
 // Indexes
-TenantSchema.index({ slug: 1 });
-TenantSchema.index({ domain: 1 });
 TenantSchema.index({ 'subscription.status': 1 });
 
 export default mongoose.model<ITenant>('Tenant', TenantSchema);

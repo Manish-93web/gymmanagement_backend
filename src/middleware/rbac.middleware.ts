@@ -1,5 +1,4 @@
-import { Response, NextFunction } from 'express';
-import { AuthRequest } from './auth.middleware';
+import { Request, Response, NextFunction } from 'express';
 import { UserRole } from '../models/User.model';
 
 // Permission matrix - maps roles to their allowed permissions
@@ -89,7 +88,7 @@ const hasPermission = (userRole: UserRole, requiredPermission: string): boolean 
 
 // Middleware to check if user has required role
 export const requireRole = (...roles: UserRole[]) => {
-    return (req: AuthRequest, res: Response, next: NextFunction): void => {
+    return (req: Request, res: Response, next: NextFunction): void => {
         if (!req.user) {
             res.status(401).json({ error: 'Authentication required' });
             return;
@@ -109,7 +108,7 @@ export const requireAnyRole = requireRole;
 
 // Middleware to check if user has required permission
 export const requirePermission = (permission: string) => {
-    return (req: AuthRequest, res: Response, next: NextFunction): void => {
+    return (req: Request, res: Response, next: NextFunction): void => {
         if (!req.user) {
             res.status(401).json({ error: 'Authentication required' });
             return;
@@ -126,7 +125,7 @@ export const requirePermission = (permission: string) => {
 
 // Middleware to check if user can access specific tenant
 export const requireTenantAccess = (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction
 ): void => {
@@ -153,7 +152,7 @@ export const requireTenantAccess = (
 
 // Middleware to check if user can access specific branch
 export const requireBranchAccess = (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction
 ): void => {

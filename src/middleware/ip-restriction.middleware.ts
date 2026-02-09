@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from 'express';
-import config from '../config';
 
 interface IPRestrictionConfig {
     allowedIPs: string[];

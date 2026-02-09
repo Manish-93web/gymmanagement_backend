@@ -2,7 +2,7 @@ import WinbackCampaign from '../models/WinbackCampaign.model';
 import WinbackRecipient from '../models/WinbackRecipient.model';
 import Member from '../models/Member.model';
 import InactivityAlert from '../models/InactivityAlert.model';
-import { sendEmail } from '../utils/email.util';
+import EmailService from './email.service';
 import WhatsAppService from './whatsapp.service';
 import SMSService from './sms.service';
 import logger from '../config/logger';
@@ -60,8 +60,11 @@ class WinbackCampaignService {
             query.level = campaign.targetLevel;
         }
 
-        const inactiveAlerts = await InactivityAlert.find(query).populate('memberId');
-        const members = inactiveAlerts.map((alert: any) => alert.memberId);
+        const inactiveAlerts = await InactivityAlert.find(query).populate({
+            path: 'memberId',
+            populate: { path: 'userId' }
+        });
+        const members = inactiveAlerts.map((alert: any) => alert.memberId as any);
 
         let sentCount = 0;
         const results = {
@@ -78,32 +81,25 @@ class WinbackCampaignService {
 
                 // Send based on campaign type
                 if (campaign.type === 'email' || campaign.type === 'multi_channel') {
-                    await sendEmail({
-                        to: member.email,
-                        subject: campaign.subject || 'We Miss You!',
-                        template: 'winback',
-                        data: {
-                            name: `${member.firstName} ${member.lastName}`,
-                            message: personalizedMessage,
-                            offerType: campaign.offerType,
-                            offerValue: campaign.offerValue,
-                            offerExpiry: campaign.offerExpiry,
-                        },
-                    });
+                    await EmailService.sendEmail(
+                        member.userId.email,
+                        campaign.subject || 'We Miss You!',
+                        `<div>${personalizedMessage}</div>`
+                    );
                     results.email++;
                 }
 
                 if (campaign.type === 'sms' || campaign.type === 'multi_channel') {
-                    await SMSService.sendSMS({
-                        to: member.mobile,
-                        message: personalizedMessage,
-                    });
+                    await SMSService.sendSMS(
+                        member.userId.mobile,
+                        personalizedMessage
+                    );
                     results.sms++;
                 }
 
                 if (campaign.type === 'whatsapp' || campaign.type === 'multi_channel') {
                     await WhatsAppService.sendMessage({
-                        to: member.mobile,
+                        to: member.userId.mobile,
                         message: personalizedMessage,
                     });
                     results.whatsapp++;
@@ -150,10 +146,11 @@ class WinbackCampaignService {
      * Personalize message
      */
     private personalizeMessage(template: string, member: any, campaign: any): string {
+        const user = member.userId;
         let message = template
-            .replace(/{firstName}/g, member.firstName)
-            .replace(/{lastName}/g, member.lastName)
-            .replace(/{name}/g, `${member.firstName} ${member.lastName}`);
+            .replace(/{firstName}/g, user.firstName)
+            .replace(/{lastName}/g, user.lastName)
+            .replace(/{name}/g, `${user.firstName} ${user.lastName}`);
 
         if (campaign.offerType && campaign.offerValue) {
             const offerText = this.getOfferText(campaign.offerType, campaign.offerValue);

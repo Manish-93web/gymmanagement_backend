@@ -16,7 +16,11 @@ export interface IWorkoutLog extends Document {
             completed: boolean;
             notes?: string;
         }[];
-        personalRecord: boolean;
+        personalRecord?: {
+            weight?: number;
+            reps?: number;
+            date: Date;
+        };
         previousBest?: {
             weight?: number;
             reps?: number;
@@ -51,7 +55,11 @@ const WorkoutLogSchema: Schema = new Schema(
                         notes: { type: String },
                     },
                 ],
-                personalRecord: { type: Boolean, default: false },
+                personalRecord: {
+                    weight: { type: Number },
+                    reps: { type: Number },
+                    date: { type: Date },
+                },
                 previousBest: {
                     weight: { type: Number },
                     reps: { type: Number },

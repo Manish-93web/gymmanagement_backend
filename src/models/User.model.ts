@@ -98,11 +98,9 @@ const UserSchema: Schema = new Schema(
 // Indexes
 UserSchema.index({ tenantId: 1, role: 1 });
 UserSchema.index({ tenantId: 1, branchId: 1 });
-UserSchema.index({ email: 1 });
-UserSchema.index({ mobile: 1 });
 
 // Hash password before saving
-UserSchema.pre('save', async function (next) {
+UserSchema.pre('save', async function (this: IUser, next) {
     if (!this.isModified('password')) return next();
 
     const salt = await bcrypt.genSalt(12);

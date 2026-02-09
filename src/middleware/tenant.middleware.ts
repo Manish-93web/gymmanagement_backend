@@ -1,5 +1,4 @@
-import { Response, NextFunction } from 'express';
-import { AuthRequest } from './auth.middleware';
+import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 
 /**
@@ -7,7 +6,7 @@ import mongoose from 'mongoose';
  * This ensures strict multi-tenancy isolation
  */
 export const tenantContext = (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction
 ): void => {
@@ -40,7 +39,7 @@ export const tenantContext = (
  * Middleware to automatically inject branch context
  */
 export const branchContext = (
-    req: AuthRequest,
+    req: Request,
     res: Response,
     next: NextFunction
 ): void => {

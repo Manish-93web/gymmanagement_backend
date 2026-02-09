@@ -1,5 +1,4 @@
-import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth.middleware';
+import { Request, Response } from 'express';
 import memberService from '../services/member.service';
 import { z } from 'zod';
 import { MemberStatus } from '../models/Member.model';
@@ -53,7 +52,7 @@ const changeStatusSchema = z.object({
 
 export class MemberController {
     // Create new member
-    async createMember(req: AuthRequest, res: Response): Promise<void> {
+    async createMember(req: Request, res: Response): Promise<void> {
         try {
             if (!req.tenantId || !req.branchId) {
                 res.status(400).json({
@@ -85,7 +84,7 @@ export class MemberController {
     }
 
     // Get member by ID
-    async getMember(req: AuthRequest, res: Response): Promise<void> {
+    async getMember(req: Request, res: Response): Promise<void> {
         try {
             const { memberId } = req.params;
 
@@ -120,7 +119,7 @@ export class MemberController {
     }
 
     // Update member
-    async updateMember(req: AuthRequest, res: Response): Promise<void> {
+    async updateMember(req: Request, res: Response): Promise<void> {
         try {
             const { memberId } = req.params;
 
@@ -158,7 +157,7 @@ export class MemberController {
     }
 
     // Change member status
-    async changeStatus(req: AuthRequest, res: Response): Promise<void> {
+    async changeStatus(req: Request, res: Response): Promise<void> {
         try {
             const { memberId } = req.params;
 
@@ -201,7 +200,7 @@ export class MemberController {
     }
 
     // Add measurement
-    async addMeasurement(req: AuthRequest, res: Response): Promise<void> {
+    async addMeasurement(req: Request, res: Response): Promise<void> {
         try {
             const { memberId } = req.params;
 
@@ -239,7 +238,7 @@ export class MemberController {
     }
 
     // Get all members
-    async getMembers(req: AuthRequest, res: Response): Promise<void> {
+    async getMembers(req: Request, res: Response): Promise<void> {
         try {
             if (!req.tenantId) {
                 res.status(400).json({
@@ -284,7 +283,7 @@ export class MemberController {
     }
 
     // Get member statistics
-    async getMemberStats(req: AuthRequest, res: Response): Promise<void> {
+    async getMemberStats(req: Request, res: Response): Promise<void> {
         try {
             if (!req.tenantId) {
                 res.status(400).json({

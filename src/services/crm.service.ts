@@ -11,6 +11,7 @@ export interface CreateLeadDTO {
     source: 'walk_in' | 'website' | 'referral' | 'social_media' | 'advertisement' | 'other';
     referredBy?: string;
     interestedIn?: string[];
+    assignedTo?: string;
     notes?: string;
 }
 
@@ -77,11 +78,11 @@ export class CRMService {
     }
 
     // Change lead status
-    async changeLeadStatus(
+    async updateLeadStatus(
         leadId: string,
-        tenantId: string,
         newStatus: LeadStatus,
-        changedBy: string
+        tenantId: string,
+        changedBy: string = 'system'
     ): Promise<ILead | null> {
         return await Lead.findOneAndUpdate(
             { _id: leadId, tenantId },
@@ -102,9 +103,9 @@ export class CRMService {
     // Add follow-up
     async addFollowUp(
         leadId: string,
+        data: AddFollowUpDTO,
         tenantId: string,
-        userId: string,
-        data: AddFollowUpDTO
+        userId: string = 'system'
     ): Promise<ILead | null> {
         const lead = await Lead.findOneAndUpdate(
             { _id: leadId, tenantId },
@@ -125,9 +126,9 @@ export class CRMService {
 
         // Auto-update status based on outcome
         if (data.outcome === 'converted' && lead) {
-            await this.changeLeadStatus(leadId, tenantId, 'converted', userId);
+            await this.updateLeadStatus(leadId, 'converted', tenantId, userId);
         } else if (data.outcome === 'not_interested' && lead) {
-            await this.changeLeadStatus(leadId, tenantId, 'lost', userId);
+            await this.updateLeadStatus(leadId, 'lost', tenantId, userId);
         }
 
         return lead;

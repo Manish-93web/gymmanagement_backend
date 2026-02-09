@@ -141,7 +141,6 @@ const TrainerSchema: Schema = new Schema(
 
 // Indexes
 TrainerSchema.index({ tenantId: 1, branchId: 1, isActive: 1 });
-TrainerSchema.index({ userId: 1 });
 TrainerSchema.index({ 'ratings.average': -1 });
 
 export default mongoose.model<ITrainer>('Trainer', TrainerSchema);

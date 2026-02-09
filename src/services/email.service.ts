@@ -1,43 +1,43 @@
 import nodemailer from 'nodemailer';
-import config from '../config/config';
+import { config } from '../config/config';
 
 class EmailService {
-    private transporter: nodemailer.Transporter;
+  private transporter: nodemailer.Transporter;
 
-    constructor() {
-        this.transporter = nodemailer.createTransport({
-            host: config.email.host,
-            port: config.email.port,
-            secure: config.email.port === 465,
-            auth: {
-                user: config.email.user,
-                pass: config.email.password,
-            },
-        });
+  constructor() {
+    this.transporter = nodemailer.createTransport({
+      host: config.email.host,
+      port: config.email.port,
+      secure: config.email.port === 465,
+      auth: {
+        user: config.email.user,
+        pass: config.email.password,
+      },
+    });
+  }
+
+  async sendEmail(to: string, subject: string, html: string, text?: string): Promise<any> {
+    try {
+      const mailOptions = {
+        from: `"${config.email.fromName}" <${config.email.from}>`,
+        to,
+        subject,
+        html,
+        text: text || html.replace(/<[^>]*>/g, ''), // Strip HTML for text version
+      };
+
+      const info = await this.transporter.sendMail(mailOptions);
+      console.log('Email sent:', info.messageId);
+      return info;
+    } catch (error) {
+      console.error('Email sending failed:', error);
+      throw error;
     }
+  }
 
-    async sendEmail(to: string, subject: string, html: string, text?: string): Promise<any> {
-        try {
-            const mailOptions = {
-                from: `"${config.email.fromName}" <${config.email.from}>`,
-                to,
-                subject,
-                html,
-                text: text || html.replace(/<[^>]*>/g, ''), // Strip HTML for text version
-            };
-
-            const info = await this.transporter.sendMail(mailOptions);
-            console.log('Email sent:', info.messageId);
-            return info;
-        } catch (error) {
-            console.error('Email sending failed:', error);
-            throw error;
-        }
-    }
-
-    async sendWelcomeEmail(to: string, name: string, membershipNumber: string): Promise<any> {
-        const subject = 'Welcome to Our Gym!';
-        const html = `
+  async sendWelcomeEmail(to: string, name: string, membershipNumber: string): Promise<any> {
+    const subject = 'Welcome to Our Gym!';
+    const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h1 style="color: #4F46E5;">Welcome ${name}!</h1>
         <p>We're excited to have you join our fitness community.</p>
@@ -48,12 +48,12 @@ class EmailService {
       </div>
     `;
 
-        return this.sendEmail(to, subject, html);
-    }
+    return this.sendEmail(to, subject, html);
+  }
 
-    async sendOTPEmail(to: string, otp: string): Promise<any> {
-        const subject = 'Your OTP Code';
-        const html = `
+  async sendOTPEmail(to: string, otp: string): Promise<any> {
+    const subject = 'Your OTP Code';
+    const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h1 style="color: #4F46E5;">Your OTP Code</h1>
         <p>Your one-time password is:</p>
@@ -63,17 +63,17 @@ class EmailService {
       </div>
     `;
 
-        return this.sendEmail(to, subject, html);
-    }
+    return this.sendEmail(to, subject, html);
+  }
 
-    async sendSubscriptionExpiryReminder(
-        to: string,
-        name: string,
-        expiryDate: Date,
-        daysRemaining: number
-    ): Promise<any> {
-        const subject = `Your Membership Expires in ${daysRemaining} Days`;
-        const html = `
+  async sendSubscriptionExpiryReminder(
+    to: string,
+    name: string,
+    expiryDate: Date,
+    daysRemaining: number
+  ): Promise<any> {
+    const subject = `Your Membership Expires in ${daysRemaining} Days`;
+    const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h1 style="color: #4F46E5;">Membership Expiry Reminder</h1>
         <p>Hi ${name},</p>
@@ -84,18 +84,18 @@ class EmailService {
       </div>
     `;
 
-        return this.sendEmail(to, subject, html);
-    }
+    return this.sendEmail(to, subject, html);
+  }
 
-    async sendPaymentReceipt(
-        to: string,
-        name: string,
-        amount: number,
-        invoiceNumber: string,
-        paymentDate: Date
-    ): Promise<any> {
-        const subject = `Payment Receipt - ${invoiceNumber}`;
-        const html = `
+  async sendPaymentReceipt(
+    to: string,
+    name: string,
+    amount: number,
+    invoiceNumber: string,
+    paymentDate: Date
+  ): Promise<any> {
+    const subject = `Payment Receipt - ${invoiceNumber}`;
+    const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h1 style="color: #4F46E5;">Payment Receipt</h1>
         <p>Hi ${name},</p>
@@ -119,8 +119,8 @@ class EmailService {
       </div>
     `;
 
-        return this.sendEmail(to, subject, html);
-    }
+    return this.sendEmail(to, subject, html);
+  }
 }
 
 export default new EmailService();

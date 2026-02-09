@@ -9,11 +9,11 @@ export class DashboardController {
     // Get overview dashboard for gym owner/branch manager
     async getOverview(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
-            const branchId = req.user!.branchId?.toString();
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const branchId = req.user?.branchId?.toString();
 
             const filter: any = { tenantId };
-            if (branchId && req.user!.role !== 'gym_owner') {
+            if (branchId && req.user?.role !== 'gym_owner') {
                 filter.branchId = branchId;
             }
 
@@ -27,12 +27,14 @@ export class DashboardController {
             const nextMonthStart = new Date(today.getFullYear(), today.getMonth() + 1, 1);
 
             // Member statistics
-            const totalMembers = await Member.countDocuments(filter);
-            const activeMembers = await Member.countDocuments({ ...filter, status: 'active' });
-            const newMembersThisMonth = await Member.countDocuments({
-                ...filter,
-                createdAt: { $gte: thisMonthStart, $lt: nextMonthStart },
-            });
+            const [totalMembers, activeMembers, newMembersThisMonth] = await Promise.all([
+                Member.countDocuments(filter),
+                Member.countDocuments({ ...filter, status: 'active' }),
+                Member.countDocuments({
+                    ...filter,
+                    createdAt: { $gte: thisMonthStart, $lt: nextMonthStart },
+                }),
+            ]);
 
             // Revenue statistics
             const revenueThisMonth = await Payment.aggregate([
@@ -53,16 +55,17 @@ export class DashboardController {
             ]);
 
             // Attendance today
-            const attendanceToday = await Attendance.countDocuments({
-                ...filter,
-                checkInTime: { $gte: today, $lt: tomorrow },
-            });
-
-            const currentlyInGym = await Attendance.countDocuments({
-                ...filter,
-                checkInTime: { $gte: today },
-                checkOutTime: null,
-            });
+            const [attendanceToday, currentlyInGym] = await Promise.all([
+                Attendance.countDocuments({
+                    ...filter,
+                    checkInTime: { $gte: today, $lt: tomorrow },
+                }),
+                Attendance.countDocuments({
+                    ...filter,
+                    checkInTime: { $gte: today },
+                    checkOutTime: null,
+                }),
+            ]);
 
             // Expiring subscriptions (next 7 days)
             const next7Days = new Date(today);
@@ -81,7 +84,7 @@ export class DashboardController {
                 status: 'active',
             });
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
                 data: {
                     members: {
@@ -105,17 +108,21 @@ export class DashboardController {
                 },
             });
         } catch (error) {
-            next(error);
+            return next(error);
         }
     }
 
     // Get member-specific dashboard
     async getMemberDashboard(req: Request, res: Response, next: NextFunction) {
         try {
-            const memberId = req.user!.role === 'member' ? req.user!._id.toString() : req.params.memberId;
-            const tenantId = req.user!.tenantId.toString();
+            const memberId = req.user?.role === 'member' ? req.user?._id.toString() : req.params.memberId;
+            const tenantId = req.user?.tenantId?.toString() || '';
 
-            const member = await Member.findOne({ _id: memberId, tenantId });
+            if (!memberId) {
+                return res.status(400).json({ success: false, message: 'Member ID is required' });
+            }
+
+            const member = await Member.findOne({ _id: memberId, tenantId }).populate('userId');
             if (!member) {
                 return res.status(404).json({ success: false, message: 'Member not found' });
             }
@@ -146,11 +153,11 @@ export class DashboardController {
                 .limit(5)
                 .sort({ 'schedule.startTime': 1 });
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
                 data: {
                     member: {
-                        name: `${member.firstName} ${member.lastName}`,
+                        name: `${(member as any).userId?.firstName} ${(member as any).userId?.lastName}`,
                         membershipNumber: member.membershipNumber,
                         status: member.status,
                     },
@@ -162,15 +169,19 @@ export class DashboardController {
                 },
             });
         } catch (error) {
-            next(error);
+            return next(error);
         }
     }
 
     // Get trainer dashboard
     async getTrainerDashboard(req: Request, res: Response, next: NextFunction) {
         try {
-            const trainerId = req.user!._id.toString();
-            const tenantId = req.user!.tenantId.toString();
+            const trainerId = req.user?._id.toString();
+            const tenantId = req.user?.tenantId?.toString() || '';
+
+            if (!trainerId) {
+                return res.status(401).json({ success: false, message: 'Unauthorized' });
+            }
 
             const today = new Date();
             today.setHours(0, 0, 0, 0);
@@ -191,7 +202,7 @@ export class DashboardController {
                 status: 'active',
             });
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
                 data: {
                     classesToday: classesToday.length,
@@ -200,7 +211,7 @@ export class DashboardController {
                 },
             });
         } catch (error) {
-            next(error);
+            return next(error);
         }
     }
 }

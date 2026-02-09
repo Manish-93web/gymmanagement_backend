@@ -1,5 +1,5 @@
 import twilio from 'twilio';
-import config from '../config/config';
+import { config } from '../config/config';
 
 class SMSService {
     private client: twilio.Twilio;

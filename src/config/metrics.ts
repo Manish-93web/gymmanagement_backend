@@ -101,22 +101,22 @@ export const metricsMiddleware = (req: Request, res: Response, next: NextFunctio
 
     res.on('finish', () => {
         const duration = (Date.now() - start) / 1000;
-        const route = req.route?.path || req.path;
+        const route = (req as any).route?.path || (req as any).path || '/';
 
         httpRequestDuration.observe(
             {
                 method: req.method,
                 route,
-                status_code: res.statusCode,
-            },
+                status_code: res.statusCode.toString(),
+            } as any,
             duration
         );
 
         httpRequestCounter.inc({
             method: req.method,
             route,
-            status_code: res.statusCode,
-        });
+            status_code: res.statusCode.toString(),
+        } as any);
 
         activeConnections.dec();
     });

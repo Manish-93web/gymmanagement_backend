@@ -62,13 +62,14 @@ export const config = {
         user: process.env.SMTP_USER || '',
         password: process.env.SMTP_PASSWORD || '',
         from: process.env.EMAIL_FROM || 'noreply@gymmanagement.com',
+        fromName: process.env.EMAIL_FROM_NAME || 'Gym Management',
     },
 
     // SMS (Twilio)
-    twilio: {
+    sms: {
         accountSid: process.env.TWILIO_ACCOUNT_SID || '',
         authToken: process.env.TWILIO_AUTH_TOKEN || '',
-        phoneNumber: process.env.TWILIO_PHONE_NUMBER || '',
+        fromNumber: process.env.TWILIO_PHONE_NUMBER || '',
     },
 
     // WhatsApp

@@ -81,6 +81,16 @@ export interface IMember extends Document {
     referralCode: string;
     tags: string[];
     notes: string;
+    gamification?: {
+        currentStreak: number;
+        longestStreak: number;
+        workoutStreak: number;
+        longestWorkoutStreak: number;
+        lastStreakUpdate?: Date;
+        points: number;
+        level: number;
+        badges: string[];
+    };
     createdAt: Date;
     updatedAt: Date;
 }
@@ -180,6 +190,16 @@ const MemberSchema: Schema = new Schema(
         referralCode: { type: String, unique: true, required: true },
         tags: [{ type: String }],
         notes: { type: String },
+        gamification: {
+            currentStreak: { type: Number, default: 0 },
+            longestStreak: { type: Number, default: 0 },
+            workoutStreak: { type: Number, default: 0 },
+            longestWorkoutStreak: { type: Number, default: 0 },
+            lastStreakUpdate: { type: Date },
+            points: { type: Number, default: 0 },
+            level: { type: Number, default: 1 },
+            badges: [{ type: String }],
+        },
     },
     { timestamps: true }
 );
@@ -187,7 +207,5 @@ const MemberSchema: Schema = new Schema(
 // Indexes
 MemberSchema.index({ tenantId: 1, status: 1 });
 MemberSchema.index({ tenantId: 1, branchId: 1, status: 1 });
-MemberSchema.index({ membershipNumber: 1 });
-MemberSchema.index({ referralCode: 1 });
 
 export default mongoose.model<IMember>('Member', MemberSchema);

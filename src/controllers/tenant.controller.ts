@@ -1,5 +1,4 @@
 import { Request, Response } from 'express';
-import { AuthRequest } from '../middleware/auth.middleware';
 import tenantService from '../services/tenant.service';
 import { z } from 'zod';
 
@@ -74,7 +73,7 @@ export class TenantController {
     }
 
     // Get tenant by ID
-    async getTenant(req: AuthRequest, res: Response): Promise<void> {
+    async getTenant(req: Request, res: Response): Promise<void> {
         try {
             const { tenantId } = req.params;
 
@@ -101,7 +100,7 @@ export class TenantController {
     }
 
     // Get current tenant (for logged-in users)
-    async getCurrentTenant(req: AuthRequest, res: Response): Promise<void> {
+    async getCurrentTenant(req: Request, res: Response): Promise<void> {
         try {
             if (!req.tenantId) {
                 res.status(400).json({
@@ -134,7 +133,7 @@ export class TenantController {
     }
 
     // Update tenant
-    async updateTenant(req: AuthRequest, res: Response): Promise<void> {
+    async updateTenant(req: Request, res: Response): Promise<void> {
         try {
             const { tenantId } = req.params;
             const validatedData = updateTenantSchema.parse(req.body);
@@ -191,7 +190,7 @@ export class TenantController {
     }
 
     // Toggle feature
-    async toggleFeature(req: AuthRequest, res: Response): Promise<void> {
+    async toggleFeature(req: Request, res: Response): Promise<void> {
         try {
             const { tenantId } = req.params;
             const { feature, enabled } = req.body;

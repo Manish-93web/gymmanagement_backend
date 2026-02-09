@@ -32,21 +32,26 @@ export class ClassController {
     async createClass(req: Request, res: Response, next: NextFunction) {
         try {
             const validatedData = createClassSchema.parse(req.body);
-            const tenantId = req.user!.tenantId.toString();
-            const branchId = req.user!.branchId?.toString() || '';
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const branchId = req.user?.branchId?.toString() || '';
 
             const classDoc = await ClassService.createClass({
                 ...validatedData,
                 tenantId,
                 branchId,
+                classType: validatedData.type as any,
                 schedule: {
-                    ...validatedData.schedule,
                     startTime: new Date(validatedData.schedule.startTime),
                     endTime: new Date(validatedData.schedule.endTime),
+                    isRecurring: validatedData.schedule.recurring || false,
+                },
+                pricing: {
+                    dropInPrice: validatedData.pricing.dropInPrice,
+                    memberPrice: validatedData.pricing.memberPrice || 0,
                 },
             });
 
-            res.status(201).json({ success: true, data: classDoc });
+            return res.status(201).json({ success: true, data: classDoc });
         } catch (error) {
             next(error);
         }
@@ -54,7 +59,7 @@ export class ClassController {
 
     async getClasses(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.tenantId?.toString() || '';
             const { branchId, type, trainerId, startDate, endDate } = req.query;
 
             const classes = await ClassService.getClasses(
@@ -66,7 +71,7 @@ export class ClassController {
                 endDate ? new Date(endDate as string) : undefined
             );
 
-            res.status(200).json({ success: true, data: classes });
+            return res.status(200).json({ success: true, data: classes });
         } catch (error) {
             next(error);
         }
@@ -75,7 +80,7 @@ export class ClassController {
     async getClassById(req: Request, res: Response, next: NextFunction) {
         try {
             const { classId } = req.params;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.tenantId?.toString() || '';
 
             const classDoc = await ClassService.getClassById(classId, tenantId);
 
@@ -83,7 +88,7 @@ export class ClassController {
                 return res.status(404).json({ success: false, message: 'Class not found' });
             }
 
-            res.status(200).json({ success: true, data: classDoc });
+            return res.status(200).json({ success: true, data: classDoc });
         } catch (error) {
             next(error);
         }
@@ -92,11 +97,11 @@ export class ClassController {
     async updateClass(req: Request, res: Response, next: NextFunction) {
         try {
             const { classId } = req.params;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.tenantId?.toString() || '';
 
             const classDoc = await ClassService.updateClass(classId, tenantId, req.body);
 
-            res.status(200).json({ success: true, data: classDoc });
+            return res.status(200).json({ success: true, data: classDoc });
         } catch (error) {
             next(error);
         }
@@ -105,16 +110,17 @@ export class ClassController {
     async createBooking(req: Request, res: Response, next: NextFunction) {
         try {
             const validatedData = createBookingSchema.parse(req.body);
-            const tenantId = req.user!.tenantId.toString();
-            const branchId = req.user!.branchId?.toString() || '';
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const branchId = req.user?.branchId?.toString() || '';
 
             const booking = await ClassService.createBooking({
                 ...validatedData,
                 tenantId,
                 branchId,
+                paymentStatus: 'pending', // Default
             });
 
-            res.status(201).json({ success: true, data: booking });
+            return res.status(201).json({ success: true, data: booking });
         } catch (error) {
             next(error);
         }
@@ -124,11 +130,11 @@ export class ClassController {
         try {
             const { bookingId } = req.params;
             const { reason } = req.body;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.tenantId?.toString() || '';
 
-            const booking = await ClassService.cancelBooking(bookingId, reason, tenantId);
+            const booking = await ClassService.cancelBooking(bookingId, tenantId, reason);
 
-            res.status(200).json({ success: true, data: booking });
+            return res.status(200).json({ success: true, data: booking });
         } catch (error) {
             next(error);
         }
@@ -138,11 +144,11 @@ export class ClassController {
         try {
             const { bookingId } = req.params;
             const { attended } = req.body;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.tenantId?.toString() || '';
 
-            const booking = await ClassService.markAttendance(bookingId, attended, tenantId);
+            const booking = await ClassService.markAttendance(bookingId, tenantId, !!attended);
 
-            res.status(200).json({ success: true, data: booking });
+            return res.status(200).json({ success: true, data: booking });
         } catch (error) {
             next(error);
         }
@@ -151,11 +157,11 @@ export class ClassController {
     async getMemberBookings(req: Request, res: Response, next: NextFunction) {
         try {
             const { memberId } = req.params;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.tenantId?.toString() || '';
 
-            const bookings = await ClassService.getMemberBookings(memberId, tenantId);
+            const { bookings } = await ClassService.getMemberBookings(memberId, tenantId);
 
-            res.status(200).json({ success: true, data: bookings });
+            return res.status(200).json({ success: true, data: bookings });
         } catch (error) {
             next(error);
         }
