@@ -14,6 +14,8 @@ import WebSocketService from './services/websocket.service';
 import authRoutes from './routes/auth.routes';
 import tenantRoutes from './routes/tenant.routes';
 import memberRoutes from './routes/member.routes';
+import communityRoutes from './routes/community.routes';
+import gamificationRoutes from './routes/gamification.routes';
 
 const app: Application = express();
 const httpServer = http.createServer(app);
@@ -67,6 +69,8 @@ app.get('/health', (_req: Request, res: Response) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/tenants', tenantRoutes);
 app.use('/api/members', memberRoutes);
+app.use('/api/community', communityRoutes);
+app.use('/api/gamification', gamificationRoutes);
 
 // Import additional routes
 import paymentRoutes from './routes/payment.routes';

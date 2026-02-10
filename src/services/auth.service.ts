@@ -63,46 +63,65 @@ export class AuthService {
 
     // Login with email/mobile and password
     async login(data: LoginDTO, deviceInfo: any): Promise<{ user: IUser; accessToken: string; refreshToken: string }> {
-        // Find user by email or mobile
-        const user = await User.findOne({
-            $or: [{ email: data.identifier }, { mobile: data.identifier }],
-        }).select('+password');
+        // Normalize identifier
+        const identifier = data.identifier.trim();
+        const isEmail = identifier.includes('@');
+
+        let user;
+        if (isEmail) {
+            user = await User.findOne({ email: identifier.toLowerCase() }).select('+password +refreshTokens');
+        } else {
+            // Normalize mobile: remove all non-digits for comparison
+            const mobileDigits = identifier.replace(/\D/g, '');
+            user = await User.findOne({
+                $or: [
+                    { mobile: identifier }, // try original
+                    { mobile: mobileDigits } // try normalized
+                ]
+            }).select('+password +refreshTokens');
+        }
 
         if (!user) {
-            throw new Error('Invalid credentials');
+            throw new Error('User not found with these credentials');
         }
+
+        // Ensure arrays are initialized (especially for select: false fields)
+        if (!user.devices) user.devices = [];
+        if (!user.refreshTokens) user.refreshTokens = [];
 
         // Check if user is active
         if (!user.isActive) {
-            throw new Error('Account is inactive');
+            throw new Error('This account has been deactivated');
         }
 
         // Verify password
         const isPasswordValid = await user.comparePassword(data.password);
 
         if (!isPasswordValid) {
-            throw new Error('Invalid credentials');
+            throw new Error('Incorrect password. Please try again.');
         }
 
         // Update device info
+        const now = new Date();
         const deviceExists = user.devices.find(d => d.deviceId === deviceInfo.deviceId);
 
         if (deviceExists) {
-            deviceExists.lastLogin = new Date();
+            deviceExists.lastLogin = now;
             deviceExists.ipAddress = deviceInfo.ipAddress;
             deviceExists.userAgent = deviceInfo.userAgent;
         } else {
             user.devices.push({
                 deviceId: deviceInfo.deviceId,
                 deviceName: deviceInfo.deviceName,
-                lastLogin: new Date(),
+                lastLogin: now,
                 ipAddress: deviceInfo.ipAddress,
                 userAgent: deviceInfo.userAgent,
             });
         }
 
-        // Update last login
-        user.lastLogin = new Date();
+
+        // Update last login and refresh tokens locally
+        user.lastLogin = now;
 
         // Generate tokens
         const accessToken = generateAccessToken({
@@ -125,10 +144,21 @@ export class AuthService {
             user.refreshTokens = user.refreshTokens.slice(-5);
         }
 
-        await user.save();
+        // Use findOneAndUpdate to avoid triggering 'pre-save' hooks that might re-hash the password
+        await User.findOneAndUpdate(
+            { _id: user._id },
+            {
+                $set: {
+                    lastLogin: user.lastLogin,
+                    devices: user.devices,
+                    refreshTokens: user.refreshTokens
+                }
+            }
+        );
 
         return { user, accessToken, refreshToken };
     }
+
 
     // Send OTP for login
     async sendOTP(identifier: string, type: 'email' | 'mobile'): Promise<void> {
@@ -174,30 +204,35 @@ export class AuthService {
         // Find user
         const user = await User.findOne(
             data.type === 'email' ? { email: data.identifier } : { mobile: data.identifier }
-        );
+        ).select('+refreshTokens');
 
         if (!user || !user.isActive) {
             throw new Error('User not found or inactive');
         }
 
+        // Ensure arrays are initialized
+        if (!user.devices) user.devices = [];
+        if (!user.refreshTokens) user.refreshTokens = [];
+
         // Update device info and last login (same as regular login)
+        const now = new Date();
         const deviceExists = user.devices.find(d => d.deviceId === deviceInfo.deviceId);
 
         if (deviceExists) {
-            deviceExists.lastLogin = new Date();
+            deviceExists.lastLogin = now;
             deviceExists.ipAddress = deviceInfo.ipAddress;
             deviceExists.userAgent = deviceInfo.userAgent;
         } else {
             user.devices.push({
                 deviceId: deviceInfo.deviceId,
                 deviceName: deviceInfo.deviceName,
-                lastLogin: new Date(),
+                lastLogin: now,
                 ipAddress: deviceInfo.ipAddress,
                 userAgent: deviceInfo.userAgent,
             });
         }
 
-        user.lastLogin = new Date();
+        user.lastLogin = now;
 
         // Generate tokens
         const accessToken = generateAccessToken({
@@ -219,7 +254,17 @@ export class AuthService {
             user.refreshTokens = user.refreshTokens.slice(-5);
         }
 
-        await user.save();
+        // Use findOneAndUpdate to avoid triggering 'pre-save' hooks that might re-hash the password
+        await User.findOneAndUpdate(
+            { _id: user._id },
+            {
+                $set: {
+                    lastLogin: user.lastLogin,
+                    devices: user.devices,
+                    refreshTokens: user.refreshTokens
+                }
+            }
+        );
 
         return { user, accessToken, refreshToken };
     }
@@ -235,6 +280,8 @@ export class AuthService {
         if (!user || !user.isActive) {
             throw new Error('Invalid refresh token');
         }
+
+        if (!user.refreshTokens) user.refreshTokens = [];
 
         if (!user.refreshTokens.includes(refreshToken)) {
             throw new Error('Invalid refresh token');
@@ -269,8 +316,10 @@ export class AuthService {
         const user = await User.findById(userId).select('+refreshTokens');
 
         if (user) {
-            user.refreshTokens = user.refreshTokens.filter(t => t !== refreshToken);
-            await user.save();
+            if (user.refreshTokens) {
+                user.refreshTokens = user.refreshTokens.filter(t => t !== refreshToken);
+                await user.save();
+            }
         }
     }
 

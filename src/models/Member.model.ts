@@ -87,7 +87,8 @@ export interface IMember extends Document {
         workoutStreak: number;
         longestWorkoutStreak: number;
         lastStreakUpdate?: Date;
-        points: number;
+        totalPoints: number;
+        pointsSpent: number;
         level: number;
         badges: string[];
     };
@@ -196,7 +197,8 @@ const MemberSchema: Schema = new Schema(
             workoutStreak: { type: Number, default: 0 },
             longestWorkoutStreak: { type: Number, default: 0 },
             lastStreakUpdate: { type: Date },
-            points: { type: Number, default: 0 },
+            totalPoints: { type: Number, default: 0 },
+            pointsSpent: { type: Number, default: 0 },
             level: { type: Number, default: 1 },
             badges: [{ type: String }],
         },

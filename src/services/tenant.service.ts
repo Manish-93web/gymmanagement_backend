@@ -2,6 +2,7 @@ import Tenant, { ITenant } from '../models/Tenant.model';
 import Branch, { IBranch } from '../models/Branch.model';
 import User from '../models/User.model';
 import mongoose from 'mongoose';
+import { slugify } from '../utils/helpers.utils';
 
 export interface CreateTenantDTO {
     name: string;
@@ -19,6 +20,7 @@ export interface CreateTenantDTO {
         secondaryColor?: string;
     };
 }
+
 
 export interface UpdateTenantDTO {
     name?: string;
@@ -51,70 +53,94 @@ export class TenantService {
 
         try {
             // Check if tenant already exists
+            const slug = `${slugify(data.name)}`;
             const existingTenant = await Tenant.findOne({
-                $or: [{ email: data.email }, { 'contact.email': data.ownerEmail }],
+                $or: [
+                    { 'contactInfo.email': data.email },
+                    { 'contactInfo.phone': data.mobile },
+                    { slug: new RegExp(`^${slug}`, 'i') }
+                ],
             });
 
             if (existingTenant) {
-                throw new Error('Tenant already exists with this email');
+                throw new Error('Gym with this email, mobile or name already exists');
             }
 
+
             // Create tenant
-            const tenant = await Tenant.create([{
+            const tenant = new Tenant({
                 name: data.name,
-                email: data.email,
-                mobile: data.mobile,
+                slug: `${slugify(data.name)}-${Date.now().toString(36)}`,
                 subscription: {
-                    tier: data.subscriptionTier,
+                    plan: data.subscriptionTier,
                     startDate: new Date(),
                     endDate: data.subscriptionTier === 'trial'
                         ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) // 14 days trial
                         : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year
-                    isActive: true,
+                    maxBranches: data.subscriptionTier === 'trial' ? 1 : 5,
+                    maxMembers: data.subscriptionTier === 'trial' ? 100 : 1000,
+                    maxTrainers: data.subscriptionTier === 'trial' ? 10 : 50,
                 },
-                branding: data.branding || {},
+                branding: {
+                    logo: data.branding?.logo,
+                    primaryColor: data.branding?.primaryColor || '#6366f1',
+                    secondaryColor: data.branding?.secondaryColor || '#8b5cf6',
+                },
                 features: {
-                    aiEnabled: data.subscriptionTier === 'pro' || data.subscriptionTier === 'enterprise',
+                    aiEnabled: ['pro', 'enterprise'].includes(data.subscriptionTier),
                     onlineClasses: data.subscriptionTier !== 'basic',
-                    posEnabled: true,
-                    multiLocation: data.subscriptionTier === 'enterprise',
+                    pos: true,
                 },
-                contact: {
-                    email: data.ownerEmail,
-                    mobile: data.ownerMobile,
-                },
-            }], { session });
-
-            // Create default branch
-            const branch = await Branch.create([{
-                tenantId: tenant[0]._id,
-                name: 'Main Branch',
-                email: data.email,
-                mobile: data.mobile,
-                address: {
-                    street: '',
+                contactInfo: {
+                    email: data.email,
+                    phone: data.mobile,
+                    address: '',
                     city: '',
                     state: '',
                     country: '',
                     zipCode: '',
                 },
+                billing: {
+                    billingEmail: data.email,
+                }
+            });
+            await tenant.save({ session });
+
+            // Create default branch
+            const normalizedGymMobile = data.mobile.replace(/\D/g, '');
+            const branch = new Branch({
+                tenantId: tenant._id,
+                name: 'Main Branch',
+                code: 'MAIN',
+                contactInfo: {
+                    email: data.email,
+                    phone: normalizedGymMobile,
+
+                    address: 'Main St',
+                    city: 'City',
+                    state: 'State',
+                    country: 'Country',
+                    zipCode: '000000',
+                },
                 operatingHours: [
-                    { day: 'Monday', openTime: '06:00', closeTime: '22:00', isClosed: false },
-                    { day: 'Tuesday', openTime: '06:00', closeTime: '22:00', isClosed: false },
-                    { day: 'Wednesday', openTime: '06:00', closeTime: '22:00', isClosed: false },
-                    { day: 'Thursday', openTime: '06:00', closeTime: '22:00', isClosed: false },
-                    { day: 'Friday', openTime: '06:00', closeTime: '22:00', isClosed: false },
-                    { day: 'Saturday', openTime: '06:00', closeTime: '22:00', isClosed: false },
-                    { day: 'Sunday', openTime: '06:00', closeTime: '22:00', isClosed: false },
+                    { day: 'monday', openTime: '06:00', closeTime: '22:00', isOpen: true },
+                    { day: 'tuesday', openTime: '06:00', closeTime: '22:00', isOpen: true },
+                    { day: 'wednesday', openTime: '06:00', closeTime: '22:00', isOpen: true },
+                    { day: 'thursday', openTime: '06:00', closeTime: '22:00', isOpen: true },
+                    { day: 'friday', openTime: '06:00', closeTime: '22:00', isOpen: true },
+                    { day: 'saturday', openTime: '06:00', closeTime: '22:00', isOpen: true },
+                    { day: 'sunday', openTime: '06:00', closeTime: '20:00', isOpen: true },
                 ],
-            }], { session });
+            });
+            await branch.save({ session });
 
             // Create gym owner user
-            const owner = await User.create([{
-                tenantId: tenant[0]._id,
-                branchId: branch[0]._id,
+            const normalizedOwnerMobile = data.ownerMobile.replace(/\D/g, '');
+            const owner = new User({
+                tenantId: tenant._id,
+                branchId: branch._id,
                 email: data.ownerEmail,
-                mobile: data.ownerMobile,
+                mobile: normalizedOwnerMobile,
                 password: data.ownerPassword,
                 firstName: data.ownerFirstName,
                 lastName: data.ownerLastName,
@@ -122,15 +148,18 @@ export class TenantService {
                 isActive: true,
                 isEmailVerified: true,
                 isMobileVerified: true,
-            }], { session });
+            });
+            await owner.save({ session });
+
 
             await session.commitTransaction();
 
             return {
-                tenant: tenant[0],
-                owner: owner[0],
-                branch: branch[0],
+                tenant,
+                owner,
+                branch,
             };
+
         } catch (error) {
             await session.abortTransaction();
             throw error;
