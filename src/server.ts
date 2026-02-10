@@ -85,7 +85,8 @@ import aiCrmRoutes from './routes/ai-crm.routes';
 import notificationRoutes from './routes/notification.routes';
 import dashboardRoutes from './routes/dashboard.routes';
 import securityRoutes from './routes/security.routes';
-import franchiseRoutes from './routes/franchise.routes';
+import platformRoutes from './routes/platform.routes';
+import healthRoutes from './routes/health.routes';
 
 // Register additional routes
 app.use('/api/payments', paymentRoutes);
@@ -100,6 +101,8 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/security', securityRoutes);
 app.use('/api/franchise', franchiseRoutes);
+app.use('/api/platform', platformRoutes); // Layer 1: Super Admin
+app.use('/api/health', healthRoutes); // Phase 24: Health Integrations
 app.use('/api', aiCrmRoutes);
 
 // 404 handler
@@ -168,7 +171,10 @@ process.on('SIGINT', () => {
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err: Error) => {
     console.error('Unhandled Promise Rejection:', err);
-    httpServer.close(() => process.exit(1));
+    // Don't exit immediately in dev, just log
+    if (config.env === 'production') {
+        process.exit(1);
+    }
 });
 
 startServer();

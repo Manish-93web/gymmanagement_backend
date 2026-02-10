@@ -4,7 +4,7 @@
   "description": "Gym Management SaaS Backend",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "nodemon --ignore logs src/server.ts",
+    "dev": "nodemon --ignore logs",
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "jest --coverage --verbose",

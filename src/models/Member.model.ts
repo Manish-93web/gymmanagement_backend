@@ -92,6 +92,7 @@ export interface IMember extends Document {
         level: number;
         badges: string[];
     };
+    lastCheckIn?: Date;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -202,6 +203,7 @@ const MemberSchema: Schema = new Schema(
             level: { type: Number, default: 1 },
             badges: [{ type: String }],
         },
+        lastCheckIn: { type: Date },
     },
     { timestamps: true }
 );
