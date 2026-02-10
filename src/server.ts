@@ -85,6 +85,7 @@ import aiCrmRoutes from './routes/ai-crm.routes';
 import notificationRoutes from './routes/notification.routes';
 import dashboardRoutes from './routes/dashboard.routes';
 import securityRoutes from './routes/security.routes';
+import franchiseRoutes from './routes/franchise.routes';
 
 // Register additional routes
 app.use('/api/payments', paymentRoutes);
@@ -98,6 +99,7 @@ app.use('/api/fitness', fitnessRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/security', securityRoutes);
+app.use('/api/franchise', franchiseRoutes);
 app.use('/api', aiCrmRoutes);
 
 // 404 handler
