@@ -11,6 +11,7 @@ router.use(authenticate);
 router.use(tenantContext);
 
 // Member CRUD
+router.get('/me', memberController.getProfile.bind(memberController));
 router.post('/', requirePermission('member:create'), memberController.createMember.bind(memberController));
 router.get('/', requirePermission('member:read'), memberController.getMembers.bind(memberController));
 router.get('/stats', requirePermission('member:read'), memberController.getMemberStats.bind(memberController));

@@ -85,6 +85,39 @@ export class MemberController {
         }
     }
 
+    // Get current member profile
+    async getProfile(req: Request, res: Response): Promise<void> {
+        try {
+            if (!req.user || !req.tenantId) {
+                res.status(401).json({
+                    status: 'error',
+                    message: 'Not authenticated',
+                });
+                return;
+            }
+
+            const member = await memberService.getMemberByUserId(req.user._id.toString(), req.tenantId);
+
+            if (!member) {
+                res.status(404).json({
+                    status: 'error',
+                    message: 'Member profile not found',
+                });
+                return;
+            }
+
+            res.status(200).json({
+                status: 'success',
+                data: member,
+            });
+        } catch (error: any) {
+            res.status(400).json({
+                status: 'error',
+                message: error.message || 'Failed to get member profile',
+            });
+        }
+    }
+
     // Get member by ID
     async getMember(req: Request, res: Response): Promise<void> {
         try {

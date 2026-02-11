@@ -150,6 +150,12 @@ export class MemberService {
         return this._repairMemberFields(member);
     }
 
+    // Get member by User ID
+    async getMemberByUserId(userId: string, tenantId: string): Promise<IMember | null> {
+        const member = await Member.findOne({ userId, tenantId }).populate('userId');
+        return this._repairMemberFields(member);
+    }
+
     // Update member
     async updateMember(memberId: string, tenantId: string, data: UpdateMemberDTO): Promise<IMember | null> {
         const member = await Member.findOneAndUpdate(
