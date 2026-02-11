@@ -6,7 +6,7 @@ import { requireRole } from '../middleware/role.middleware';
 const router = express.Router();
 
 // Apply auth and strict role check for ALL routes
-router.use(authenticate, requireRole(['super_admin']));
+router.use(authenticate, requireRole('super_admin'));
 
 router.get('/tenants', getAllTenants);
 router.patch('/tenants/:tenantId/status', updateTenantStatus);

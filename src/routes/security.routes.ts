@@ -16,28 +16,28 @@ router.delete('/google/unlink', authenticate, SecurityController.unlinkGoogleAcc
 router.post(
     '/domain',
     authenticate,
-    requireRole(['gym_owner', 'super_admin']),
+    requireRole('gym_owner', 'super_admin'),
     SecurityController.addCustomDomain
 );
 
 router.post(
     '/domain/verify',
     authenticate,
-    requireRole(['gym_owner', 'super_admin']),
+    requireRole('gym_owner', 'super_admin'),
     SecurityController.verifyCustomDomain
 );
 
 router.delete(
     '/domain',
     authenticate,
-    requireRole(['gym_owner', 'super_admin']),
+    requireRole('gym_owner', 'super_admin'),
     SecurityController.removeCustomDomain
 );
 
 router.get(
     '/domain/status',
     authenticate,
-    requireRole(['gym_owner', 'super_admin']),
+    requireRole('gym_owner', 'super_admin'),
     SecurityController.getDomainStatus
 );
 
@@ -46,7 +46,7 @@ router.get(
     '/audit/logs',
     authenticate,
     adminIPRestriction,
-    requireRole(['super_admin', 'gym_owner', 'auditor']),
+    requireRole('super_admin', 'gym_owner', 'auditor'),
     SecurityController.getAuditLogs
 );
 
@@ -54,7 +54,7 @@ router.get(
     '/audit/statistics',
     authenticate,
     adminIPRestriction,
-    requireRole(['super_admin', 'gym_owner']),
+    requireRole('super_admin', 'gym_owner'),
     SecurityController.getAuditStatistics
 );
 
@@ -62,7 +62,7 @@ router.get(
     '/audit/export',
     authenticate,
     adminIPRestriction,
-    requireRole(['super_admin', 'gym_owner', 'auditor']),
+    requireRole('super_admin', 'gym_owner', 'auditor'),
     SecurityController.exportAuditLogs
 );
 

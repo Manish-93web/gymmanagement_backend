@@ -71,6 +71,7 @@ export class ClassService {
         trainerId?: string,
         startDate?: Date,
         endDate?: Date,
+        search?: string,
         page: number = 1,
         limit: number = 20
     ): Promise<{ classes: IClass[]; total: number }> {
@@ -80,6 +81,12 @@ export class ClassService {
         if (branchId) filter.branchId = branchId;
         if (classType) filter.classType = classType;
         if (trainerId) filter.trainerId = trainerId;
+        if (search) {
+            filter.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { description: { $regex: search, $options: 'i' } }
+            ];
+        }
         if (startDate || endDate) {
             filter['schedule.startTime'] = {};
             if (startDate) filter['schedule.startTime'].$gte = startDate;

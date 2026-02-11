@@ -60,7 +60,7 @@ export class ClassController {
     async getClasses(req: Request, res: Response, next: NextFunction) {
         try {
             const tenantId = req.user?.tenantId?.toString() || '';
-            const { branchId, type, trainerId, startDate, endDate } = req.query;
+            const { branchId, type, trainerId, startDate, endDate, search } = req.query;
 
             const classes = await ClassService.getClasses(
                 tenantId,
@@ -68,7 +68,8 @@ export class ClassController {
                 type as any,
                 trainerId as string,
                 startDate ? new Date(startDate as string) : undefined,
-                endDate ? new Date(endDate as string) : undefined
+                endDate ? new Date(endDate as string) : undefined,
+                search as string
             );
 
             return res.status(200).json({ success: true, data: classes });

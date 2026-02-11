@@ -9,25 +9,25 @@ router.use(authenticate);
 
 router.get(
     '/overview',
-    requireRole(['gym_owner', 'branch_manager']),
+    requireRole('gym_owner', 'branch_manager'),
     dashboardController.getOverview.bind(dashboardController)
 );
 
 router.get(
     '/member',
-    requireRole(['member']),
+    requireRole('member'),
     dashboardController.getMemberDashboard.bind(dashboardController)
 );
 
 router.get(
     '/member/:memberId',
-    requireRole(['gym_owner', 'branch_manager', 'staff', 'trainer']),
+    requireRole('gym_owner', 'branch_manager', 'staff', 'trainer'),
     dashboardController.getMemberDashboard.bind(dashboardController)
 );
 
 router.get(
     '/trainer',
-    requireRole(['trainer']),
+    requireRole('trainer'),
     dashboardController.getTrainerDashboard.bind(dashboardController)
 );
 

@@ -83,6 +83,7 @@ export class WorkoutService {
         muscleGroup?: string,
         difficulty?: string,
         equipment?: string,
+        search?: string,
         page: number = 1,
         limit: number = 50
     ): Promise<{ exercises: IExercise[]; total: number }> {
@@ -98,6 +99,9 @@ export class WorkoutService {
         }
         if (difficulty) filter.difficulty = difficulty;
         if (equipment) filter.equipment = equipment;
+        if (search) {
+            filter.name = { $regex: search, $options: 'i' };
+        }
 
         const [exercises, total] = await Promise.all([
             Exercise.find(filter).skip(skip).limit(limit).sort({ name: 1 }),
@@ -139,6 +143,37 @@ export class WorkoutService {
             .populate('exercises.exerciseId')
             .populate('trainerId', 'firstName lastName')
             .sort({ createdAt: -1 });
+    }
+
+    // Get all workouts (for library)
+    async getWorkouts(
+        tenantId: string,
+        category?: string,
+        level?: string,
+        search?: string,
+        page: number = 1,
+        limit: number = 20
+    ): Promise<{ workouts: IWorkout[]; total: number }> {
+        const skip = (page - 1) * limit;
+        const filter: any = { tenantId };
+
+        if (category) filter.category = category;
+        if (level) filter.level = level;
+        if (search) {
+            filter.name = { $regex: search, $options: 'i' };
+        }
+
+        const [workouts, total] = await Promise.all([
+            Workout.find(filter)
+                .skip(skip)
+                .limit(limit)
+                .sort({ createdAt: -1 })
+                .populate('exercises.exerciseId')
+                .populate('trainerId', 'firstName lastName'),
+            Workout.countDocuments(filter),
+        ]);
+
+        return { workouts, total };
     }
 
     // Update workout

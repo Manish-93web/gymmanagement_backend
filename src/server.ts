@@ -89,6 +89,10 @@ import platformRoutes from './routes/platform.routes';
 import franchiseRoutes from './routes/franchise.routes';
 import healthRoutes from './routes/health.routes';
 
+import workoutRoutes from './routes/workout.routes';
+import automationRoutes from './routes/automation.routes';
+import templateRoutes from './routes/template.routes';
+
 // Register additional routes
 app.use('/api/payments', paymentRoutes);
 app.use('/api/plans', planRoutes);
@@ -104,6 +108,10 @@ app.use('/api/security', securityRoutes);
 app.use('/api/franchise', franchiseRoutes);
 app.use('/api/platform', platformRoutes); // Layer 1: Super Admin
 app.use('/api/health', healthRoutes); // Phase 24: Health Integrations
+app.use('/api/workouts', workoutRoutes);
+app.use('/api/exercises', workoutRoutes); // Reuse for /exercises routes
+app.use('/api/automation', automationRoutes);
+app.use('/api/templates', templateRoutes);
 app.use('/api', aiCrmRoutes);
 
 // 404 handler

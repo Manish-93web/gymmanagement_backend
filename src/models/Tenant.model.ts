@@ -5,11 +5,18 @@ export interface ITenant extends Document {
     slug: string;
     domain?: string;
     logo?: string;
+    favicon?: string;
     primaryColor: string;
     secondaryColor: string;
     fontFamily: string;
+    customCss?: string;
     isActive: boolean;
     saasPlanId?: mongoose.Types.ObjectId;
+    securitySettings: {
+        twoFactorEnabled: boolean;
+        twoFactorMethod: 'email' | 'sms' | 'app';
+        ipWhitelist: string[];
+    };
     subscription: {
         plan: 'trial' | 'basic' | 'pro' | 'enterprise';
         status: 'active' | 'inactive' | 'suspended' | 'cancelled';
@@ -50,6 +57,30 @@ export interface ITenant extends Document {
         openaiApiKey?: string;
         zoomApiKey?: string;
         zoomApiSecret?: string;
+        email: {
+            provider: 'smtp' | 'sendgrid' | 'mailgun';
+            host?: string;
+            port?: number;
+            username?: string;
+            password?: string;
+            fromName?: string;
+            fromEmail?: string;
+            active: boolean;
+        };
+        sms: {
+            provider: 'twilio' | 'msg91';
+            accountSid?: string;
+            authToken?: string;
+            fromNumber?: string;
+            active: boolean;
+        };
+        whatsapp: {
+            provider: 'twilio' | 'official';
+            accountSid?: string;
+            authToken?: string;
+            fromNumber?: string;
+            active: boolean;
+        };
     };
     contactInfo: {
         email: string;
@@ -70,11 +101,18 @@ const TenantSchema: Schema = new Schema(
         slug: { type: String, required: true, unique: true, lowercase: true },
         domain: { type: String, unique: true, sparse: true },
         logo: { type: String },
+        favicon: { type: String },
         primaryColor: { type: String, default: '#6366f1' },
         secondaryColor: { type: String, default: '#8b5cf6' },
         fontFamily: { type: String, default: 'Inter' },
+        customCss: { type: String },
         isActive: { type: Boolean, default: true },
         saasPlanId: { type: Schema.Types.ObjectId, ref: 'SaaSPlan' },
+        securitySettings: {
+            twoFactorEnabled: { type: Boolean, default: false },
+            twoFactorMethod: { type: String, enum: ['email', 'sms', 'app'], default: 'email' },
+            ipWhitelist: [{ type: String }],
+        },
         subscription: {
             plan: {
                 type: String,
@@ -133,6 +171,30 @@ const TenantSchema: Schema = new Schema(
             openaiApiKey: { type: String },
             zoomApiKey: { type: String },
             zoomApiSecret: { type: String },
+            email: {
+                provider: { type: String, enum: ['smtp', 'sendgrid', 'mailgun'], default: 'smtp' },
+                host: { type: String },
+                port: { type: Number },
+                username: { type: String },
+                password: { type: String },
+                fromName: { type: String },
+                fromEmail: { type: String },
+                active: { type: Boolean, default: false },
+            },
+            sms: {
+                provider: { type: String, enum: ['twilio', 'msg91'], default: 'twilio' },
+                accountSid: { type: String },
+                authToken: { type: String },
+                fromNumber: { type: String },
+                active: { type: Boolean, default: false },
+            },
+            whatsapp: {
+                provider: { type: String, enum: ['twilio', 'official'], default: 'twilio' },
+                accountSid: { type: String },
+                authToken: { type: String },
+                fromNumber: { type: String },
+                active: { type: Boolean, default: false },
+            },
         },
         contactInfo: {
             email: { type: String, required: true },
