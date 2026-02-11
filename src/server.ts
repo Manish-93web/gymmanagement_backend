@@ -86,6 +86,7 @@ import notificationRoutes from './routes/notification.routes';
 import dashboardRoutes from './routes/dashboard.routes';
 import securityRoutes from './routes/security.routes';
 import platformRoutes from './routes/platform.routes';
+import franchiseRoutes from './routes/franchise.routes';
 import healthRoutes from './routes/health.routes';
 
 // Register additional routes
@@ -144,6 +145,9 @@ const startServer = async () => {
         httpServer.listen(PORT, () => {
             console.log(`🚀 Server running on port ${PORT} in ${config.env} mode`);
             console.log(`🔌 WebSocket server ready`);
+        }).on('error', (err) => {
+            console.error('❌ Server failed to start:', err);
+            process.exit(1);
         });
     } catch (error) {
         console.error('❌ Failed to start server:', error);

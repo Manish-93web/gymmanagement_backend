@@ -1,11 +1,10 @@
 import { Router } from 'express';
 import FranchiseController from '../controllers/franchise.controller';
-import { protect, authorize } from '../middleware/auth.middleware';
+import { authenticate } from '../middleware/auth.middleware';
 
 const router = Router();
 
-router.use(protect);
-router.use(authorize('admin', 'super-admin'));
+router.use(authenticate);
 
 router.get('/comparison', FranchiseController.getBranchComparison);
 router.get('/rankings', FranchiseController.getPerformanceRanking);

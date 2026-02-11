@@ -12,6 +12,10 @@ export interface IMember extends Document {
     tenantId: mongoose.Types.ObjectId;
     branchId: mongoose.Types.ObjectId;
     userId: mongoose.Types.ObjectId;
+    firstName: string;
+    lastName: string;
+    email: string;
+    mobile: string;
     membershipNumber: string;
     status: MemberStatus;
     statusHistory: {
@@ -24,10 +28,10 @@ export interface IMember extends Document {
         dateOfBirth: Date;
         gender: 'male' | 'female' | 'other';
         bloodGroup?: string;
-        emergencyContact: {
-            name: string;
-            relationship: string;
-            phone: string;
+        emergencyContact?: {
+            name?: string;
+            relationship?: string;
+            phone?: string;
         };
     };
     healthInfo: {
@@ -102,6 +106,10 @@ const MemberSchema: Schema = new Schema(
         tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
         branchId: { type: Schema.Types.ObjectId, ref: 'Branch', required: true, index: true },
         userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+        firstName: { type: String, required: true, trim: true },
+        lastName: { type: String, required: true, trim: true },
+        email: { type: String, required: true, lowercase: true, trim: true },
+        mobile: { type: String, required: true, trim: true },
         membershipNumber: { type: String, required: true, unique: true },
         status: {
             type: String,
@@ -126,9 +134,9 @@ const MemberSchema: Schema = new Schema(
             gender: { type: String, enum: ['male', 'female', 'other'], required: true },
             bloodGroup: { type: String },
             emergencyContact: {
-                name: { type: String, required: true },
-                relationship: { type: String, required: true },
-                phone: { type: String, required: true },
+                name: { type: String },
+                relationship: { type: String },
+                phone: { type: String },
             },
         },
         healthInfo: {

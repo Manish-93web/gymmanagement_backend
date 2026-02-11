@@ -1,6 +1,5 @@
 import { Request, Response } from 'express';
 import HealthData from '../models/HealthData.model';
-import { startOfWeek, endOfWeek, subDays } from 'date-fns';
 
 /**
  * Sync Health Data (Bulk Upsert)

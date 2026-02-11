@@ -1,4 +1,5 @@
 import Member, { IMember, MemberStatus } from '../models/Member.model';
+import User from '../models/User.model';
 import { generateMembershipNumber, generateReferralCode } from '../utils/helpers.utils';
 import mongoose from 'mongoose';
 
@@ -9,20 +10,22 @@ export interface CreateMemberDTO {
     lastName: string;
     email: string;
     mobile: string;
-    dateOfBirth?: Date;
-    gender?: 'male' | 'female' | 'other';
-    bloodGroup?: string;
+    personalInfo: {
+        dateOfBirth: Date;
+        gender: 'male' | 'female' | 'other';
+        bloodGroup?: string;
+        emergencyContact?: {
+            name?: string;
+            relationship?: string;
+            phone?: string;
+        };
+    };
     address?: {
         street: string;
         city: string;
         state: string;
         country: string;
         zipCode: string;
-    };
-    emergencyContact?: {
-        name: string;
-        relationship: string;
-        mobile: string;
     };
     goals?: string[];
     referredBy?: string;
@@ -59,6 +62,20 @@ export interface AddMeasurementDTO {
 }
 
 export class MemberService {
+    // Helper to repair/populate missing fields from User identity
+    private _repairMemberFields(member: any): any {
+        if (!member) return null;
+        const memberObj = member.toObject ? member.toObject() : member;
+
+        if (memberObj.userId && (typeof memberObj.userId === 'object')) {
+            memberObj.firstName = memberObj.firstName || memberObj.userId.firstName;
+            memberObj.lastName = memberObj.lastName || memberObj.userId.lastName;
+            memberObj.email = memberObj.email || memberObj.userId.email;
+            memberObj.mobile = memberObj.mobile || memberObj.userId.mobile;
+        }
+        return memberObj;
+    }
+
     // Create new member
     async createMember(data: CreateMemberDTO): Promise<IMember> {
         // Check if member already exists
@@ -75,42 +92,72 @@ export class MemberService {
         const membershipNumber = generateMembershipNumber(data.tenantId, data.branchId);
         const referralCode = generateReferralCode(membershipNumber);
 
-        // Create member
-        const member = await Member.create({
-            ...data,
-            membershipNumber,
-            status: 'lead',
-            statusHistory: [{
-                status: 'lead',
-                changedAt: new Date(),
-                reason: 'Initial registration',
-            }],
-            referral: {
-                code: referralCode,
-                referredBy: data.referredBy,
-            },
+        // 1. Create User account for the member
+        const user = await User.create({
+            tenantId: data.tenantId,
+            branchId: data.branchId,
+            role: 'member',
+            email: data.email.toLowerCase(),
+            mobile: data.mobile,
+            password: 'Welcome@123', // Initial password, should be changed on first login
+            firstName: data.firstName,
+            lastName: data.lastName,
+            isActive: true,
         });
 
-        return member;
+        // 2. Create member
+        const member = await Member.create({
+            tenantId: data.tenantId,
+            branchId: data.branchId,
+            userId: user._id,
+            firstName: data.firstName,
+            lastName: data.lastName,
+            email: data.email.toLowerCase(),
+            mobile: data.mobile,
+            membershipNumber,
+            status: 'active', // Default to active for new registrations
+            personalInfo: data.personalInfo,
+            address: data.address,
+            goals: data.goals,
+            referralCode,
+            referredBy: data.referredBy ? new mongoose.Types.ObjectId(data.referredBy) : undefined,
+            statusHistory: [{
+                status: 'active',
+                changedAt: new Date(),
+                reason: 'Initial registration',
+            }]
+        });
+
+        // 3. Return member with identity fields (for immediate UI update)
+        const memberObj = member.toObject();
+        memberObj.firstName = data.firstName;
+        memberObj.lastName = data.lastName;
+        memberObj.email = data.email;
+        memberObj.mobile = data.mobile;
+
+        return memberObj as any;
     }
 
     // Get member by ID
     async getMemberById(memberId: string, tenantId: string): Promise<IMember | null> {
-        return await Member.findOne({ _id: memberId, tenantId });
+        const member = await Member.findOne({ _id: memberId, tenantId }).populate('userId');
+        return this._repairMemberFields(member);
     }
 
     // Get member by membership number
     async getMemberByNumber(membershipNumber: string, tenantId: string): Promise<IMember | null> {
-        return await Member.findOne({ membershipNumber, tenantId });
+        const member = await Member.findOne({ membershipNumber, tenantId }).populate('userId');
+        return this._repairMemberFields(member);
     }
 
     // Update member
     async updateMember(memberId: string, tenantId: string, data: UpdateMemberDTO): Promise<IMember | null> {
-        return await Member.findOneAndUpdate(
+        const member = await Member.findOneAndUpdate(
             { _id: memberId, tenantId },
             { $set: data },
             { new: true, runValidators: true }
-        );
+        ).populate('userId');
+        return this._repairMemberFields(member);
     }
 
     // Change member status
@@ -236,11 +283,18 @@ export class MemberService {
         }
 
         const [members, total] = await Promise.all([
-            Member.find(filter).skip(skip).limit(limit).sort({ createdAt: -1 }),
+            Member.find(filter)
+                .populate('userId')
+                .skip(skip)
+                .limit(limit)
+                .sort({ createdAt: -1 }),
             Member.countDocuments(filter),
         ]);
 
-        return { members, total };
+        // Fallback for names/contact if not present on member document (legacy data)
+        const repairedMembers = members.map((member: any) => this._repairMemberFields(member));
+
+        return { members: repairedMembers, total };
     }
 
     // Get member statistics

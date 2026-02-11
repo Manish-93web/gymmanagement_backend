@@ -9,20 +9,22 @@ const createMemberSchema = z.object({
     lastName: z.string().min(1),
     email: z.string().email(),
     mobile: z.string().min(10).max(15),
-    dateOfBirth: z.string().optional().transform(val => val ? new Date(val) : undefined),
-    gender: z.enum(['male', 'female', 'other']).optional(),
-    bloodGroup: z.string().optional(),
+    personalInfo: z.object({
+        dateOfBirth: z.string().transform(val => new Date(val)),
+        gender: z.enum(['male', 'female', 'other']),
+        bloodGroup: z.string().optional(),
+        emergencyContact: z.object({
+            name: z.string().optional(),
+            relationship: z.string().optional(),
+            phone: z.string().optional(),
+        }).optional(),
+    }),
     address: z.object({
         street: z.string(),
         city: z.string(),
         state: z.string(),
         country: z.string(),
         zipCode: z.string(),
-    }).optional(),
-    emergencyContact: z.object({
-        name: z.string(),
-        relationship: z.string(),
-        mobile: z.string(),
     }).optional(),
     goals: z.array(z.string()).optional(),
     referredBy: z.string().optional(),
@@ -73,7 +75,7 @@ export class MemberController {
             res.status(201).json({
                 status: 'success',
                 message: 'Member created successfully',
-                data: { member },
+                data: member,
             });
         } catch (error: any) {
             res.status(400).json({
@@ -108,7 +110,7 @@ export class MemberController {
 
             res.status(200).json({
                 status: 'success',
-                data: { member },
+                data: member,
             });
         } catch (error: any) {
             res.status(400).json({
@@ -146,7 +148,7 @@ export class MemberController {
             res.status(200).json({
                 status: 'success',
                 message: 'Member updated successfully',
-                data: { member },
+                data: member,
             });
         } catch (error: any) {
             res.status(400).json({
