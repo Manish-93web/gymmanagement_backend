@@ -66,6 +66,90 @@ export class PricingService {
             suggestions: suggestedPlans
         };
     }
+
+    async calculateFinalPrice(params: {
+        planId: string;
+        tenantId: string;
+        memberId?: string;
+        couponCode?: string;
+        durationValue?: number;
+        familyMemberCount?: number;
+        addOnIds?: string[];
+    }): Promise<any> {
+        const plan = await MembershipPlan.findOne({ _id: params.planId, tenantId: params.tenantId });
+        if (!plan) throw new Error('Plan not found');
+
+        let basePrice = plan.pricing.basePrice;
+
+        // 1. Tiered Pricing Logic
+        if (params.durationValue && plan.pricing.pricingTiers && plan.pricing.pricingTiers.length > 0) {
+            const tier = plan.pricing.pricingTiers.find(t => t.durationValue === params.durationValue);
+            if (tier) {
+                basePrice = tier.price;
+            }
+        }
+
+        // 2. Family Plan Logic
+        if (plan.isFamilyPlan && params.familyMemberCount && params.familyMemberCount > 1) {
+            const extraMembers = params.familyMemberCount - 1;
+            // Apply family discount if defined (e.g. 10% off total for family)
+            if (plan.familyDiscount) {
+                basePrice = basePrice * (1 - (plan.familyDiscount / 100));
+                // Optional: add a surcharge per member if that's the model
+            }
+        }
+
+        // 3. Add-ons Calculation
+        let addonsTotal = 0;
+        if (params.addOnIds && params.addOnIds.length > 0) {
+            params.addOnIds.forEach(id => {
+                const addon = plan.addOns.find(a => a._id?.toString() === id);
+                if (addon) {
+                    addonsTotal += addon.price;
+                }
+            });
+        }
+
+        let subtotal = basePrice + addonsTotal;
+
+        // 4. Coupon Integration
+        let discountAmount = 0;
+        let couponInfo = null;
+
+        if (params.couponCode && params.memberId) {
+            try {
+                // Circular dependency check: dynamically import or use global
+                const couponService = (await import('./coupon-referral.service')).default;
+                const couponResult = await couponService.validateCoupon(
+                    params.couponCode,
+                    params.memberId,
+                    params.planId,
+                    subtotal
+                );
+                discountAmount = couponResult.discount;
+                couponInfo = couponResult.coupon;
+                subtotal = couponResult.finalAmount;
+            } catch (error: any) {
+                console.warn('Coupon validation failed:', error.message);
+            }
+        }
+
+        // 5. Tax Calculation
+        const taxRate = plan.pricing.taxRate || 0;
+        const taxAmount = (subtotal * taxRate) / 100;
+        const finalPrice = subtotal + taxAmount;
+
+        return {
+            basePrice,
+            addonsTotal,
+            subtotal: basePrice + addonsTotal,
+            discountAmount,
+            couponInfo,
+            taxAmount,
+            finalPrice: Math.round(finalPrice),
+            currency: 'INR',
+        };
+    }
 }
 
 export default new PricingService();

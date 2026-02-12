@@ -16,7 +16,12 @@ export interface IMembershipPlan extends Document {
         taxRate: number;
         discountPercent: number;
         finalPrice: number;
+        pricingTiers?: {
+            durationValue: number;
+            price: number;
+        }[];
     };
+    referralBonus?: number;
     sessions?: {
         totalSessions: number;
         sessionsPerWeek?: number;
@@ -73,7 +78,14 @@ const MembershipPlanSchema: Schema = new Schema(
             taxRate: { type: Number, default: 0 },
             discountPercent: { type: Number, default: 0 },
             finalPrice: { type: Number, required: true },
+            pricingTiers: [
+                {
+                    durationValue: { type: Number },
+                    price: { type: Number },
+                },
+            ],
         },
+        referralBonus: { type: Number, default: 0 },
         sessions: {
             totalSessions: { type: Number },
             sessionsPerWeek: { type: Number },

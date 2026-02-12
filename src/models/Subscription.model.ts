@@ -18,7 +18,9 @@ export interface ISubscription extends Document {
         addOnsTotal: number;
         totalAmount: number;
         proRataAmount?: number;
+        proRataCredit?: number;
     };
+    familyMembers?: mongoose.Types.ObjectId[];
     addOns: {
         name: string;
         price: number;
@@ -80,7 +82,9 @@ const SubscriptionSchema: Schema = new Schema(
             addOnsTotal: { type: Number, default: 0 },
             totalAmount: { type: Number, required: true },
             proRataAmount: { type: Number },
+            proRataCredit: { type: Number, default: 0 },
         },
+        familyMembers: [{ type: Schema.Types.ObjectId, ref: 'User' }],
         addOns: [
             {
                 name: { type: String, required: true },

@@ -64,4 +64,11 @@ router.get(
     paymentController.getPayments.bind(paymentController)
 );
 
+// Checkout endpoint
+router.post(
+    '/checkout',
+    requireAnyRole('gym_owner', 'branch_manager', 'staff', 'member', 'accountant'),
+    paymentController.getCheckoutDetails.bind(paymentController)
+);
+
 export default router;

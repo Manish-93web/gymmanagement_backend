@@ -17,6 +17,7 @@ class BullMQAutomationService {
     private birthdayQueue: Bull.Queue;
     private reportQueue: Bull.Queue;
     private backupQueue: Bull.Queue;
+    private renewalQueue: Bull.Queue;
 
     constructor() {
         // Initialize queues
@@ -45,6 +46,14 @@ class BullMQAutomationService {
         });
 
         this.backupQueue = new Bull('database-backup', {
+            redis: {
+                host: process.env.REDIS_HOST || 'localhost',
+                port: parseInt(process.env.REDIS_PORT || '6379'),
+                password: process.env.REDIS_PASSWORD,
+            },
+        });
+
+        this.renewalQueue = new Bull('subscription-renewal', {
             redis: {
                 host: process.env.REDIS_HOST || 'localhost',
                 port: parseInt(process.env.REDIS_PORT || '6379'),
@@ -83,6 +92,12 @@ class BullMQAutomationService {
             await this.processBackup();
         });
 
+        // Renewal processor
+        this.renewalQueue.process(async (job) => {
+            const { tenantId } = job.data;
+            await this.processAutoRenewals(tenantId);
+        });
+
         logger.info('BullMQ processors initialized');
     }
 
@@ -116,6 +131,16 @@ class BullMQAutomationService {
             {
                 repeat: {
                     cron: '0 2 * * *',
+                },
+            }
+        );
+
+        // Subscription renewals daily at midnight
+        this.renewalQueue.add(
+            {},
+            {
+                repeat: {
+                    cron: '0 0 * * *',
                 },
             }
         );
@@ -185,6 +210,36 @@ class BullMQAutomationService {
     private async processBackup() {
         // Implementation would call BackupService
         logger.info('Database backup processed');
+    }
+
+    /**
+     * Process auto-renewals
+     */
+    private async processAutoRenewals(tenantId: string) {
+        const Subscription = (await import('../models/Subscription.model')).default;
+        const planService = (await import('./plan.service')).default;
+
+        const now = new Date();
+        const startOfDay = new Date(now.setHours(0, 0, 0, 0));
+        const endOfDay = new Date(now.setHours(23, 59, 59, 999));
+
+        const expiringSubscriptions = await Subscription.find({
+            tenantId,
+            autoRenew: true,
+            status: 'active',
+            endDate: { $gte: startOfDay, $lte: endOfDay }
+        });
+
+        for (const sub of expiringSubscriptions) {
+            try {
+                // In a real scenario, this would trigger a payment gateway charge
+                // For this engine, we renew and create a pending payment
+                await planService.renewSubscription(sub._id.toString(), tenantId);
+                logger.info('Auto-renewal successful', { subscriptionId: sub._id });
+            } catch (error: any) {
+                logger.error('Auto-renewal failed', { subscriptionId: sub._id, error: error.message });
+            }
+        }
     }
 
     /**

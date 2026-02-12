@@ -39,6 +39,7 @@ export interface IUser extends Document {
     };
     lastLogin?: Date;
     lastPasswordChange?: Date;
+    themePreference: 'light' | 'dark' | 'system';
     refreshTokens: string[];
     createdAt: Date;
     updatedAt: Date;
@@ -90,6 +91,11 @@ const UserSchema: Schema = new Schema(
         },
         lastLogin: { type: Date },
         lastPasswordChange: { type: Date },
+        themePreference: {
+            type: String,
+            enum: ['light', 'dark', 'system'],
+            default: 'dark',
+        },
         refreshTokens: [{ type: String, select: false }],
     },
     { timestamps: true }

@@ -4,12 +4,16 @@ export interface ITenant extends Document {
     name: string;
     slug: string;
     domain?: string;
-    logo?: string;
-    favicon?: string;
-    primaryColor: string;
-    secondaryColor: string;
-    fontFamily: string;
-    customCss?: string;
+    branding: {
+        logo?: string;
+        favicon?: string;
+        primaryColor: string;
+        secondaryColor: string;
+        fontFamily: string;
+        customCss?: string;
+        customDomain?: string;
+        domainStatus?: 'pending' | 'verified' | 'failed';
+    };
     isActive: boolean;
     saasPlanId?: mongoose.Types.ObjectId;
     securitySettings: {
@@ -100,12 +104,14 @@ const TenantSchema: Schema = new Schema(
         name: { type: String, required: true },
         slug: { type: String, required: true, unique: true, lowercase: true },
         domain: { type: String, unique: true, sparse: true },
-        logo: { type: String },
-        favicon: { type: String },
-        primaryColor: { type: String, default: '#6366f1' },
-        secondaryColor: { type: String, default: '#8b5cf6' },
-        fontFamily: { type: String, default: 'Inter' },
-        customCss: { type: String },
+        branding: {
+            logo: { type: String },
+            favicon: { type: String },
+            primaryColor: { type: String, default: '#6366f1' },
+            secondaryColor: { type: String, default: '#8b5cf6' },
+            fontFamily: { type: String, default: 'Inter' },
+            customCss: { type: String },
+        },
         isActive: { type: Boolean, default: true },
         saasPlanId: { type: Schema.Types.ObjectId, ref: 'SaaSPlan' },
         securitySettings: {

@@ -28,7 +28,9 @@ const updateTenantSchema = z.object({
         logo: z.string().optional(),
         primaryColor: z.string().optional(),
         secondaryColor: z.string().optional(),
-        fontFamily: z.string().optional(),
+        customCss: z.string().optional(),
+        customDomain: z.string().optional(),
+        domainStatus: z.enum(['pending', 'verified', 'failed']).optional(),
     }).optional(),
     features: z.object({
         aiEnabled: z.boolean().optional(),

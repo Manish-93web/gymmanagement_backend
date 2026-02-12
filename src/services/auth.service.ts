@@ -1,4 +1,5 @@
 import User, { IUser } from '../models/User.model';
+import Tenant from '../models/Tenant.model';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt.utils';
 import { generateOTP, storeOTP, verifyOTP } from '../utils/otp.utils';
 
@@ -26,7 +27,7 @@ export interface OTPLoginDTO {
 
 export class AuthService {
     // Register new user
-    async register(data: RegisterDTO): Promise<{ user: IUser; accessToken: string; refreshToken: string }> {
+    async register(data: RegisterDTO): Promise<{ user: IUser; tenant?: any; accessToken: string; refreshToken: string }> {
         // Check if user already exists
         const existingUser = await User.findOne({
             $or: [{ email: data.email }, { mobile: data.mobile }],
@@ -58,11 +59,12 @@ export class AuthService {
         user.refreshTokens.push(refreshToken);
         await user.save();
 
-        return { user, accessToken, refreshToken };
+        const tenant = await Tenant.findById(user.tenantId);
+        return { user, tenant, accessToken, refreshToken };
     }
 
     // Login with email/mobile and password
-    async login(data: LoginDTO, deviceInfo: any): Promise<{ user: IUser; accessToken: string; refreshToken: string }> {
+    async login(data: LoginDTO, deviceInfo: any): Promise<{ user: IUser; tenant?: any; accessToken: string; refreshToken: string }> {
         // Normalize identifier
         const identifier = data.identifier.trim();
         const isEmail = identifier.includes('@');
@@ -156,7 +158,8 @@ export class AuthService {
             }
         );
 
-        return { user, accessToken, refreshToken };
+        const tenant = await Tenant.findById(user.tenantId);
+        return { user, tenant, accessToken, refreshToken };
     }
 
 
@@ -193,7 +196,7 @@ export class AuthService {
     }
 
     // Login with OTP
-    async loginWithOTP(data: OTPLoginDTO, deviceInfo: any): Promise<{ user: IUser; accessToken: string; refreshToken: string }> {
+    async loginWithOTP(data: OTPLoginDTO, deviceInfo: any): Promise<{ user: IUser; tenant?: any; accessToken: string; refreshToken: string }> {
         // Verify OTP
         const isValid = await verifyOTP(data.identifier, data.otp, data.type);
 
@@ -266,7 +269,8 @@ export class AuthService {
             }
         );
 
-        return { user, accessToken, refreshToken };
+        const tenant = await Tenant.findById(user.tenantId);
+        return { user, tenant, accessToken, refreshToken };
     }
 
     // Refresh access token

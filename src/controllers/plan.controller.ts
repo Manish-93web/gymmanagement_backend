@@ -13,14 +13,24 @@ const createPlanSchema = z.object({
     }).optional(),
     sessions: z.object({
         total: z.number().positive(),
-        validity: z.number().positive(),
+        perWeek: z.number().positive(),
+        validityDays: z.number().positive(),
     }).optional(),
     pricing: z.object({
         basePrice: z.number().positive(),
         tax: z.number().min(0),
         discount: z.number().min(0).optional(),
     }),
-    features: z.array(z.string()).optional(),
+    features: z.object({
+        gymAccess: z.boolean().default(false),
+        groupClasses: z.boolean().default(false),
+        personalTraining: z.boolean().default(false),
+        onlineClasses: z.boolean().default(false),
+        dietPlan: z.boolean().default(false),
+        locker: z.boolean().default(false),
+        freeze: z.boolean().default(false),
+        branchTransfer: z.boolean().default(false),
+    }).optional(),
 });
 
 const createSubscriptionSchema = z.object({
@@ -39,7 +49,27 @@ export class PlanController {
             const branchId = req.user!.branchId?.toString();
 
             const plan = await PlanService.createPlan({
-                ...validatedData,
+                name: validatedData.name,
+                description: validatedData.description,
+                planType: validatedData.type,
+                duration: validatedData.duration,
+                sessions: validatedData.sessions,
+                pricing: {
+                    basePrice: validatedData.pricing.basePrice,
+                    tax: validatedData.pricing.tax,
+                    discount: validatedData.pricing.discount || 0,
+                    finalPrice: 0, // Calculated by service
+                },
+                features: validatedData.features || {
+                    gymAccess: false,
+                    groupClasses: false,
+                    personalTraining: false,
+                    onlineClasses: false,
+                    dietPlan: false,
+                    locker: false,
+                    freeze: false,
+                    branchTransfer: false,
+                },
                 tenantId,
                 branchId: branchId || '',
             });
@@ -142,10 +172,12 @@ export class PlanController {
             const branchId = req.user!.branchId?.toString();
 
             const subscription = await PlanService.createSubscription({
-                ...validatedData,
+                memberId: validatedData.memberId,
+                planId: validatedData.planId,
                 tenantId,
                 branchId: branchId || '',
                 startDate: validatedData.startDate ? new Date(validatedData.startDate) : new Date(),
+                autoRenew: validatedData.autoRenew || false,
             });
 
             res.status(201).json({
@@ -166,9 +198,9 @@ export class PlanController {
 
             const subscription = await PlanService.freezeSubscription(
                 subscriptionId,
+                tenantId,
                 days,
-                reason,
-                tenantId
+                reason
             );
 
             res.status(200).json({
@@ -208,8 +240,8 @@ export class PlanController {
 
             const subscription = await PlanService.cancelSubscription(
                 subscriptionId,
-                reason,
                 tenantId,
+                reason,
                 refundAmount
             );
 

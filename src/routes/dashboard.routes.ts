@@ -31,4 +31,9 @@ router.get(
     dashboardController.getTrainerDashboard.bind(dashboardController)
 );
 
+router.get(
+    '/data',
+    dashboardController.getDashboardData.bind(dashboardController)
+);
+
 export default router;

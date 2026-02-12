@@ -6,7 +6,7 @@ import PaymentService from '../services/payment.service';
 const createPaymentSchema = z.object({
     memberId: z.string(),
     subscriptionId: z.string().optional(),
-    paymentType: z.enum(['subscription', 'renewal', 'add_on', 'pos', 'penalty']),
+    paymentType: z.enum(['subscription', 'renewal', 'addon', 'pos', 'penalty']),
     amount: z.number().positive(),
     taxAmount: z.number().min(0).optional(),
     discount: z.number().min(0).optional(),
@@ -24,6 +24,15 @@ const refundSchema = z.object({
     amount: z.number().positive().optional(),
 });
 
+const checkoutSchema = z.object({
+    planId: z.string(),
+    couponCode: z.string().optional(),
+    durationValue: z.number().optional(),
+    familyMemberCount: z.number().optional(),
+    addOnIds: z.array(z.string()).optional(),
+    applyProRata: z.boolean().optional(),
+});
+
 export class PaymentController {
     // Create payment
     async createPayment(req: Request, res: Response, next: NextFunction) {
@@ -34,6 +43,7 @@ export class PaymentController {
 
             const payment = await PaymentService.createPayment({
                 ...validatedData,
+                paymentType: validatedData.paymentType === 'addon' ? 'addon' : validatedData.paymentType as any,
                 tenantId,
                 branchId: branchId || '',
             });
@@ -53,7 +63,12 @@ export class PaymentController {
             const { paymentId } = req.params;
             const tenantId = req.user!.tenantId.toString();
 
-            const order = await PaymentService.createRazorpayOrder(paymentId, tenantId);
+            const payment = await PaymentService.getPaymentById(paymentId, tenantId);
+            if (!payment) {
+                return res.status(404).json({ success: false, message: 'Payment not found' });
+            }
+
+            const order = await PaymentService.createRazorpayOrder(payment.amount.total);
 
             res.status(200).json({
                 success: true,
@@ -70,7 +85,12 @@ export class PaymentController {
             const { paymentId } = req.params;
             const tenantId = req.user!.tenantId.toString();
 
-            const intent = await PaymentService.createStripePaymentIntent(paymentId, tenantId);
+            const payment = await PaymentService.getPaymentById(paymentId, tenantId);
+            if (!payment) {
+                return res.status(404).json({ success: false, message: 'Payment not found' });
+            }
+
+            const intent = await PaymentService.createStripePaymentIntent(payment.amount.total);
 
             res.status(200).json({
                 success: true,
@@ -88,12 +108,17 @@ export class PaymentController {
             const validatedData = processPaymentSchema.parse(req.body);
             const tenantId = req.user!.tenantId.toString();
 
-            const payment = await PaymentService.processPayment(
+            const paymentDetails = await PaymentService.getPaymentById(paymentId, tenantId);
+            if (!paymentDetails) {
+                return res.status(404).json({ success: false, message: 'Payment not found' });
+            }
+
+            const payment = await PaymentService.processPayment({
                 paymentId,
-                validatedData.gatewayPaymentId,
-                validatedData.gatewayOrderId,
-                tenantId
-            );
+                gateway: paymentDetails.method === 'razorpay' ? 'razorpay' : 'stripe',
+                gatewayPaymentId: validatedData.gatewayPaymentId,
+                gatewayOrderId: validatedData.gatewayOrderId,
+            });
 
             res.status(200).json({
                 success: true,
@@ -114,9 +139,8 @@ export class PaymentController {
 
             const payment = await PaymentService.processRefund(
                 paymentId,
-                validatedData.reason,
-                tenantId,
-                validatedData.amount
+                validatedData.amount || 0,
+                validatedData.reason
             );
 
             res.status(200).json({
@@ -144,7 +168,7 @@ export class PaymentController {
                 });
             }
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
                 data: payment,
             });
@@ -186,6 +210,45 @@ export class PaymentController {
             res.status(200).json({
                 success: true,
                 data: stats,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+    // Get checkout details (pricing breakdown)
+    async getCheckoutDetails(req: Request, res: Response, next: NextFunction) {
+        try {
+            const validatedData = checkoutSchema.parse(req.body);
+            const tenantId = req.user!.tenantId.toString();
+            const memberId = req.user!.role === 'member' ? req.user!._id.toString() : req.body.memberId;
+
+            const pricingService = (await import('../services/pricing.service')).default;
+            const planService = (await import('../services/plan.service')).default;
+
+            const checkoutDetails = await pricingService.calculateFinalPrice({
+                ...validatedData,
+                tenantId,
+                memberId: memberId || req.user!._id.toString(),
+            });
+
+            // Calculate pro-rata if requested and member has active sub
+            if (validatedData.applyProRata && memberId) {
+                const activeSub = await (await import('../models/Subscription.model')).default.findOne({
+                    memberId,
+                    tenantId,
+                    status: 'active'
+                });
+
+                if (activeSub) {
+                    const proRataCredit = await planService.calculateProRata(activeSub._id.toString(), tenantId);
+                    checkoutDetails.proRataCredit = proRataCredit;
+                    checkoutDetails.finalPrice = Math.max(0, checkoutDetails.finalPrice - proRataCredit);
+                }
+            }
+
+            res.status(200).json({
+                success: true,
+                data: checkoutDetails,
             });
         } catch (error) {
             next(error);

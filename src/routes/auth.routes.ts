@@ -16,5 +16,6 @@ router.post('/refresh-token', authController.refreshToken.bind(authController));
 router.post('/logout', authenticate, authController.logout.bind(authController));
 router.post('/logout-all', authenticate, authController.logoutAll.bind(authController));
 router.get('/me', authenticate, authController.getCurrentUser.bind(authController));
+router.patch('/theme', authenticate, authController.updateThemePreference.bind(authController));
 
 export default router;

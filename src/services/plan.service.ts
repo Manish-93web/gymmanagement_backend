@@ -284,6 +284,25 @@ export class PlanService {
             { new: true }
         );
     }
+
+    // Calculate Pro-Rata Credit
+    async calculateProRata(subscriptionId: string, tenantId: string): Promise<number> {
+        const subscription = await Subscription.findOne({ _id: subscriptionId, tenantId });
+        if (!subscription) return 0;
+
+        const now = new Date();
+        if (now >= subscription.endDate || subscription.status !== 'active') return 0;
+
+        const totalDuration = subscription.endDate.getTime() - subscription.startDate.getTime();
+        const remainingDuration = subscription.endDate.getTime() - now.getTime();
+
+        if (totalDuration <= 0) return 0;
+
+        const proportion = remainingDuration / totalDuration;
+        const credit = subscription.pricing.totalAmount * proportion;
+
+        return Math.floor(credit);
+    }
 }
 
 export default new PlanService();

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 
 import authService from '../services/auth.service';
+import Tenant from '../models/Tenant.model';
 import { z } from 'zod';
 
 // Validation schemas
@@ -54,7 +55,9 @@ export class AuthController {
                         firstName: result.user.firstName,
                         lastName: result.user.lastName,
                         role: result.user.role,
+                        themePreference: result.user.themePreference,
                     },
+                    tenant: result.tenant,
                     accessToken: result.accessToken,
                     refreshToken: result.refreshToken,
                 },
@@ -94,7 +97,9 @@ export class AuthController {
                         role: result.user.role,
                         tenantId: result.user.tenantId,
                         branchId: result.user.branchId,
+                        themePreference: result.user.themePreference,
                     },
+                    tenant: result.tenant,
                     accessToken: result.accessToken,
                     refreshToken: result.refreshToken,
                 },
@@ -153,7 +158,9 @@ export class AuthController {
                         role: result.user.role,
                         tenantId: result.user.tenantId,
                         branchId: result.user.branchId,
+                        themePreference: result.user.themePreference,
                     },
+                    tenant: result.tenant,
                     accessToken: result.accessToken,
                     refreshToken: result.refreshToken,
                 },
@@ -248,11 +255,10 @@ export class AuthController {
                         lastName: req.user.lastName,
                         role: req.user.role,
                         tenantId: req.user.tenantId,
-                        branchId: req.user.branchId,
-                        avatar: req.user.avatar,
-                        isEmailVerified: req.user.isEmailVerified,
                         isMobileVerified: req.user.isMobileVerified,
+                        themePreference: req.user.themePreference,
                     },
+                    tenant: await Tenant.findById(req.user.tenantId),
                 },
             });
         } catch (error: any) {
@@ -260,6 +266,29 @@ export class AuthController {
                 status: 'error',
                 message: error.message || 'Failed to get user',
             });
+        }
+    }
+
+    // Update theme preference
+    async updateThemePreference(req: Request, res: Response): Promise<void> {
+        try {
+            if (!req.user) {
+                res.status(401).json({ status: 'error', message: 'Not authenticated' });
+                return;
+            }
+
+            const { theme } = z.object({ theme: z.enum(['light', 'dark', 'system']) }).parse(req.body);
+
+            req.user.themePreference = theme;
+            await req.user.save();
+
+            res.status(200).json({
+                status: 'success',
+                message: 'Theme preference updated',
+                data: { theme: req.user.themePreference }
+            });
+        } catch (error: any) {
+            res.status(400).json({ status: 'error', message: error.message || 'Failed to update theme' });
         }
     }
 }

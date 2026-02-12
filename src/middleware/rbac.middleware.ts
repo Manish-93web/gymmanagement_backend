@@ -52,14 +52,13 @@ const rolePermissions: Record<UserRole, string[]> = {
     accountant: [
         'payment:*',
         'subscription:read',
-        'analytics:read',
+        'analytics:read:financial',
         'member:read',
+        'report:*',
     ],
     auditor: [
+        '*:read',
         'audit:read',
-        'member:read',
-        'payment:read',
-        'analytics:read',
     ],
 };
 

@@ -93,11 +93,28 @@ class InvoiceService {
         }
 
         // Tax
-        const taxRate = 18; // 18% GST
-        const taxAmount = ((payment.amount - (payment.discount || 0)) * taxRate) / 100;
-        doc.text(`GST (${taxRate}%)`, 50, yPosition);
+        const taxRate = payment.taxDetails?.taxRate || 0;
+        const taxAmount = payment.amount.taxAmount || 0;
+        const taxType = payment.taxDetails?.taxType || 'GST';
+
+        doc.text(`${taxType} (${taxRate}%)`, 50, yPosition);
         doc.text(`₹${taxAmount.toFixed(2)}`, 400, yPosition, { width: 90, align: 'right' });
         yPosition += 20;
+
+        // CGST / SGST / IGST Breakdown
+        if (payment.taxDetails?.cgst) {
+            doc.fontSize(8).text(`CGST: ₹${payment.taxDetails.cgst.toFixed(2)}`, 60, yPosition);
+            yPosition += 15;
+        }
+        if (payment.taxDetails?.sgst) {
+            doc.fontSize(8).text(`SGST: ₹${payment.taxDetails.sgst.toFixed(2)}`, 60, yPosition);
+            yPosition += 15;
+        }
+        if (payment.taxDetails?.igst) {
+            doc.fontSize(8).text(`IGST: ₹${payment.taxDetails.igst.toFixed(2)}`, 60, yPosition);
+            yPosition += 15;
+        }
+        doc.fontSize(10);
 
         // Total
         doc.moveTo(50, yPosition).lineTo(550, yPosition).stroke();
