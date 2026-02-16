@@ -5,6 +5,7 @@ export type MemberStatus =
     | 'trial'
     | 'active'
     | 'paused'
+    | 'frozen'
     | 'expired'
     | 'archived';
 
@@ -113,7 +114,7 @@ const MemberSchema: Schema = new Schema(
         membershipNumber: { type: String, required: true, unique: true },
         status: {
             type: String,
-            enum: ['lead', 'trial', 'active', 'paused', 'expired', 'archived'],
+            enum: ['lead', 'trial', 'active', 'paused', 'frozen', 'expired', 'archived'],
             default: 'lead',
             index: true,
         },
@@ -121,7 +122,7 @@ const MemberSchema: Schema = new Schema(
             {
                 status: {
                     type: String,
-                    enum: ['lead', 'trial', 'active', 'paused', 'expired', 'archived'],
+                    enum: ['lead', 'trial', 'active', 'paused', 'frozen', 'expired', 'archived'],
                     required: true,
                 },
                 changedAt: { type: Date, default: Date.now },

@@ -6,7 +6,10 @@ import { tenantContext } from '../middleware/tenant.middleware';
 
 const router = Router();
 
-// All routes require authentication and tenant context
+// Public signup (no auth required)
+router.post('/signup', memberController.publicSignup.bind(memberController));
+
+// All other routes require authentication and tenant context
 router.use(authenticate);
 router.use(tenantContext);
 
@@ -20,6 +23,9 @@ router.put('/:memberId', requirePermission('member:update'), memberController.up
 
 // Member status management
 router.patch('/:memberId/status', requirePermission('member:update'), memberController.changeStatus.bind(memberController));
+router.post('/:memberId/freeze', requirePermission('member:update'), memberController.freezeMember.bind(memberController));
+router.post('/:memberId/reactivate', requirePermission('member:update'), memberController.reactivateMember.bind(memberController));
+router.post('/:memberId/transfer', requirePermission('member:update'), memberController.transferMember.bind(memberController));
 
 // Member measurements
 router.post('/:memberId/measurements', requirePermission('member:update'), memberController.addMeasurement.bind(memberController));

@@ -1,4 +1,5 @@
 import Member, { IMember, MemberStatus } from '../models/Member.model';
+import Subscription from '../models/Subscription.model';
 import User from '../models/User.model';
 import { generateMembershipNumber, generateReferralCode } from '../utils/helpers.utils';
 import mongoose from 'mongoose';
@@ -327,6 +328,134 @@ export class MemberService {
                 return acc;
             }, {}),
         };
+    }
+
+    // Freeze membership
+    async freezeMember(
+        memberId: string,
+        tenantId: string,
+        startDate: Date,
+        endDate: Date,
+        reason: string
+    ): Promise<IMember | null> {
+        // 1. Update Member status
+        const member = await Member.findOneAndUpdate(
+            { _id: memberId, tenantId },
+            {
+                $set: { status: 'frozen' },
+                $push: {
+                    statusHistory: {
+                        status: 'frozen',
+                        changedAt: new Date(),
+                        reason: `Membership frozen: ${reason}`,
+                    },
+                },
+            },
+            { new: true }
+        );
+
+        if (!member) return null;
+
+        // 2. Update Subscription status and history
+        const daysExtended = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+
+        await Subscription.findOneAndUpdate(
+            { memberId, tenantId, status: 'active' },
+            {
+                $set: {
+                    status: 'frozen',
+                    currentFreeze: { startDate, plannedEndDate: endDate, reason }
+                },
+                $push: {
+                    freezeHistory: {
+                        startDate,
+                        endDate,
+                        reason,
+                        daysExtended,
+                        approvedBy: member.userId // Simplified for now
+                    }
+                }
+            }
+        );
+
+        return this._repairMemberFields(member);
+    }
+
+    // Reactivate membership
+    async reactivateMember(
+        memberId: string,
+        tenantId: string,
+        reason: string = 'Manual reactivation'
+    ): Promise<IMember | null> {
+        const member = await Member.findOne({ _id: memberId, tenantId });
+        if (!member) return null;
+
+        const previousStatus = member.status;
+
+        // 1. Update Member status
+        const updatedMember = await Member.findByIdAndUpdate(
+            memberId,
+            {
+                $set: { status: 'active' },
+                $push: {
+                    statusHistory: {
+                        status: 'active',
+                        changedAt: new Date(),
+                        reason: `Reactivated from ${previousStatus}: ${reason}`,
+                    },
+                },
+            },
+            { new: true }
+        );
+
+        // 2. Update Subscription status if it was frozen or paused
+        if (previousStatus === 'frozen' || previousStatus === 'paused') {
+            await Subscription.findOneAndUpdate(
+                { memberId, tenantId, status: previousStatus },
+                {
+                    $set: { status: 'active' },
+                    $unset: { currentFreeze: "" }
+                }
+            );
+        }
+
+        return this._repairMemberFields(updatedMember);
+    }
+
+    // Transfer member between branches
+    async transferMember(
+        memberId: string,
+        tenantId: string,
+        newBranchId: string,
+        reason: string
+    ): Promise<IMember | null> {
+        const member = await Member.findOneAndUpdate(
+            { _id: memberId, tenantId },
+            {
+                $set: { branchId: new mongoose.Types.ObjectId(newBranchId) },
+                $push: {
+                    statusHistory: {
+                        status: 'active', // Keep active or current status
+                        changedAt: new Date(),
+                        reason: `Transferred branch to ${newBranchId}. Reason: ${reason}`,
+                    },
+                },
+            },
+            { new: true }
+        );
+
+        if (member) {
+            // Also update the User model
+            await User.findByIdAndUpdate(member.userId, { branchId: newBranchId });
+
+            // Update active subscription
+            await Subscription.findOneAndUpdate(
+                { memberId, tenantId, status: 'active' },
+                { $set: { branchId: new mongoose.Types.ObjectId(newBranchId) } }
+            );
+        }
+
+        return this._repairMemberFields(member);
     }
 
     // Track referral

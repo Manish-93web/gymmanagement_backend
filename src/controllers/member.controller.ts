@@ -1,7 +1,20 @@
 import { Request, Response } from 'express';
 import memberService from '../services/member.service';
+import Branch from '../models/Branch.model';
 import { z } from 'zod';
 import { MemberStatus } from '../models/Member.model';
+
+const publicSignupSchema = z.object({
+    firstName: z.string().min(1),
+    lastName: z.string().min(1),
+    email: z.string().email(),
+    mobile: z.string().min(1),
+    branchCode: z.string().min(1),
+    personalInfo: z.object({
+        dateOfBirth: z.string().optional(),
+        gender: z.enum(['male', 'female', 'other']).optional(),
+    }).optional(),
+});
 
 // Validation schemas
 const createMemberSchema = z.object({
@@ -48,7 +61,18 @@ const addMeasurementSchema = z.object({
 });
 
 const changeStatusSchema = z.object({
-    status: z.enum(['lead', 'trial', 'active', 'paused', 'expired', 'cancelled', 'archived']),
+    status: z.enum(['lead', 'trial', 'active', 'paused', 'frozen', 'expired', 'cancelled', 'archived']),
+    reason: z.string().min(1),
+});
+
+const freezeMemberSchema = z.object({
+    startDate: z.string().transform(val => new Date(val)),
+    endDate: z.string().transform(val => new Date(val)),
+    reason: z.string().min(1),
+});
+
+const transferMemberSchema = z.object({
+    newBranchId: z.string().min(1),
     reason: z.string().min(1),
 });
 
@@ -339,6 +363,123 @@ export class MemberController {
                 status: 'error',
                 message: error.message || 'Failed to get member statistics',
             });
+        }
+    }
+
+    // Freeze member
+    async freezeMember(req: Request, res: Response): Promise<void> {
+        try {
+            const { memberId } = req.params;
+            const { startDate, endDate, reason } = freezeMemberSchema.parse(req.body);
+
+            if (!req.tenantId) {
+                res.status(400).json({ status: 'error', message: 'Tenant context required' });
+                return;
+            }
+
+            const member = await memberService.freezeMember(memberId, req.tenantId, startDate, endDate, reason);
+
+            if (!member) {
+                res.status(404).json({ status: 'error', message: 'Member not found' });
+                return;
+            }
+
+            res.status(200).json({
+                status: 'success',
+                message: 'Membership frozen successfully',
+                data: { member }
+            });
+        } catch (error: any) {
+            res.status(400).json({ status: 'error', message: error.message || 'Failed to freeze member' });
+        }
+    }
+
+    // Reactivate member
+    async reactivateMember(req: Request, res: Response): Promise<void> {
+        try {
+            const { memberId } = req.params;
+            const { reason } = req.body;
+
+            if (!req.tenantId) {
+                res.status(400).json({ status: 'error', message: 'Tenant context required' });
+                return;
+            }
+
+            const member = await memberService.reactivateMember(memberId, req.tenantId, reason);
+
+            if (!member) {
+                res.status(404).json({ status: 'error', message: 'Member not found' });
+                return;
+            }
+
+            res.status(200).json({
+                status: 'success',
+                message: 'Membership reactivated successfully',
+                data: { member }
+            });
+        } catch (error: any) {
+            res.status(400).json({ status: 'error', message: error.message || 'Failed to reactivate member' });
+        }
+    }
+
+    // Transfer member
+    async transferMember(req: Request, res: Response): Promise<void> {
+        try {
+            const { memberId } = req.params;
+            const { newBranchId, reason } = transferMemberSchema.parse(req.body);
+
+            if (!req.tenantId) {
+                res.status(400).json({ status: 'error', message: 'Tenant context required' });
+                return;
+            }
+
+            const member = await memberService.transferMember(memberId, req.tenantId, newBranchId, reason);
+
+            if (!member) {
+                res.status(404).json({ status: 'error', message: 'Member not found' });
+                return;
+            }
+
+            res.status(200).json({
+                status: 'success',
+                message: 'Member transferred successfully',
+                data: { member }
+            });
+        } catch (error: any) {
+            res.status(400).json({ status: 'error', message: error.message || 'Failed to transfer member' });
+        }
+    }
+
+    // Public signup
+    async publicSignup(req: Request, res: Response): Promise<void> {
+        try {
+            const validatedData = publicSignupSchema.parse(req.body);
+
+            // 1. Find branch and tenant
+            const branch = await Branch.findOne({ code: validatedData.branchCode });
+            if (!branch) {
+                res.status(404).json({ status: 'error', message: 'Invalid referral code or gym link' });
+                return;
+            }
+
+            // 2. Create member
+            const member = await memberService.createMember({
+                firstName: validatedData.firstName,
+                lastName: validatedData.lastName,
+                email: validatedData.email,
+                mobile: validatedData.mobile,
+                tenantId: branch.tenantId.toString(),
+                branchId: branch._id.toString(),
+                status: 'lead'
+            });
+
+            res.status(201).json({
+                status: 'success',
+                message: 'Welcome to our community! Registration complete.',
+                data: member
+            });
+        } catch (error: any) {
+            res.status(400).json({ status: 'error', message: error.message || 'Signup failed' });
         }
     }
 }
