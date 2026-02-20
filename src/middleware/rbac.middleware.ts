@@ -60,6 +60,14 @@ const rolePermissions: Record<UserRole, string[]> = {
         '*:read',
         'audit:read',
     ],
+    franchise_admin: [
+        'branch:read',
+        'member:read',
+        'payment:read',
+        'analytics:*',
+        'franchise:*',
+        'report:*',
+    ],
 };
 
 // Check if user has required permission

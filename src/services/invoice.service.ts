@@ -55,7 +55,7 @@ class InvoiceService {
         doc.fontSize(10);
         doc.text(`Invoice Number: ${invoiceNumber}`);
         doc.text(`Date: ${new Date(payment.createdAt).toLocaleDateString()}`);
-        doc.text(`Payment ID: ${payment.transactionId || payment._id}`);
+        doc.text(`Payment ID: ${payment.gateway?.transactionId || payment.gateway?.paymentId || payment._id}`);
         doc.moveDown();
 
         // Bill to
@@ -82,7 +82,7 @@ class InvoiceService {
 
         // Plan
         doc.text(plan.name || 'Membership Plan', 50, yPosition);
-        doc.text(`₹${payment.amount.toFixed(2)}`, 400, yPosition, { width: 90, align: 'right' });
+        doc.text(`₹${payment.amount.total.toFixed(2)}`, 400, yPosition, { width: 90, align: 'right' });
         yPosition += 20;
 
         // Discount
@@ -121,13 +121,13 @@ class InvoiceService {
         yPosition += 10;
         doc.font('Helvetica-Bold').fontSize(12);
         doc.text('Total Amount', 50, yPosition);
-        doc.text(`₹${payment.amount.toFixed(2)}`, 400, yPosition, { width: 90, align: 'right' });
+        doc.text(`₹${payment.amount.total.toFixed(2)}`, 400, yPosition, { width: 90, align: 'right' });
 
         // Payment status
         doc.moveDown(2);
         doc.fontSize(10).font('Helvetica');
         doc.text(`Payment Status: ${payment.status.toUpperCase()}`, { align: 'center' });
-        doc.text(`Payment Method: ${payment.gateway.toUpperCase()}`, { align: 'center' });
+        doc.text(`Payment Method: ${(payment.gateway?.provider || payment.method).toUpperCase()}`, { align: 'center' });
 
         // Footer
         doc.moveDown(3);
@@ -138,9 +138,10 @@ class InvoiceService {
 
         doc.end();
 
-        // Wait for PDF to be written
-        await new Promise((resolve, reject) => {
-            stream.on('finish', resolve);
+        await new Promise<void>((resolve, reject) => {
+            stream.on('finish', () => {
+                resolve();
+            });
             stream.on('error', reject);
         });
 

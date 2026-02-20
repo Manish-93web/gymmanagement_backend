@@ -11,7 +11,7 @@ export interface CreateMemberDTO {
     lastName: string;
     email: string;
     mobile: string;
-    personalInfo: {
+    personalInfo?: {
         dateOfBirth: Date;
         gender: 'male' | 'female' | 'other';
         bloodGroup?: string;
@@ -30,6 +30,7 @@ export interface CreateMemberDTO {
     };
     goals?: string[];
     referredBy?: string;
+    status?: MemberStatus;
 }
 
 export interface UpdateMemberDTO {
@@ -140,8 +141,10 @@ export class MemberService {
     }
 
     // Get member by ID
-    async getMemberById(memberId: string, tenantId: string): Promise<IMember | null> {
-        const member = await Member.findOne({ _id: memberId, tenantId }).populate('userId');
+    async getMemberById(memberId: string, tenantId?: string): Promise<IMember | null> {
+        const query: any = { _id: memberId };
+        if (tenantId) query.tenantId = tenantId;
+        const member = await Member.findOne(query).populate('userId');
         return this._repairMemberFields(member);
     }
 
@@ -159,8 +162,10 @@ export class MemberService {
 
     // Update member
     async updateMember(memberId: string, tenantId: string, data: UpdateMemberDTO): Promise<IMember | null> {
+        const query: any = { _id: memberId };
+        if (tenantId) query.tenantId = tenantId;
         const member = await Member.findOneAndUpdate(
-            { _id: memberId, tenantId },
+            query,
             { $set: data },
             { new: true, runValidators: true }
         ).populate('userId');
@@ -267,7 +272,7 @@ export class MemberService {
 
     // Get all members with filters
     async getMembers(
-        tenantId: string,
+        tenantId?: string,
         branchId?: string,
         status?: MemberStatus,
         page: number = 1,
@@ -276,7 +281,8 @@ export class MemberService {
     ): Promise<{ members: IMember[]; total: number }> {
         const skip = (page - 1) * limit;
 
-        const filter: any = { tenantId };
+        const filter: any = {};
+        if (tenantId) filter.tenantId = tenantId;
         if (branchId) filter.branchId = branchId;
         if (status) filter.status = status;
         if (search) {
@@ -305,8 +311,9 @@ export class MemberService {
     }
 
     // Get member statistics
-    async getMemberStats(tenantId: string, branchId?: string): Promise<any> {
-        const filter: any = { tenantId };
+    async getMemberStats(tenantId?: string, branchId?: string): Promise<any> {
+        const filter: any = {};
+        if (tenantId) filter.tenantId = tenantId;
         if (branchId) filter.branchId = branchId;
 
         const stats = await Member.aggregate([

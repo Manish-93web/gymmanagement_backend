@@ -147,7 +147,57 @@ export class PricingService {
             couponInfo,
             taxAmount,
             finalPrice: Math.round(finalPrice),
-            currency: 'INR',
+        };
+    }
+
+    async getHappyHourDiscounts(tenantId: string, branchId: string): Promise<any> {
+        const tenantObjectId = new mongoose.Types.ObjectId(tenantId);
+        const branchObjectId = new mongoose.Types.ObjectId(branchId);
+
+        // Analyze occupancy by hour for the last 30 days
+        const lastMonth = new Date();
+        lastMonth.setDate(lastMonth.getDate() - 30);
+
+        const occupancy = await Attendance.aggregate([
+            {
+                $match: {
+                    tenantId: tenantObjectId,
+                    branchId: branchObjectId,
+                    checkInTime: { $gte: lastMonth }
+                }
+            },
+            {
+                $group: {
+                    _id: { $hour: '$checkInTime' },
+                    count: { $sum: 1 }
+                }
+            },
+            { $sort: { count: 1 } } // Lowest attendance first
+        ]);
+
+        // Identify bottom 3 off-peak hours
+        const offPeakHours = occupancy.slice(0, 3).map(o => o._id);
+
+        const plans = await MembershipPlan.find({ tenantId: tenantObjectId, branchId: branchObjectId, isActive: true });
+
+        const suggestions = offPeakHours.map(hour => {
+            const timeString = `${hour}:00 - ${hour + 1}:00`;
+            return {
+                hour,
+                timeSlot: timeString,
+                suggestedDiscount: 20, // 20% flat off-peak discount
+                applicablePlans: plans.map(p => ({
+                    planId: p._id,
+                    name: p.name,
+                    originalPrice: p.pricing.finalPrice,
+                    happyHourPrice: Math.round(p.pricing.finalPrice * 0.8)
+                }))
+            };
+        });
+
+        return {
+            message: 'Off-peak hours identified. Automated discounts ready for scheduling.',
+            suggestions
         };
     }
 }

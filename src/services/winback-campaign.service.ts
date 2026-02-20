@@ -1,6 +1,6 @@
 import WinbackCampaign from '../models/WinbackCampaign.model';
 import WinbackRecipient from '../models/WinbackRecipient.model';
-import Member from '../models/Member.model';
+// import Member from '../models/Member.model'; // Removed unused
 import InactivityAlert from '../models/InactivityAlert.model';
 import EmailService from './email.service';
 import WhatsAppService from './whatsapp.service';
@@ -146,7 +146,7 @@ class WinbackCampaignService {
      * Personalize message
      */
     private personalizeMessage(template: string, member: any, campaign: any): string {
-        const user = member.userId;
+        const user = member.userId as any;
         let message = template
             .replace(/{firstName}/g, user.firstName)
             .replace(/{lastName}/g, user.lastName)

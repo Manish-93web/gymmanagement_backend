@@ -17,7 +17,7 @@ class EmailCampaignService {
     private transporter: nodemailer.Transporter;
 
     constructor() {
-        this.transporter = nodemailer.createTransporter({
+        this.transporter = nodemailer.createTransport({
             host: process.env.EMAIL_HOST,
             port: parseInt(process.env.EMAIL_PORT || '587'),
             secure: false,
@@ -62,7 +62,8 @@ class EmailCampaignService {
 
         // Update campaign status
         campaign.status = 'sending';
-        campaign.totalRecipients = members.length;
+        campaign.stats = campaign.stats || {};
+        campaign.stats.totalRecipients = members.length;
         await campaign.save();
 
         const results = [];
@@ -77,7 +78,7 @@ class EmailCampaignService {
                     success: true,
                 });
 
-                campaign.sentCount = (campaign.sentCount || 0) + 1;
+                campaign.stats.sentCount = (campaign.stats.sentCount || 0) + 1;
             } catch (error: any) {
                 results.push({
                     memberId: member._id,
@@ -86,7 +87,7 @@ class EmailCampaignService {
                     error: error.message,
                 });
 
-                campaign.failedCount = (campaign.failedCount || 0) + 1;
+                campaign.stats.failedCount = (campaign.stats.failedCount || 0) + 1;
             }
 
             // Rate limiting - wait 100ms between emails
@@ -96,20 +97,23 @@ class EmailCampaignService {
         // Update campaign status
         campaign.status = 'completed';
         campaign.completedAt = new Date();
-        await campaign.save();
+        campaign.stats.totalRecipients = members.length;
+        campaign.stats.sentCount = (campaign.stats.sentCount || 0); // Already incremented in loop? No, handled below
+        // Actually the loop handled stats directly on campaign object, but they are in stats object in model.
+        // I need to update the loop logic too.
 
         logger.info('Email campaign sent', {
             campaignId,
             total: members.length,
-            sent: campaign.sentCount,
-            failed: campaign.failedCount,
+            sent: campaign.stats?.sentCount,
+            failed: campaign.stats?.failedCount,
         });
 
         return {
             success: true,
             total: members.length,
-            sent: campaign.sentCount,
-            failed: campaign.failedCount,
+            sent: campaign.stats?.sentCount || 0,
+            failed: campaign.stats?.failedCount || 0,
             results,
         };
     }
@@ -237,12 +241,12 @@ class EmailCampaignService {
         const stats = {
             name: campaign.name,
             status: campaign.status,
-            totalRecipients: campaign.totalRecipients || 0,
-            sentCount: campaign.sentCount || 0,
-            failedCount: campaign.failedCount || 0,
+            totalRecipients: campaign.stats?.totalRecipients || 0,
+            sentCount: campaign.stats?.sentCount || 0,
+            failedCount: campaign.stats?.failedCount || 0,
             deliveryRate:
-                campaign.totalRecipients > 0
-                    ? ((campaign.sentCount || 0) / campaign.totalRecipients) * 100
+                (campaign.stats?.totalRecipients || 0) > 0
+                    ? ((campaign.stats?.sentCount || 0) / (campaign.stats?.totalRecipients || 1)) * 100
                     : 0,
             createdAt: campaign.createdAt,
             completedAt: campaign.completedAt,

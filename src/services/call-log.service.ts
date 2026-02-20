@@ -9,7 +9,7 @@ interface CallLogData {
     callType: 'inbound' | 'outbound';
     purpose: string;
     duration: number; // in seconds
-    outcome: 'answered' | 'no_answer' | 'busy' | 'voicemail';
+    outcome: 'completed' | 'missed' | 'busy' | 'no-answer' | 'failed';
     notes?: string;
     followUpRequired?: boolean;
     followUpDate?: Date;
@@ -22,14 +22,23 @@ class CallLogService {
      */
     async createCallLog(data: CallLogData) {
         const callLog = await CallLog.create({
-            ...data,
-            callTime: new Date(),
+            tenantId: data.tenantId,
+            memberId: data.memberId,
+            userId: data.staffId,
+            direction: data.callType,
+            status: data.outcome,
+            startTime: new Date(),
+            duration: data.duration,
+            notes: data.notes,
+            purpose: data.purpose,
+            followUpRequired: data.followUpRequired,
+            nextFollowUp: data.followUpDate,
+            followUpCompleted: false,
         });
 
         // Update member's last contact
         await Member.findByIdAndUpdate(data.memberId, {
-            lastContactDate: new Date(),
-            lastContactType: 'call',
+            lastCheckIn: new Date(), // Using lastCheckIn as proxy or simply logging interaction
         });
 
         logger.info('Call log created', { callLogId: callLog._id, memberId: data.memberId });
@@ -66,21 +75,21 @@ class CallLogService {
         const query: any = { tenantId };
 
         if (memberId) query.memberId = memberId;
-        if (staffId) query.staffId = staffId;
-        if (callType) query.callType = callType;
-        if (outcome) query.outcome = outcome;
+        if (staffId) query.userId = staffId;
+        if (callType) query.direction = callType;
+        if (outcome) query.status = outcome;
 
         if (startDate || endDate) {
-            query.callTime = {};
-            if (startDate) query.callTime.$gte = startDate;
-            if (endDate) query.callTime.$lte = endDate;
+            query.startTime = {};
+            if (startDate) query.startTime.$gte = startDate;
+            if (endDate) query.startTime.$lte = endDate;
         }
 
         const total = await CallLog.countDocuments(query);
         const logs = await CallLog.find(query)
             .populate('memberId', 'firstName lastName mobile email')
-            .populate('staffId', 'firstName lastName')
-            .sort({ callTime: -1 })
+            .populate('userId', 'firstName lastName')
+            .sort({ startTime: -1 })
             .skip((page - 1) * limit)
             .limit(limit);
 
@@ -101,16 +110,16 @@ class CallLogService {
     async getCallStatistics(tenantId: string, startDate: Date, endDate: Date) {
         const logs = await CallLog.find({
             tenantId,
-            callTime: { $gte: startDate, $lte: endDate },
+            startTime: { $gte: startDate, $lte: endDate },
         });
 
         const stats = {
             totalCalls: logs.length,
-            inboundCalls: logs.filter((l) => l.callType === 'inbound').length,
-            outboundCalls: logs.filter((l) => l.callType === 'outbound').length,
-            answeredCalls: logs.filter((l) => l.outcome === 'answered').length,
-            missedCalls: logs.filter((l) => l.outcome === 'no_answer').length,
-            averageDuration: logs.reduce((sum, l) => sum + l.duration, 0) / logs.length || 0,
+            inboundCalls: logs.filter((l) => l.direction === 'inbound').length,
+            outboundCalls: logs.filter((l) => l.direction === 'outbound').length,
+            answeredCalls: logs.filter((l) => l.status === 'completed').length,
+            missedCalls: logs.filter((l) => l.status === 'no-answer' || l.status === 'missed').length,
+            averageDuration: logs.length > 0 ? logs.reduce((sum, l) => sum + (l.duration || 0), 0) / logs.length : 0,
             followUpsRequired: logs.filter((l) => l.followUpRequired).length,
             byPurpose: {} as any,
             byStaff: {} as any,
@@ -118,12 +127,14 @@ class CallLogService {
 
         // Group by purpose
         logs.forEach((log) => {
-            stats.byPurpose[log.purpose] = (stats.byPurpose[log.purpose] || 0) + 1;
+            if (log.purpose) {
+                stats.byPurpose[log.purpose] = (stats.byPurpose[log.purpose] || 0) + 1;
+            }
         });
 
         // Group by staff
         logs.forEach((log) => {
-            const staffId = log.staffId.toString();
+            const staffId = log.userId.toString();
             stats.byStaff[staffId] = (stats.byStaff[staffId] || 0) + 1;
         });
 
@@ -141,24 +152,24 @@ class CallLogService {
         };
 
         if (staffId) {
-            query.staffId = staffId;
+            query.userId = staffId;
         }
 
         const reminders = await CallLog.find(query)
             .populate('memberId', 'firstName lastName mobile email')
-            .populate('staffId', 'firstName lastName')
-            .sort({ followUpDate: 1 });
+            .populate('userId', 'firstName lastName')
+            .sort({ nextFollowUp: 1 });
 
         // Categorize by urgency
         const today = new Date();
         const categorized = {
-            overdue: reminders.filter((r) => r.followUpDate && r.followUpDate < today),
+            overdue: reminders.filter((r) => r.nextFollowUp && r.nextFollowUp < today),
             today: reminders.filter(
                 (r) =>
-                    r.followUpDate &&
-                    r.followUpDate.toDateString() === today.toDateString()
+                    r.nextFollowUp &&
+                    r.nextFollowUp.toDateString() === today.toDateString()
             ),
-            upcoming: reminders.filter((r) => r.followUpDate && r.followUpDate > today),
+            upcoming: reminders.filter((r) => r.nextFollowUp && r.nextFollowUp > today),
         };
 
         return categorized;
@@ -195,14 +206,14 @@ class CallLogService {
      */
     async getMemberCallHistory(memberId: string) {
         const logs = await CallLog.find({ memberId })
-            .populate('staffId', 'firstName lastName')
-            .sort({ callTime: -1 })
+            .populate('userId', 'firstName lastName')
+            .sort({ startTime: -1 })
             .limit(20);
 
         const summary = {
             totalCalls: logs.length,
-            lastCallDate: logs[0]?.callTime,
-            totalDuration: logs.reduce((sum, l) => sum + l.duration, 0),
+            lastCallDate: logs[0]?.startTime,
+            totalDuration: logs.reduce((sum, l) => sum + (l.duration || 0), 0),
             pendingFollowUps: logs.filter((l) => l.followUpRequired && !l.followUpCompleted).length,
         };
 
@@ -222,16 +233,16 @@ class CallLogService {
             'Date,Time,Member,Staff,Type,Purpose,Duration,Outcome,Notes',
             ...logs.map((log: any) => {
                 const member = log.memberId;
-                const staff = log.staffId;
+                const staff = log.userId;
                 return [
-                    new Date(log.callTime).toLocaleDateString(),
-                    new Date(log.callTime).toLocaleTimeString(),
-                    `${member.firstName} ${member.lastName}`,
-                    `${staff.firstName} ${staff.lastName}`,
-                    log.callType,
+                    new Date(log.startTime).toLocaleDateString(),
+                    new Date(log.startTime).toLocaleTimeString(),
+                    member ? `${member.firstName} ${member.lastName}` : 'Unknown',
+                    staff ? `${staff.firstName} ${staff.lastName}` : 'Unknown',
+                    log.direction,
                     log.purpose,
-                    `${Math.floor(log.duration / 60)}m ${log.duration % 60}s`,
-                    log.outcome,
+                    `${Math.floor((log.duration || 0) / 60)}m ${(log.duration || 0) % 60}s`,
+                    log.status,
                     log.notes || '',
                 ].join(',');
             }),

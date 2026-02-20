@@ -57,16 +57,24 @@ class CalendarSyncService {
         const trainer = classData.trainerId as any;
         const branch = classData.branchId as any;
 
+        const startDateTime = new Date(classData.schedule.startDate);
+        const [startH, startM] = classData.schedule.startTime.split(':').map(Number);
+        startDateTime.setHours(startH, startM, 0, 0);
+
+        const endDateTime = new Date(classData.schedule.startDate);
+        const [endH, endM] = classData.schedule.endTime.split(':').map(Number);
+        endDateTime.setHours(endH, endM, 0, 0);
+
         const event = {
             summary: `${classData.name} - ${classData.type}`,
-            description: `Trainer: ${trainer.firstName} ${trainer.lastName}\nCapacity: ${classData.currentCapacity}/${classData.maxCapacity}`,
+            description: `Trainer: ${trainer.firstName} ${trainer.lastName}\nCapacity: ${classData.capacity.current}/${classData.capacity.max}`,
             location: branch.address || '',
             start: {
-                dateTime: classData.startTime.toISOString(),
+                dateTime: startDateTime.toISOString(),
                 timeZone: 'Asia/Kolkata',
             },
             end: {
-                dateTime: classData.endTime.toISOString(),
+                dateTime: endDateTime.toISOString(),
                 timeZone: 'Asia/Kolkata',
             },
             attendees: [{ email: user.email }],
@@ -135,14 +143,22 @@ class CalendarSyncService {
 
         this.setCredentials(user.googleCalendarToken, user.googleRefreshToken || '');
 
+        const startDateTime = new Date(classData.schedule.startDate);
+        const [startH, startM] = classData.schedule.startTime.split(':').map(Number);
+        startDateTime.setHours(startH, startM, 0, 0);
+
+        const endDateTime = new Date(classData.schedule.startDate);
+        const [endH, endM] = classData.schedule.endTime.split(':').map(Number);
+        endDateTime.setHours(endH, endM, 0, 0);
+
         const event = {
             summary: `${classData.name} - ${classData.type}`,
             start: {
-                dateTime: classData.startTime.toISOString(),
+                dateTime: startDateTime.toISOString(),
                 timeZone: 'Asia/Kolkata',
             },
             end: {
-                dateTime: classData.endTime.toISOString(),
+                dateTime: endDateTime.toISOString(),
                 timeZone: 'Asia/Kolkata',
             },
         };
@@ -233,7 +249,7 @@ class CalendarSyncService {
         // Find user's booked classes
         const classes = await Class.find({
             'bookings.userId': userId,
-            startTime: { $gte: startDate, $lte: endDate },
+            'schedule.startDate': { $gte: startDate, $lte: endDate },
         });
 
         const results = [];

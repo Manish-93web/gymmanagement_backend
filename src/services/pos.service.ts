@@ -3,7 +3,7 @@ import Sale, { ISale } from '../models/Sale.model';
 import mongoose from 'mongoose';
 
 export interface CreateProductDTO {
-    tenantId: string;
+    tenantId?: string;
     branchId: string;
     name: string;
     description?: string;
@@ -28,7 +28,7 @@ export interface CreateProductDTO {
 }
 
 export interface CreateSaleDTO {
-    tenantId: string;
+    tenantId?: string;
     branchId: string;
     customerId?: string;
     customerType: 'member' | 'walk_in';
@@ -50,47 +50,52 @@ export class POSService {
     }
 
     // Get product by ID
-    async getProductById(productId: string, tenantId: string): Promise<IProduct | null> {
-        return await Product.findOne({ _id: productId, tenantId });
+    async getProductById(productId: string, tenantId: string | undefined): Promise<IProduct | null> {
+        const filter: any = { _id: productId };
+        if (tenantId) filter.tenantId = tenantId;
+        return await Product.findOne(filter);
     }
 
     // Get product by SKU/Barcode
-    async getProductByCode(code: string, tenantId: string): Promise<IProduct | null> {
-        return await Product.findOne({
-            tenantId,
-            $or: [{ sku: code }, { barcode: code }],
-        });
+    async getProductByCode(code: string, tenantId: string | undefined): Promise<IProduct | null> {
+        const filter: any = { $or: [{ sku: code }, { barcode: code }] };
+        if (tenantId) filter.tenantId = tenantId;
+        return await Product.findOne(filter);
     }
 
     // Update product
-    async updateProduct(productId: string, tenantId: string, data: Partial<CreateProductDTO>): Promise<IProduct | null> {
+    async updateProduct(productId: string, tenantId: string | undefined, data: Partial<CreateProductDTO>): Promise<IProduct | null> {
+        const filter: any = { _id: productId };
+        if (tenantId) filter.tenantId = tenantId;
         return await Product.findOneAndUpdate(
-            { _id: productId, tenantId },
+            filter,
             { $set: data },
             { new: true, runValidators: true }
         );
     }
 
     // Update stock
-    async updateStock(productId: string, tenantId: string, quantity: number, type: 'add' | 'remove'): Promise<IProduct | null> {
-        const product = await Product.findOne({ _id: productId, tenantId });
+    async updateStock(productId: string, tenantId: string | undefined, quantity: number, type: 'add' | 'remove'): Promise<IProduct | null> {
+        const filter: any = { _id: productId };
+        if (tenantId) filter.tenantId = tenantId;
+        const product = await Product.findOne(filter);
 
         if (!product) {
             throw new Error('Product not found');
         }
 
         const newQuantity = type === 'add'
-            ? product.stock.quantity + quantity
-            : product.stock.quantity - quantity;
+            ? product.inventory.currentStock + quantity
+            : product.inventory.currentStock - quantity;
 
         if (newQuantity < 0) {
             throw new Error('Insufficient stock');
         }
 
         return await Product.findOneAndUpdate(
-            { _id: productId, tenantId },
+            filter,
             {
-                $set: { 'stock.quantity': newQuantity },
+                $set: { 'inventory.currentStock': newQuantity },
                 $push: {
                     stockHistory: {
                         date: new Date(),
@@ -106,7 +111,7 @@ export class POSService {
 
     // Get products
     async getProducts(
-        tenantId: string,
+        tenantId?: string,
         branchId?: string,
         category?: string,
         lowStock?: boolean,
@@ -115,11 +120,13 @@ export class POSService {
     ): Promise<{ products: IProduct[]; total: number }> {
         const skip = (page - 1) * limit;
 
-        const filter: any = { tenantId };
+
+        const filter: any = {};
+        if (tenantId) filter.tenantId = tenantId;
         if (branchId) filter.branchId = branchId;
         if (category) filter.category = category;
         if (lowStock) {
-            filter.$expr = { $lte: ['$stock.quantity', '$stock.minQuantity'] };
+            filter.$expr = { $lte: ['$inventory.currentStock', '$inventory.minStock'] };
         }
 
         const [products, total] = await Promise.all([
@@ -147,7 +154,7 @@ export class POSService {
                     throw new Error(`Product ${item.productId} not found`);
                 }
 
-                if (product.stock.quantity < item.quantity) {
+                if (product.inventory.currentStock < item.quantity) {
                     throw new Error(`Insufficient stock for ${product.name}`);
                 }
 
@@ -164,13 +171,13 @@ export class POSService {
                 await Product.findByIdAndUpdate(
                     item.productId,
                     {
-                        $inc: { 'stock.quantity': -item.quantity },
+                        $inc: { 'inventory.currentStock': -item.quantity },
                         $push: {
                             stockHistory: {
                                 date: new Date(),
                                 type: 'sale',
                                 quantity: -item.quantity,
-                                balance: product.stock.quantity - item.quantity,
+                                balance: product.inventory.currentStock - item.quantity,
                             },
                         },
                     },
@@ -204,7 +211,7 @@ export class POSService {
 
     // Get sales
     async getSales(
-        tenantId: string,
+        tenantId?: string,
         branchId?: string,
         startDate?: Date,
         endDate?: Date,
@@ -213,7 +220,8 @@ export class POSService {
     ): Promise<{ sales: ISale[]; total: number }> {
         const skip = (page - 1) * limit;
 
-        const filter: any = { tenantId };
+        const filter: any = {};
+        if (tenantId) filter.tenantId = tenantId;
         if (branchId) filter.branchId = branchId;
         if (startDate || endDate) {
             filter.createdAt = {};
@@ -236,12 +244,13 @@ export class POSService {
 
     // Get sales statistics
     async getSalesStats(
-        tenantId: string,
+        tenantId?: string,
         branchId?: string,
         startDate?: Date,
         endDate?: Date
     ): Promise<any> {
-        const filter: any = { tenantId };
+        const filter: any = {};
+        if (tenantId) filter.tenantId = tenantId;
         if (branchId) filter.branchId = branchId;
         if (startDate || endDate) {
             filter.createdAt = {};
@@ -287,14 +296,14 @@ export class POSService {
     }
 
     // Get low stock products
-    async getLowStockProducts(tenantId: string, branchId?: string): Promise<IProduct[]> {
+    async getLowStockProducts(tenantId?: string, branchId?: string): Promise<IProduct[]> {
         const filter: any = {
-            tenantId,
-            $expr: { $lte: ['$stock.quantity', '$stock.minQuantity'] },
+            $expr: { $lte: ['$inventory.currentStock', '$inventory.minStock'] },
         };
+        if (tenantId) filter.tenantId = tenantId;
         if (branchId) filter.branchId = branchId;
 
-        return await Product.find(filter).sort({ 'stock.quantity': 1 });
+        return await Product.find(filter).sort({ 'inventory.currentStock': 1 });
     }
 }
 

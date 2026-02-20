@@ -5,8 +5,14 @@ import Branch from '../models/Branch.model';
 import mongoose from 'mongoose';
 
 export class FranchiseService {
-    async getBranchComparison(tenantId: string, period: string = 'last_30_days'): Promise<any> {
-        const tenantObjectId = new mongoose.Types.ObjectId(tenantId);
+    async getBranchComparison(tenantId?: string, period: string = 'last_30_days'): Promise<any> {
+        const query: any = {
+            status: 'completed'
+        };
+
+        if (tenantId) {
+            query.tenantId = new mongoose.Types.ObjectId(tenantId);
+        }
 
         // Define date range
         const now = new Date();
@@ -19,8 +25,7 @@ export class FranchiseService {
         const revenueByBranch = await Payment.aggregate([
             {
                 $match: {
-                    tenantId: tenantObjectId,
-                    status: 'completed',
+                    ...query,
                     paidAt: { $gte: startDate }
                 }
             },
@@ -51,9 +56,11 @@ export class FranchiseService {
             }
         ]);
 
-        // 2. Member Count by Branch
+        const memberQuery: any = { isActive: true };
+        if (tenantId) memberQuery.tenantId = new mongoose.Types.ObjectId(tenantId);
+
         const membersByBranch = await Member.aggregate([
-            { $match: { tenantId: tenantObjectId, isActive: true } },
+            { $match: memberQuery },
             {
                 $group: {
                     _id: '$branchId',
@@ -65,13 +72,12 @@ export class FranchiseService {
             }
         ]);
 
-        // 3. Attendance by Branch
+        const attendanceQuery: any = { checkInTime: { $gte: startDate } };
+        if (tenantId) attendanceQuery.tenantId = new mongoose.Types.ObjectId(tenantId);
+
         const attendanceByBranch = await Attendance.aggregate([
             {
-                $match: {
-                    tenantId: tenantObjectId,
-                    checkInTime: { $gte: startDate }
-                }
+                $match: attendanceQuery
             },
             {
                 $group: {
@@ -98,11 +104,12 @@ export class FranchiseService {
         return comparison.sort((a, b) => b.totalRevenue - a.totalRevenue);
     }
 
-    async getPerformanceRanking(tenantId: string): Promise<any> {
-        const tenantObjectId = new mongoose.Types.ObjectId(tenantId);
+    async getPerformanceRanking(tenantId?: string): Promise<any> {
+        const branchQuery: any = { isActive: true };
+        if (tenantId) branchQuery.tenantId = new mongoose.Types.ObjectId(tenantId);
 
         // Calculate scores based on Growth, Retention, and Revenue
-        const branches = await Branch.find({ tenantId: tenantObjectId, isActive: true });
+        const branches = await Branch.find(branchQuery);
 
         const rankings = await Promise.all(branches.map(async (branch) => {
             const lastMonth = new Date();

@@ -8,17 +8,34 @@ export interface IPayment extends Document {
     tenantId: mongoose.Types.ObjectId;
     branchId: mongoose.Types.ObjectId;
     memberId?: mongoose.Types.ObjectId;
+    userId?: mongoose.Types.ObjectId; // Alias for memberId
     subscriptionId?: mongoose.Types.ObjectId;
+    planId?: mongoose.Types.ObjectId; // Injected for consistency
     invoiceNumber: string;
+    description?: string;
+    paymentType: PaymentType;
     type: PaymentType;
     method: PaymentMethod;
     status: PaymentStatus;
+    failedReason?: string;
+    paidAt?: Date;
     amount: {
         subtotal: number;
         taxAmount: number;
         discountAmount: number;
         total: number;
     };
+    couponCode?: string;
+    discount?: number;
+    retryAttempts?: number;
+    retryHistory?: {
+        attemptNumber: number;
+        attemptedAt: Date;
+        status: 'success' | 'failed';
+        error?: string;
+        newPaymentId?: mongoose.Types.ObjectId;
+        gateway?: string;
+    }[];
     taxDetails: {
         taxType: 'GST' | 'VAT' | 'SALES_TAX' | 'NONE';
         taxRate: number;
@@ -31,6 +48,7 @@ export interface IPayment extends Document {
         transactionId: string;
         orderId: string;
         paymentId: string;
+        gatewayPaymentId?: string;
         signature?: string;
     };
     refund?: {
@@ -67,9 +85,16 @@ const PaymentSchema: Schema = new Schema(
         tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
         branchId: { type: Schema.Types.ObjectId, ref: 'Branch', required: true, index: true },
         memberId: { type: Schema.Types.ObjectId, ref: 'Member', index: true },
+        userId: { type: Schema.Types.ObjectId, ref: 'Member', index: true }, // Duplicate for service compatibility
         subscriptionId: { type: Schema.Types.ObjectId, ref: 'Subscription' },
+        planId: { type: Schema.Types.ObjectId, ref: 'MembershipPlan' },
         invoiceNumber: { type: String, required: true, unique: true },
         type: {
+            type: String,
+            enum: ['subscription', 'renewal', 'addon', 'pos', 'penalty', 'other'],
+            required: true,
+        },
+        paymentType: {
             type: String,
             enum: ['subscription', 'renewal', 'addon', 'pos', 'penalty', 'other'],
             required: true,
@@ -85,12 +110,27 @@ const PaymentSchema: Schema = new Schema(
             default: 'pending',
             index: true,
         },
+        failedReason: { type: String },
+        paidAt: { type: Date },
         amount: {
             subtotal: { type: Number, required: true },
             taxAmount: { type: Number, default: 0 },
             discountAmount: { type: Number, default: 0 },
             total: { type: Number, required: true },
         },
+        couponCode: { type: String },
+        discount: { type: Number, default: 0 },
+        retryAttempts: { type: Number, default: 0 },
+        retryHistory: [
+            {
+                attemptNumber: { type: Number },
+                attemptedAt: { type: Date },
+                status: { type: String, enum: ['success', 'failed'] },
+                error: { type: String },
+                newPaymentId: { type: Schema.Types.ObjectId, ref: 'Payment' },
+                gateway: { type: String },
+            },
+        ],
         taxDetails: {
             taxType: {
                 type: String,

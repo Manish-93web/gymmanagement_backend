@@ -3,6 +3,7 @@ import Referral from '../models/Referral.model';
 import Member from '../models/Member.model';
 import Payment from '../models/Payment.model';
 import logger from '../config/logger';
+import mongoose from 'mongoose';
 
 interface CouponData {
     code: string;
@@ -64,7 +65,7 @@ class CouponReferralService {
         }
 
         // Check usage limit
-        if (coupon.usageLimit && coupon.usedCount >= coupon.usageLimit) {
+        if (coupon.usageLimit && coupon.usageCount >= coupon.usageLimit) {
             throw new Error('Coupon usage limit reached');
         }
 
@@ -81,13 +82,13 @@ class CouponReferralService {
         }
 
         // Check minimum purchase
-        if (coupon.minPurchase && amount < coupon.minPurchase) {
-            throw new Error(`Minimum purchase amount is ₹${coupon.minPurchase}`);
+        if (coupon.minPurchaseAmount && amount < coupon.minPurchaseAmount) {
+            throw new Error(`Minimum purchase amount is ₹${coupon.minPurchaseAmount}`);
         }
 
         // Check applicable plans
         if (coupon.applicablePlans && coupon.applicablePlans.length > 0) {
-            if (!coupon.applicablePlans.includes(planId)) {
+            if (!coupon.applicablePlans.map((id: any) => id.toString()).includes(planId)) {
                 throw new Error('Coupon not applicable for this plan');
             }
         }
@@ -95,12 +96,12 @@ class CouponReferralService {
         // Calculate discount
         let discount = 0;
         if (coupon.type === 'percentage') {
-            discount = (amount * coupon.value) / 100;
-            if (coupon.maxDiscount && discount > coupon.maxDiscount) {
-                discount = coupon.maxDiscount;
+            discount = (amount * coupon.discountValue) / 100;
+            if (coupon.maxDiscountAmount && discount > coupon.maxDiscountAmount) {
+                discount = coupon.maxDiscountAmount;
             }
         } else {
-            discount = coupon.value;
+            discount = coupon.discountValue;
         }
 
         return {
@@ -110,7 +111,7 @@ class CouponReferralService {
             coupon: {
                 code: coupon.code,
                 type: coupon.type,
-                value: coupon.value,
+                value: coupon.discountValue,
             },
         };
     }
@@ -126,11 +127,11 @@ class CouponReferralService {
         }
 
         // Increment usage count
-        coupon.usedCount += 1;
+        coupon.usageCount += 1;
         coupon.usedBy = coupon.usedBy || [];
         coupon.usedBy.push({
-            userId,
-            paymentId,
+            userId: new mongoose.Types.ObjectId(userId),
+            paymentId: new mongoose.Types.ObjectId(paymentId),
             usedAt: new Date(),
         });
 
@@ -204,9 +205,9 @@ class CouponReferralService {
         }
 
         // Update referral
-        referral.status = 'completed';
-        referral.refereeId = refereeId;
-        referral.completedAt = new Date();
+        referral.status = 'rewarded';
+        referral.referredId = new mongoose.Types.ObjectId(refereeId) as any;
+        referral.rewardedAt = new Date();
 
         await referral.save();
 
@@ -228,7 +229,7 @@ class CouponReferralService {
             validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
             usageLimit: 1,
             perUserLimit: 1,
-            tenantId: referral.tenantId,
+            tenantId: referral.tenantId.toString(),
         });
 
         logger.info('Referral completed', { referralCode, referrerReward, refereeReward });
@@ -252,9 +253,9 @@ class CouponReferralService {
 
         const stats = {
             totalReferrals: referrals.length,
-            completedReferrals: referrals.filter((r) => r.status === 'completed').length,
+            completedReferrals: referrals.filter((r) => r.status === 'rewarded').length,
             pendingReferrals: referrals.filter((r) => r.status === 'pending').length,
-            totalRewards: referrals.filter((r) => r.status === 'completed').length * 500, // ₹500 per referral
+            totalRewards: referrals.filter((r) => r.status === 'rewarded').length * 500, // ₹500 per referral
         };
 
         return stats;

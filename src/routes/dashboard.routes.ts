@@ -33,6 +33,7 @@ router.get(
 
 router.get(
     '/data',
+    requireRole('gym_owner', 'branch_manager', 'trainer', 'staff', 'member', 'accountant', 'auditor'),
     dashboardController.getDashboardData.bind(dashboardController)
 );
 

@@ -51,7 +51,7 @@ class RetentionDashboardService {
                     memberId: member._id,
                     name: `${member.firstName} ${member.lastName}`,
                     email: member.email,
-                    profilePicture: member.profilePicture,
+                    profilePicture: member.personalInfo.profilePicture,
                     churnRisk,
                     riskLevel: this.getRiskLevel(churnRisk),
                 };

@@ -1,5 +1,14 @@
 import express from 'express';
-import { getAllTenants, updateTenantStatus, getPlatformMetrics } from '../controllers/platform.controller';
+import {
+    getAllTenants,
+    updateTenantStatus,
+    getPlatformMetrics,
+    getPlatformConfig,
+    updatePlatformConfig,
+    getPlatformAuditLogs,
+    listBackups,
+    triggerBackup
+} from '../controllers/platform.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/role.middleware';
 
@@ -11,5 +20,12 @@ router.use(authenticate, requireRole('super_admin'));
 router.get('/tenants', getAllTenants);
 router.patch('/tenants/:tenantId/status', updateTenantStatus);
 router.get('/metrics', getPlatformMetrics);
+
+// Platform Management
+router.get('/config', getPlatformConfig);
+router.patch('/config', updatePlatformConfig);
+router.get('/audit-logs', getPlatformAuditLogs);
+router.get('/backups', listBackups);
+router.post('/backups/trigger', triggerBackup);
 
 export default router;

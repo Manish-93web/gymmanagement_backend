@@ -71,8 +71,8 @@ export class AnalyticsService {
         const expiredMembers = await Member.countDocuments({ ...filter, status: 'expired' });
         const cancelledMembers = await Member.countDocuments({ ...filter, status: 'cancelled' });
 
-        const retentionRate = totalMembers > 0 ? ((activeMembers / totalMembers) * 100).toFixed(2) : 0;
-        const churnRate = totalMembers > 0 ? (((cancelledMembers + expiredMembers) / totalMembers) * 100).toFixed(2) : 0;
+        const retentionRate = totalMembers > 0 ? ((activeMembers / totalMembers) * 100).toFixed(2) : '0';
+        const churnRate = totalMembers > 0 ? (((cancelledMembers + expiredMembers) / totalMembers) * 100).toFixed(2) : '0';
 
         // New members by month
         const newMembersByMonth = await Member.aggregate([
@@ -187,18 +187,18 @@ export class AnalyticsService {
             className: cls.name,
             trainer: cls.trainerId,
             capacity: cls.capacity.max,
-            enrolled: cls.capacity.enrolled,
-            utilizationRate: ((cls.capacity.enrolled / cls.capacity.max) * 100).toFixed(2),
+            enrolled: cls.capacity.current,
+            utilizationRate: ((cls.capacity.current / cls.capacity.max) * 100).toFixed(2),
             startTime: cls.schedule.startTime,
         }));
 
-        const avgUtilization = utilization.length > 0
+        const avgUtilizationStr = utilization.length > 0
             ? (utilization.reduce((sum, u) => sum + parseFloat(u.utilizationRate), 0) / utilization.length).toFixed(2)
-            : 0;
+            : '0';
 
         return {
             totalClasses: classes.length,
-            averageUtilization: parseFloat(avgUtilization),
+            averageUtilization: parseFloat(avgUtilizationStr),
             classes: utilization,
         };
     }
@@ -232,7 +232,7 @@ export class AnalyticsService {
                     specializations: trainer.specializations,
                     classCount,
                     rating: trainer.ratings.average,
-                    totalRatings: trainer.ratings.count,
+                    totalRatings: trainer.ratings.totalReviews,
                 };
             })
         );

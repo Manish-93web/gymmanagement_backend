@@ -34,6 +34,12 @@ export interface INotification extends Document {
         messageId?: string;
         cost?: number;
     };
+    channel?: string; // virtual or alias
+    attempts: {
+        attemptedAt: Date;
+        success: boolean;
+        error?: string;
+    }[];
     createdAt: Date;
     updatedAt: Date;
 }
@@ -87,6 +93,13 @@ const NotificationSchema: Schema = new Schema(
             messageId: { type: String },
             cost: { type: Number },
         },
+        attempts: [
+            {
+                attemptedAt: { type: Date },
+                success: { type: Boolean },
+                error: { type: String },
+            },
+        ],
     },
     { timestamps: true }
 );

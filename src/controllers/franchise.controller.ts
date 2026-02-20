@@ -8,7 +8,7 @@ export class FranchiseController {
                 res.status(401).json({ success: false, message: 'Unauthorized' });
                 return;
             }
-            const tenantId = req.user.tenantId.toString();
+            const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
             const { period } = req.query;
 
             const comparison = await FranchiseService.getBranchComparison(
@@ -31,7 +31,7 @@ export class FranchiseController {
                 res.status(401).json({ success: false, message: 'Unauthorized' });
                 return;
             }
-            const tenantId = req.user.tenantId.toString();
+            const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
 
             const rankings = await FranchiseService.getPerformanceRanking(tenantId);
 

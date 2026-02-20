@@ -215,18 +215,33 @@ export class AttendanceService {
         };
     }
 
-    // Mark attendance for fraud
-    async markFraud(attendanceId: string, tenantId: string, reason: string): Promise<IAttendance | null> {
-        return await Attendance.findOneAndUpdate(
-            { _id: attendanceId, tenantId },
-            {
-                $set: {
-                    isFraud: true,
-                    fraudReason: reason,
-                },
-            },
-            { new: true }
-        );
+    // Bulk sync offline attendance records
+    async syncOfflineAttendance(tenantId: string, branchId: string, records: any[]): Promise<any> {
+        const results = {
+            success: 0,
+            failed: 0,
+            errors: [] as string[]
+        };
+
+        for (const record of records) {
+            try {
+                // Validate and process each offline check-in
+                await this.checkIn({
+                    tenantId,
+                    branchId,
+                    memberId: record.memberId,
+                    checkInMethod: record.checkInMethod || 'mobile_app',
+                    classId: record.classId,
+                    // Note: Use the offline check-in time if provided, or default to now
+                });
+                results.success++;
+            } catch (error: any) {
+                results.failed++;
+                results.errors.push(`Member ${record.memberId}: ${error.message}`);
+            }
+        }
+
+        return results;
     }
 }
 

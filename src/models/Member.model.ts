@@ -18,6 +18,9 @@ export interface IMember extends Document {
     email: string;
     mobile: string;
     membershipNumber: string;
+    planId?: mongoose.Types.ObjectId;
+    membershipStart?: Date;
+    membershipExpiry?: Date;
     status: MemberStatus;
     statusHistory: {
         status: MemberStatus;
@@ -34,8 +37,13 @@ export interface IMember extends Document {
             relationship?: string;
             phone?: string;
         };
+        fitnessLevel?: 'beginner' | 'intermediate' | 'advanced' | 'athlete';
+        profilePicture?: string;
     };
     healthInfo: {
+        fitnessLevel?: string;
+        medicalHistory?: string;
+        dietaryRestrictions?: string[];
         medicalConditions: string[];
         allergies: string[];
         medications: string[];
@@ -86,6 +94,22 @@ export interface IMember extends Document {
     referralCode: string;
     tags: string[];
     notes: string;
+    freezeHistory: {
+        startDate: Date;
+        endDate: Date;
+        reason?: string;
+        thawDate?: Date;
+        freezeDays?: number;
+        createdAt?: Date;
+    }[];
+    transferHistory: {
+        fromBranch: mongoose.Types.ObjectId;
+        toBranch: mongoose.Types.ObjectId;
+        transferredAt: Date;
+        reason?: string;
+        effectiveDate?: Date;
+        createdAt?: Date;
+    }[];
     gamification?: {
         currentStreak: number;
         longestStreak: number;
@@ -97,6 +121,7 @@ export interface IMember extends Document {
         level: number;
         badges: string[];
     };
+    walletBalance: number;
     lastCheckIn?: Date;
     createdAt: Date;
     updatedAt: Date;
@@ -112,6 +137,9 @@ const MemberSchema: Schema = new Schema(
         email: { type: String, required: true, lowercase: true, trim: true },
         mobile: { type: String, required: true, trim: true },
         membershipNumber: { type: String, required: true, unique: true },
+        planId: { type: Schema.Types.ObjectId, ref: 'MembershipPlan', index: true },
+        membershipStart: { type: Date },
+        membershipExpiry: { type: Date, index: true },
         status: {
             type: String,
             enum: ['lead', 'trial', 'active', 'paused', 'frozen', 'expired', 'archived'],
@@ -139,9 +167,15 @@ const MemberSchema: Schema = new Schema(
                 relationship: { type: String },
                 phone: { type: String },
             },
+            fitnessLevel: {
+                type: String,
+                enum: ['beginner', 'intermediate', 'advanced', 'athlete'],
+            },
+            profilePicture: { type: String },
         },
         healthInfo: {
             medicalConditions: [{ type: String }],
+            dietaryRestrictions: [{ type: String }],
             allergies: [{ type: String }],
             medications: [{ type: String }],
             injuries: [{ type: String }],
@@ -201,6 +235,26 @@ const MemberSchema: Schema = new Schema(
         referralCode: { type: String, unique: true, required: true },
         tags: [{ type: String }],
         notes: { type: String },
+        freezeHistory: [
+            {
+                startDate: { type: Date, required: true },
+                endDate: { type: Date, required: true },
+                reason: { type: String },
+                thawDate: { type: Date },
+                freezeDays: { type: Number },
+                createdAt: { type: Date, default: Date.now },
+            },
+        ],
+        transferHistory: [
+            {
+                fromBranch: { type: Schema.Types.ObjectId, ref: 'Branch', required: true },
+                toBranch: { type: Schema.Types.ObjectId, ref: 'Branch', required: true },
+                transferredAt: { type: Date, default: Date.now },
+                reason: { type: String },
+                effectiveDate: { type: Date },
+                createdAt: { type: Date, default: Date.now },
+            },
+        ],
         gamification: {
             currentStreak: { type: Number, default: 0 },
             longestStreak: { type: Number, default: 0 },
@@ -212,6 +266,7 @@ const MemberSchema: Schema = new Schema(
             level: { type: Number, default: 1 },
             badges: [{ type: String }],
         },
+        walletBalance: { type: Number, default: 0 },
         lastCheckIn: { type: Date },
     },
     { timestamps: true }

@@ -13,7 +13,7 @@ const razorpay = new Razorpay({
 });
 
 const stripe = new Stripe(config.stripe.secretKey, {
-    apiVersion: '2024-12-18.acacia',
+    apiVersion: '2023-10-16',
 });
 
 export interface CreatePaymentDTO {
@@ -50,11 +50,25 @@ export class PaymentService {
             : 0;
 
         const payment = await Payment.create({
-            ...data,
+            tenantId: data.tenantId,
+            branchId: data.branchId,
+            memberId: data.memberId,
+            userId: data.memberId, // Alias
+            subscriptionId: data.subscriptionId,
+            type: data.paymentType,
+            method: data.paymentMethod,
             invoiceNumber,
-            taxAmount,
-            totalAmount: data.amount + taxAmount,
+            amount: {
+                subtotal: data.amount,
+                taxAmount,
+                discountAmount: 0,
+                total: data.amount + taxAmount,
+            },
             status: 'pending',
+            metadata: {
+                description: data.description,
+                items: [],
+            },
         });
 
         return payment;
@@ -105,9 +119,12 @@ export class PaymentService {
                 {
                     $set: {
                         status: 'completed',
-                        gateway: data.gateway,
-                        gatewayPaymentId: data.gatewayPaymentId,
-                        gatewayOrderId: data.gatewayOrderId,
+                        gateway: {
+                            provider: data.gateway,
+                            paymentId: data.gatewayPaymentId,
+                            orderId: data.gatewayOrderId || '',
+                            transactionId: data.gatewayPaymentId
+                        },
                         paidAt: new Date(),
                     },
                 },
@@ -127,7 +144,7 @@ export class PaymentService {
                         $push: {
                             renewalHistory: {
                                 date: new Date(),
-                                amount: payment.totalAmount,
+                                amount: payment.amount.total,
                                 paymentId: payment._id,
                             },
                         },
@@ -177,19 +194,19 @@ export class PaymentService {
         }
 
         // Process refund with gateway
-        if (payment.gateway === 'razorpay' && payment.gatewayPaymentId) {
+        if (payment.gateway?.provider === 'razorpay' && payment.gateway.paymentId) {
             try {
-                await razorpay.payments.refund(payment.gatewayPaymentId, {
+                await razorpay.payments.refund(payment.gateway.paymentId, {
                     amount: refundAmount * 100,
                 });
             } catch (error) {
                 console.error('Razorpay refund failed:', error);
                 throw new Error('Failed to process Razorpay refund');
             }
-        } else if (payment.gateway === 'stripe' && payment.gatewayPaymentId) {
+        } else if (payment.gateway?.provider === 'stripe' && payment.gateway.paymentId) {
             try {
                 await stripe.refunds.create({
-                    payment_intent: payment.gatewayPaymentId,
+                    payment_intent: payment.gateway.paymentId,
                     amount: refundAmount * 100,
                 });
             } catch (error) {
@@ -207,7 +224,7 @@ export class PaymentService {
                     refund: {
                         amount: refundAmount,
                         reason,
-                        processedAt: new Date(),
+                        refundedAt: new Date(),
                     },
                 },
             },
@@ -255,7 +272,7 @@ export class PaymentService {
                 $group: {
                     _id: '$status',
                     count: { $sum: 1 },
-                    totalAmount: { $sum: '$totalAmount' },
+                    totalAmount: { $sum: '$amount.total' },
                 },
             },
         ]);
@@ -263,7 +280,7 @@ export class PaymentService {
         const total = await Payment.countDocuments(filter);
         const totalRevenue = await Payment.aggregate([
             { $match: { ...filter, status: 'completed' } },
-            { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+            { $group: { _id: null, total: { $sum: '$amount.total' } } },
         ]);
 
         return {

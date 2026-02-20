@@ -59,7 +59,7 @@ class LeaderboardService {
                     rank: i + 1,
                     memberId: entry._id.toString(),
                     name: `${member.firstName} ${member.lastName}`,
-                    profilePicture: member.profilePicture,
+                    profilePicture: member.personalInfo.profilePicture,
                     value: entry.count,
                 });
             }
@@ -112,7 +112,7 @@ class LeaderboardService {
                     rank: i + 1,
                     memberId: entry._id.toString(),
                     name: `${member.firstName} ${member.lastName}`,
-                    profilePicture: member.profilePicture,
+                    profilePicture: member.personalInfo.profilePicture,
                     value: entry.count,
                 });
             }
@@ -144,7 +144,7 @@ class LeaderboardService {
             rank: index + 1,
             memberId: member._id.toString(),
             name: `${member.firstName} ${member.lastName}`,
-            profilePicture: member.profilePicture,
+            profilePicture: (member as any).personalInfo?.profilePicture || (member as any).profilePicture,
             value: member.gamification?.totalPoints || 0,
         }));
     }
@@ -177,7 +177,7 @@ class LeaderboardService {
             rank: index + 1,
             memberId: member._id.toString(),
             name: `${member.firstName} ${member.lastName}`,
-            profilePicture: member.profilePicture,
+            profilePicture: (member as any).personalInfo?.profilePicture || (member as any).profilePicture,
             value: type === 'attendance'
                 ? member.gamification?.currentStreak || 0
                 : member.gamification?.workoutStreak || 0,
@@ -199,16 +199,16 @@ class LeaderboardService {
 
         switch (type) {
             case 'attendance':
-                leaderboard = await this.getAttendanceLeaderboard(member.tenantId, 'gym', period, undefined, 100);
+                leaderboard = await this.getAttendanceLeaderboard(member.tenantId.toString(), 'gym', period, undefined, 100);
                 break;
             case 'workout':
-                leaderboard = await this.getWorkoutLeaderboard(member.tenantId, 'gym', period, undefined, 100);
+                leaderboard = await this.getWorkoutLeaderboard(member.tenantId.toString(), 'gym', period, undefined, 100);
                 break;
             case 'points':
-                leaderboard = await this.getPointsLeaderboard(member.tenantId, 'gym', undefined, 100);
+                leaderboard = await this.getPointsLeaderboard(member.tenantId.toString(), 'gym', undefined, 100);
                 break;
             case 'streak':
-                leaderboard = await this.getStreakLeaderboard(member.tenantId, 'attendance', 'gym', undefined, 100);
+                leaderboard = await this.getStreakLeaderboard(member.tenantId.toString(), 'attendance', 'gym', undefined, 100);
                 break;
         }
 

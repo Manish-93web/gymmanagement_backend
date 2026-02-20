@@ -3,11 +3,31 @@ import { config } from '../config/config';
 import Member from '../models/Member.model';
 import Exercise from '../models/Exercise.model';
 
-const openai = new OpenAI({
-    apiKey: config.openai.apiKey,
-});
-
 export class AIService {
+    private openai: OpenAI | null = null;
+    private initialized = false;
+
+    private ensureInitialized() {
+        if (this.initialized) return;
+
+        const apiKey = config.openai.apiKey;
+
+        if (!apiKey) {
+            console.warn('⚠️ OpenAI API key missing. AI features will not work.');
+            this.initialized = true;
+            return;
+        }
+
+        try {
+            this.openai = new OpenAI({
+                apiKey: apiKey,
+            });
+            this.initialized = true;
+        } catch (error) {
+            console.error('❌ Failed to initialize OpenAI client:', error);
+        }
+    }
+
     // Generate workout plan using AI
     async generateWorkoutPlan(
         memberId: string,
@@ -17,6 +37,11 @@ export class AIService {
         equipmentAvailable: string[],
         tenantId: string
     ): Promise<any> {
+        this.ensureInitialized();
+        if (!this.openai) {
+            throw new Error('AI service not configured properly (missing OpenAI API key)');
+        }
+
         const member = await Member.findById(memberId);
 
         if (!member) {
@@ -64,7 +89,7 @@ Format the response as JSON with the following structure:
 }`;
 
         try {
-            const completion = await openai.chat.completions.create({
+            const completion = await this.openai.chat.completions.create({
                 model: 'gpt-4',
                 messages: [
                     {
@@ -97,11 +122,19 @@ Format the response as JSON with the following structure:
         mealsPerDay: number,
         tenantId: string
     ): Promise<any> {
+        this.ensureInitialized();
+        if (!this.openai) {
+            throw new Error('AI service not configured properly (missing OpenAI API key)');
+        }
+
         const member = await Member.findById(memberId);
 
         if (!member) {
             throw new Error('Member not found');
         }
+
+        const calories = 2000; // default calories - TODO: calculate based on member data
+        const macros = { protein: 150, carbs: 250, fats: 65 }; // default macros
 
         const prompt = `Create a ${mealsPerDay}-meal per day diet plan with the following requirements:
 
@@ -143,7 +176,7 @@ Format the response as JSON with the following structure:
 }`;
 
         try {
-            const completion = await openai.chat.completions.create({
+            const completion = await this.openai.chat.completions.create({
                 model: 'gpt-4',
                 messages: [
                     {
@@ -169,6 +202,11 @@ Format the response as JSON with the following structure:
 
     // AI fitness chatbot
     async chatbot(memberId: string, message: string, tenantId: string, conversationHistory: any[] = []): Promise<string> {
+        this.ensureInitialized();
+        if (!this.openai) {
+            throw new Error('AI service not configured properly (missing OpenAI API key)');
+        }
+
         const member = await Member.findById(memberId).populate('userId');
 
         if (!member) {
@@ -184,7 +222,7 @@ You have access to their profile:
 Provide helpful, encouraging, and accurate fitness advice. Keep responses concise and actionable.`;
 
         try {
-            const completion = await openai.chat.completions.create({
+            const completion = await this.openai.chat.completions.create({
                 model: 'gpt-4',
                 messages: [
                     { role: 'system', content: systemPrompt },
@@ -248,6 +286,11 @@ Provide helpful, encouraging, and accurate fitness advice. Keep responses concis
 
     // Get AI insights for member progress
     async getProgressInsights(memberId: string, tenantId: string): Promise<string> {
+        this.ensureInitialized();
+        if (!this.openai) {
+            throw new Error('AI service not configured properly (missing OpenAI API key)');
+        }
+
         const member = await Member.findById(memberId).populate('userId');
 
         if (!member) {
@@ -284,7 +327,7 @@ Provide:
 Keep it concise and motivating.`;
 
         try {
-            const completion = await openai.chat.completions.create({
+            const completion = await this.openai.chat.completions.create({
                 model: 'gpt-4',
                 messages: [
                     {
@@ -304,6 +347,117 @@ Keep it concise and motivating.`;
         } catch (error) {
             console.error('AI insights generation failed:', error);
             throw new Error('Failed to generate AI insights');
+        }
+    }
+
+    // AI Trainer Matching
+    async matchTrainer(memberId: string, tenantId: string): Promise<any> {
+        this.ensureInitialized();
+        if (!this.openai) {
+            throw new Error('AI service not configured properly (missing OpenAI API key)');
+        }
+
+        const member = await Member.findById(memberId);
+        if (!member) throw new Error('Member not found');
+
+        // Fetch all active trainers for this tenant
+        const User = (await import('../models/User.model')).default;
+        const trainers = await User.find({
+            tenantId: tenantId as any,
+            role: 'trainer',
+            isActive: true
+        });
+
+        const prompt = `Match the best trainer for this member based on their goals and trainers' specializations:
+Member Goals: ${member.goals?.join(', ') || 'General fitness'}
+Member Health Info: ${member.healthInfo?.medicalConditions?.join(', ') || 'None'}
+
+Available Trainers:
+${trainers.map(t => `- ID: ${t._id}, Name: ${t.firstName} ${t.lastName}, Specializations: ${t.specializations?.join(', ') || 'General'}`).join('\n')}
+
+Provide the top 3 matches with a "matchScore" (0-100) and a "reason" for each.
+Format as JSON: { "matches": [{ "trainerId": "...", "trainerName": "...", "matchScore": 85, "reason": "..." }] }`;
+
+        try {
+            const completion = await this.openai.chat.completions.create({
+                model: 'gpt-4',
+                messages: [{ role: 'system', content: 'You are an AI gym coordinator.' }, { role: 'user', content: prompt }],
+                temperature: 0.7,
+                response_format: { type: 'json_object' }
+            });
+
+            return JSON.parse(completion.choices[0].message.content || '{}');
+        } catch (error) {
+            console.error('AI matching failed:', error);
+            throw new Error('Failed to match trainers');
+        }
+    }
+
+    // AI Injury-Risk Analysis
+    async getInjuryRisk(memberId: string): Promise<{ riskLevel: 'low' | 'medium' | 'high'; advice: string; indicators: string[] }> {
+        this.ensureInitialized();
+        if (!this.openai) {
+            throw new Error('AI service not configured properly (missing OpenAI API key)');
+        }
+
+        const member = await Member.findById(memberId);
+        if (!member) throw new Error('Member not found');
+
+        const measurements = member.measurements.slice(-10);
+        const healthInfo = member.healthInfo;
+
+        const prompt = `Assess injury risk for this member:
+Health History: ${healthInfo?.injuries?.join(', ') || 'No previous injuries'}
+Recent Weight Trend: ${measurements.map(m => m.weight).join(' -> ')}
+Goals: ${member.goals?.join(', ')}
+
+Analyze if the member is pushing too hard or has pre-existing conditions that increase risk.
+Format as JSON: { "riskLevel": "low|medium|high", "advice": "...", "indicators": ["..."] }`;
+
+        try {
+            const completion = await this.openai.chat.completions.create({
+                model: 'gpt-4',
+                messages: [{ role: 'system', content: 'You are an AI Sports Medicine Expert.' }, { role: 'user', content: prompt }],
+                temperature: 0.5,
+                response_format: { type: 'json_object' }
+            });
+
+            return JSON.parse(completion.choices[0].message.content || '{}');
+        } catch (error) {
+            console.error('Injury risk analysis failed:', error);
+            return { riskLevel: 'low', advice: 'Keep monitoring form.', indicators: [] };
+        }
+    }
+
+    // AI Habit Nudging (Auto-alerts)
+    async generateHabitNudge(memberId: string): Promise<string> {
+        this.ensureInitialized();
+        if (!this.openai) {
+            throw new Error('AI service not configured properly (missing OpenAI API key)');
+        }
+
+        const member = await Member.findById(memberId).populate('userId');
+        if (!member) throw new Error('Member not found');
+
+        const user = member.userId as any;
+        const prompt = `Generate a short, powerful, personalized motivational nudge for ${user.firstName}.
+Current status: ${member.status}
+Goals: ${member.goals?.join(', ')}
+Last activity: Some time ago.
+
+The nudge should be under 150 characters, suitable for a push notification or WhatsApp.`;
+
+        try {
+            const completion = await this.openai.chat.completions.create({
+                model: 'gpt-4',
+                messages: [{ role: 'system', content: 'You are a world-class habit coach.' }, { role: 'user', content: prompt }],
+                max_tokens: 100
+            });
+
+            return completion.choices[0].message.content || 'Time to get back to the gym!';
+        } catch (error) {
+            console.error('Habit nudge failed:', error);
+            return 'Keep pushing towards your goals!';
         }
     }
 }

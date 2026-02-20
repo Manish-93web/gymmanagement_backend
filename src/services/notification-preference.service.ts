@@ -111,7 +111,7 @@ class NotificationPreferenceService {
         }
 
         // Check both channel enabled and specific type
-        return preferences[channel].enabled && preferences[channel][type];
+        return (preferences[channel] as any).enabled && (preferences[channel] as any)[type];
     }
 
     /**

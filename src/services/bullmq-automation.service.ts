@@ -1,151 +1,154 @@
-import Bull from 'bull';
-import Redis from 'ioredis';
+import { Queue, Worker, Job } from 'bullmq';
+import IORedis from 'ioredis';
 import MembershipLifecycleService from './membership-lifecycle.service';
 import WhatsAppService from './whatsapp.service';
 import { sendEmail } from '../utils/email.util';
 import Member from '../models/Member.model';
 import logger from '../config/logger';
 
-const redis = new Redis({
+const isMock = process.env.USE_REDIS_MOCK === 'true';
+
+const connection = !isMock ? new IORedis({
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT || '6379'),
     password: process.env.REDIS_PASSWORD,
-});
+    maxRetriesPerRequest: null,
+}) : null;
 
 class BullMQAutomationService {
-    private membershipExpiryQueue: Bull.Queue;
-    private birthdayQueue: Bull.Queue;
-    private reportQueue: Bull.Queue;
-    private backupQueue: Bull.Queue;
-    private renewalQueue: Bull.Queue;
+    private membershipExpiryQueue: Queue | null = null;
+    private birthdayQueue: Queue | null = null;
+    private reportQueue: Queue | null = null;
+    private backupQueue: Queue | null = null;
+    private renewalQueue: Queue | null = null;
+    private workers: Worker[] = [];
+    private isInitialized = false;
 
-    constructor() {
-        // Initialize queues
-        this.membershipExpiryQueue = new Bull('membership-expiry', {
-            redis: {
-                host: process.env.REDIS_HOST || 'localhost',
-                port: parseInt(process.env.REDIS_PORT || '6379'),
-                password: process.env.REDIS_PASSWORD,
-            },
-        });
+    /**
+     * Initialize queues and workers
+     */
+    async initialize() {
+        if (this.isInitialized) return;
+        if (isMock) {
+            logger.info('⚠️ BullMQ Automation Service skipped (Redis Mock enabled)');
+            this.isInitialized = true;
+            return;
+        }
 
-        this.birthdayQueue = new Bull('birthday-wishes', {
-            redis: {
-                host: process.env.REDIS_HOST || 'localhost',
-                port: parseInt(process.env.REDIS_PORT || '6379'),
-                password: process.env.REDIS_PASSWORD,
-            },
-        });
+        try {
+            // Initialize queues
+            const queueOptions = { connection: connection as any };
 
-        this.reportQueue = new Bull('scheduled-reports', {
-            redis: {
-                host: process.env.REDIS_HOST || 'localhost',
-                port: parseInt(process.env.REDIS_PORT || '6379'),
-                password: process.env.REDIS_PASSWORD,
-            },
-        });
+            this.membershipExpiryQueue = new Queue('membership-expiry', queueOptions);
+            this.birthdayQueue = new Queue('birthday-wishes', queueOptions);
+            this.reportQueue = new Queue('scheduled-reports', queueOptions);
+            this.backupQueue = new Queue('database-backup', queueOptions);
+            this.renewalQueue = new Queue('subscription-renewal', queueOptions);
 
-        this.backupQueue = new Bull('database-backup', {
-            redis: {
-                host: process.env.REDIS_HOST || 'localhost',
-                port: parseInt(process.env.REDIS_PORT || '6379'),
-                password: process.env.REDIS_PASSWORD,
-            },
-        });
+            this.setupProcessors();
+            await this.setupScheduledJobs();
 
-        this.renewalQueue = new Bull('subscription-renewal', {
-            redis: {
-                host: process.env.REDIS_HOST || 'localhost',
-                port: parseInt(process.env.REDIS_PORT || '6379'),
-                password: process.env.REDIS_PASSWORD,
-            },
-        });
-
-        this.setupProcessors();
-        this.setupScheduledJobs();
+            this.isInitialized = true;
+            logger.info('✅ BullMQ Automation Service initialized');
+        } catch (error: any) {
+            logger.error('❌ Failed to initialize BullMQ Automation Service:', error);
+            throw error;
+        }
     }
 
     /**
      * Setup job processors
      */
     private setupProcessors() {
+        const workerOptions = { connection: connection as any };
+
         // Membership expiry processor
-        this.membershipExpiryQueue.process(async (job) => {
+        this.workers.push(new Worker('membership-expiry', async (job) => {
             const { tenantId } = job.data;
             await this.processExpiringMemberships(tenantId);
-        });
+        }, workerOptions));
 
         // Birthday processor
-        this.birthdayQueue.process(async (job) => {
+        this.workers.push(new Worker('birthday-wishes', async (job) => {
             const { tenantId } = job.data;
             await this.processBirthdays(tenantId);
-        });
+        }, workerOptions));
 
         // Report processor
-        this.reportQueue.process(async (job) => {
+        this.workers.push(new Worker('scheduled-reports', async (job) => {
             const { reportId, tenantId } = job.data;
             await this.processScheduledReport(reportId, tenantId);
-        });
+        }, workerOptions));
 
         // Backup processor
-        this.backupQueue.process(async (job) => {
+        this.workers.push(new Worker('database-backup', async (job) => {
             await this.processBackup();
-        });
+        }, workerOptions));
 
         // Renewal processor
-        this.renewalQueue.process(async (job) => {
+        this.workers.push(new Worker('subscription-renewal', async (job) => {
             const { tenantId } = job.data;
             await this.processAutoRenewals(tenantId);
-        });
+        }, workerOptions));
 
-        logger.info('BullMQ processors initialized');
+        logger.info('BullMQ workers initialized');
     }
 
     /**
      * Setup scheduled jobs
      */
-    private setupScheduledJobs() {
-        // Check expiring memberships daily at 9 AM
-        this.membershipExpiryQueue.add(
-            {},
-            {
-                repeat: {
-                    cron: '0 9 * * *',
-                },
-            }
-        );
+    private async setupScheduledJobs() {
+        if (!this.membershipExpiryQueue || !this.birthdayQueue || !this.backupQueue || !this.renewalQueue) return;
 
-        // Check birthdays daily at 8 AM
-        this.birthdayQueue.add(
-            {},
-            {
-                repeat: {
-                    cron: '0 8 * * *',
-                },
-            }
-        );
+        try {
+            // Check expiring memberships daily at 9 AM
+            await this.membershipExpiryQueue.add(
+                'check-expiring',
+                {},
+                {
+                    repeat: {
+                        pattern: '0 9 * * *',
+                    },
+                }
+            );
 
-        // Database backup daily at 2 AM
-        this.backupQueue.add(
-            {},
-            {
-                repeat: {
-                    cron: '0 2 * * *',
-                },
-            }
-        );
+            // Check birthdays daily at 8 AM
+            await this.birthdayQueue.add(
+                'birthday-wishes',
+                {},
+                {
+                    repeat: {
+                        pattern: '0 8 * * *',
+                    },
+                }
+            );
 
-        // Subscription renewals daily at midnight
-        this.renewalQueue.add(
-            {},
-            {
-                repeat: {
-                    cron: '0 0 * * *',
-                },
-            }
-        );
+            // Database backup daily at 2 AM
+            await this.backupQueue.add(
+                'database-backup',
+                {},
+                {
+                    repeat: {
+                        pattern: '0 2 * * *',
+                    },
+                }
+            );
 
-        logger.info('BullMQ scheduled jobs initialized');
+            // Subscription renewals daily at midnight
+            await this.renewalQueue.add(
+                'subscription-renewals',
+                {},
+                {
+                    repeat: {
+                        pattern: '0 0 * * *',
+                    },
+                }
+            );
+
+            logger.info('BullMQ scheduled jobs initialized');
+        } catch (error) {
+            logger.warn('Failed to add scheduled jobs to BullMQ:', error);
+        }
     }
 
     /**
@@ -165,6 +168,8 @@ class BullMQAutomationService {
         });
 
         for (const member of expiringMembers) {
+            if (!member.membershipExpiry) continue;
+
             const daysRemaining = Math.ceil(
                 (member.membershipExpiry.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
             );
@@ -250,11 +255,12 @@ class BullMQAutomationService {
         data: any,
         options?: {
             delay?: number;
-            repeat?: { cron: string };
+            repeat?: { pattern: string };
             priority?: number;
         }
     ) {
-        let queue: Bull.Queue;
+        this.ensureInitialized();
+        let queue: Queue;
 
         switch (queueName) {
             case 'membership-expiry':
@@ -273,7 +279,7 @@ class BullMQAutomationService {
                 throw new Error('Invalid queue name');
         }
 
-        const job = await queue.add(data, options);
+        const job = await queue.add('custom-job', data, options);
 
         logger.info('Job added to queue', { queueName, jobId: job.id });
 
@@ -287,7 +293,8 @@ class BullMQAutomationService {
      * Get queue statistics
      */
     async getQueueStats(queueName: string) {
-        let queue: Bull.Queue;
+        this.ensureInitialized();
+        let queue: Queue;
 
         switch (queueName) {
             case 'membership-expiry':
@@ -328,7 +335,8 @@ class BullMQAutomationService {
      * Remove job
      */
     async removeJob(queueName: string, jobId: string) {
-        let queue: Bull.Queue;
+        this.ensureInitialized();
+        let queue: Queue;
 
         switch (queueName) {
             case 'membership-expiry':
@@ -363,7 +371,8 @@ class BullMQAutomationService {
      * Clean completed jobs
      */
     async cleanQueue(queueName: string, grace: number = 86400000) {
-        let queue: Bull.Queue;
+        this.ensureInitialized();
+        let queue: Queue;
 
         switch (queueName) {
             case 'membership-expiry':
@@ -382,8 +391,8 @@ class BullMQAutomationService {
                 throw new Error('Invalid queue name');
         }
 
-        await queue.clean(grace, 'completed');
-        await queue.clean(grace, 'failed');
+        await queue.clean(grace, 1000, 'completed');
+        await queue.clean(grace, 1000, 'failed');
 
         logger.info('Queue cleaned', { queueName });
 
@@ -391,6 +400,12 @@ class BullMQAutomationService {
             success: true,
             message: 'Queue cleaned successfully',
         };
+    }
+
+    private ensureInitialized() {
+        if (!this.isInitialized || !this.membershipExpiryQueue || !this.birthdayQueue || !this.reportQueue || !this.backupQueue || !this.renewalQueue) {
+            throw new Error('BullMQ Automation Service not initialized. Call initialize() first.');
+        }
     }
 }
 

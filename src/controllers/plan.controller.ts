@@ -45,7 +45,7 @@ export class PlanController {
     async createPlan(req: Request, res: Response, next: NextFunction) {
         try {
             const validatedData = createPlanSchema.parse(req.body);
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
             const branchId = req.user!.branchId?.toString();
 
             const plan = await PlanService.createPlan({
@@ -87,7 +87,7 @@ export class PlanController {
     async getPlanById(req: Request, res: Response, next: NextFunction) {
         try {
             const { planId } = req.params;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
 
             const plan = await PlanService.getPlanById(planId, tenantId);
 
@@ -110,7 +110,7 @@ export class PlanController {
     // Get all plans
     async getPlans(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
             const { type, branchId } = req.query;
 
             const plans = await PlanService.getPlans(
@@ -132,7 +132,7 @@ export class PlanController {
     async updatePlan(req: Request, res: Response, next: NextFunction) {
         try {
             const { planId } = req.params;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
 
             const plan = await PlanService.updatePlan(planId, tenantId, req.body);
 
@@ -150,7 +150,7 @@ export class PlanController {
     async deactivatePlan(req: Request, res: Response, next: NextFunction) {
         try {
             const { planId } = req.params;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
 
             const plan = await PlanService.deactivatePlan(planId, tenantId);
 
@@ -168,7 +168,7 @@ export class PlanController {
     async createSubscription(req: Request, res: Response, next: NextFunction) {
         try {
             const validatedData = createSubscriptionSchema.parse(req.body);
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
             const branchId = req.user!.branchId?.toString();
 
             const subscription = await PlanService.createSubscription({
@@ -194,7 +194,7 @@ export class PlanController {
         try {
             const { subscriptionId } = req.params;
             const { days, reason } = req.body;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
 
             const subscription = await PlanService.freezeSubscription(
                 subscriptionId,
@@ -217,7 +217,7 @@ export class PlanController {
     async unfreezeSubscription(req: Request, res: Response, next: NextFunction) {
         try {
             const { subscriptionId } = req.params;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
 
             const subscription = await PlanService.unfreezeSubscription(subscriptionId, tenantId);
 
@@ -236,7 +236,7 @@ export class PlanController {
         try {
             const { subscriptionId } = req.params;
             const { reason, refundAmount } = req.body;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
 
             const subscription = await PlanService.cancelSubscription(
                 subscriptionId,
@@ -259,7 +259,7 @@ export class PlanController {
     async renewSubscription(req: Request, res: Response, next: NextFunction) {
         try {
             const { subscriptionId } = req.params;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
 
             const subscription = await PlanService.renewSubscription(subscriptionId, tenantId);
 
@@ -277,7 +277,7 @@ export class PlanController {
     async getMemberSubscriptions(req: Request, res: Response, next: NextFunction) {
         try {
             const { memberId } = req.params;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
 
             const subscriptions = await PlanService.getMemberSubscriptions(memberId, tenantId);
 

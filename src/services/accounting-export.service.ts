@@ -1,6 +1,6 @@
 import Payment from '../models/Payment.model';
 import Member from '../models/Member.model';
-import Plan from '../models/Plan.model';
+import MembershipPlan from '../models/MembershipPlan.model';
 import { Parser } from 'json2csv';
 import logger from '../config/logger';
 
@@ -34,20 +34,26 @@ class AccountingExportService {
             { label: 'Status', value: 'status' },
         ];
 
-        const data = payments.map((payment: any) => ({
-            date: new Date(payment.createdAt).toLocaleDateString(),
-            invoiceNumber: `INV-${payment._id.toString().slice(-8).toUpperCase()}`,
-            memberName: `${payment.userId.firstName} ${payment.userId.lastName}`,
-            memberId: payment.userId.membershipNumber || payment.userId._id,
-            planName: payment.planId?.name || 'N/A',
-            amount: payment.amount.subtotal,
-            discount: payment.amount.discountAmount || 0,
-            tax: payment.amount.taxAmount || 0,
-            total: payment.amount.total,
-            paymentMethod: payment.gateway,
-            transactionId: payment.transactionId || '',
-            status: payment.status,
-        }));
+        const data = payments.map((payment: any) => {
+            const member = payment.memberId;
+            const subscription = payment.subscriptionId;
+            const plan = subscription?.planId;
+
+            return {
+                date: new Date(payment.createdAt).toLocaleDateString(),
+                invoiceNumber: payment.invoiceNumber,
+                memberName: member ? `${member.firstName} ${member.lastName}` : 'N/A',
+                memberId: member?.membershipNumber || member?._id || 'N/A',
+                planName: plan?.name || 'N/A',
+                amount: payment.amount.subtotal,
+                discount: payment.amount.discountAmount || 0,
+                tax: payment.amount.taxAmount || 0,
+                total: payment.amount.total,
+                paymentMethod: payment.method,
+                transactionId: payment.gateway?.transactionId || '',
+                status: payment.status,
+            };
+        });
 
         const parser = new Parser({ fields });
         const csv = parser.parse(data);
@@ -76,25 +82,26 @@ class AccountingExportService {
         xml += '      <REQUESTDATA>\n';
 
         for (const payment of payments) {
-            const member = payment.userId as any;
-            const plan = payment.planId as any;
+            const member = payment.memberId as any;
+            const subscription = payment.subscriptionId as any;
+            const plan = subscription?.planId as any;
             const date = new Date(payment.createdAt).toISOString().split('T')[0].replace(/-/g, '');
 
             xml += '        <TALLYMESSAGE xmlns:UDF="TallyUDF">\n';
             xml += '          <VOUCHER REMOTEID="" VCHKEY="" VCHTYPE="Sales" ACTION="Create">\n';
             xml += `            <DATE>${date}</DATE>\n`;
             xml += `            <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>\n`;
-            xml += `            <VOUCHERNUMBER>INV-${payment._id.toString().slice(-8).toUpperCase()}</VOUCHERNUMBER>\n`;
-            xml += `            <PARTYLEDGERNAME>${member.firstName} ${member.lastName}</PARTYLEDGERNAME>\n`;
+            xml += `            <VOUCHERNUMBER>${payment.invoiceNumber}</VOUCHERNUMBER>\n`;
+            xml += `            <PARTYLEDGERNAME>${member?.firstName} ${member?.lastName}</PARTYLEDGERNAME>\n`;
             xml += '            <ALLLEDGERENTRIES.LIST>\n';
-            xml += `              <LEDGERNAME>${member.firstName} ${member.lastName}</LEDGERNAME>\n`;
+            xml += `              <LEDGERNAME>${member?.firstName} ${member?.lastName}</LEDGERNAME>\n`;
             xml += '              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>\n';
-            xml += `              <AMOUNT>-${payment.amount}</AMOUNT>\n`;
+            xml += `              <AMOUNT>-${payment.amount.total}</AMOUNT>\n`;
             xml += '            </ALLLEDGERENTRIES.LIST>\n';
             xml += '            <ALLLEDGERENTRIES.LIST>\n';
             xml += `              <LEDGERNAME>${plan?.name || 'Membership'}</LEDGERNAME>\n`;
             xml += '              <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>\n';
-            xml += `              <AMOUNT>${payment.amount}</AMOUNT>\n`;
+            xml += `              <AMOUNT>${payment.amount.total}</AMOUNT>\n`;
             xml += '            </ALLLEDGERENTRIES.LIST>\n';
             xml += '          </VOUCHER>\n';
             xml += '        </TALLYMESSAGE>\n';
@@ -127,7 +134,7 @@ class AccountingExportService {
         };
 
         for (const payment of payments) {
-            const amount = payment.amount;
+            const amount = payment.amount.total;
             const discount = payment.discount || 0;
             const tax = amount * 0.18;
 
@@ -136,7 +143,7 @@ class AccountingExportService {
             summary.totalTax += tax;
 
             // By payment method
-            const method = payment.gateway;
+            const method = payment.method || 'unknown';
             summary.paymentsByMethod[method] = (summary.paymentsByMethod[method] || 0) + amount;
 
             // By status
@@ -174,8 +181,11 @@ class AccountingExportService {
         }
 
         const payments = await Payment.find(query)
-            .populate('userId', 'firstName lastName email membershipNumber')
-            .populate('planId', 'name price')
+            .populate('memberId', 'firstName lastName email membershipNumber')
+            .populate({
+                path: 'subscriptionId',
+                populate: { path: 'planId', select: 'name price' }
+            })
             .sort({ createdAt: -1 });
 
         return payments;

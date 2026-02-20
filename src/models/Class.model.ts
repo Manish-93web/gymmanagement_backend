@@ -45,6 +45,11 @@ export interface IClass extends Document {
     isActive: boolean;
     isCancelled: boolean;
     cancellationReason?: string;
+    calendarEvents?: {
+        userId: mongoose.Types.ObjectId;
+        eventId: string;
+        provider: 'google' | 'outlook' | 'apple';
+    }[];
     createdAt: Date;
     updatedAt: Date;
 }
@@ -104,6 +109,13 @@ const ClassSchema: Schema = new Schema(
         isActive: { type: Boolean, default: true },
         isCancelled: { type: Boolean, default: false },
         cancellationReason: { type: String },
+        calendarEvents: [
+            {
+                userId: { type: Schema.Types.ObjectId, ref: 'User' },
+                eventId: { type: String },
+                provider: { type: String, enum: ['google', 'outlook', 'apple'] },
+            },
+        ],
     },
     { timestamps: true }
 );

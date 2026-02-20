@@ -32,8 +32,9 @@ export class ClassController {
     async createClass(req: Request, res: Response, next: NextFunction) {
         try {
             const validatedData = createClassSchema.parse(req.body);
-            const tenantId = req.user?.tenantId?.toString() || '';
-            const branchId = req.user?.branchId?.toString() || '';
+            const isSuperAdmin = req.user?.role === 'super_admin';
+            const tenantId = isSuperAdmin ? (req.body.tenantId || req.user?.tenantId?.toString() || '') : (req.user?.tenantId?.toString() || '');
+            const branchId = isSuperAdmin ? (req.body.branchId || req.user?.branchId?.toString() || '') : (req.user?.branchId?.toString() || '');
 
             const classDoc = await ClassService.createClass({
                 ...validatedData,
@@ -59,8 +60,9 @@ export class ClassController {
 
     async getClasses(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user?.tenantId?.toString() || '';
-            const { branchId, type, trainerId, startDate, endDate, search } = req.query;
+            const isSuperAdmin = req.user?.role === 'super_admin';
+            const { branchId, type, trainerId, startDate, endDate, search, tenantId: queryTenantId } = req.query;
+            const tenantId = isSuperAdmin ? (queryTenantId as string || undefined) : (req.user?.tenantId?.toString());
 
             const classes = await ClassService.getClasses(
                 tenantId,
@@ -81,7 +83,8 @@ export class ClassController {
     async getClassById(req: Request, res: Response, next: NextFunction) {
         try {
             const { classId } = req.params;
-            const tenantId = req.user?.tenantId?.toString() || '';
+            const isSuperAdmin = req.user?.role === 'super_admin';
+            const tenantId = isSuperAdmin ? undefined : req.user?.tenantId?.toString();
 
             const classDoc = await ClassService.getClassById(classId, tenantId);
 
@@ -98,7 +101,8 @@ export class ClassController {
     async updateClass(req: Request, res: Response, next: NextFunction) {
         try {
             const { classId } = req.params;
-            const tenantId = req.user?.tenantId?.toString() || '';
+            const isSuperAdmin = req.user?.role === 'super_admin';
+            const tenantId = isSuperAdmin ? undefined : req.user?.tenantId?.toString();
 
             const classDoc = await ClassService.updateClass(classId, tenantId, req.body);
 
@@ -111,8 +115,9 @@ export class ClassController {
     async createBooking(req: Request, res: Response, next: NextFunction) {
         try {
             const validatedData = createBookingSchema.parse(req.body);
-            const tenantId = req.user?.tenantId?.toString() || '';
-            const branchId = req.user?.branchId?.toString() || '';
+            const isSuperAdmin = req.user?.role === 'super_admin';
+            const tenantId = isSuperAdmin ? (req.body.tenantId || req.user?.tenantId?.toString() || '') : (req.user?.tenantId?.toString() || '');
+            const branchId = isSuperAdmin ? (req.body.branchId || req.user?.branchId?.toString() || '') : (req.user?.branchId?.toString() || '');
 
             const booking = await ClassService.createBooking({
                 ...validatedData,
@@ -131,7 +136,8 @@ export class ClassController {
         try {
             const { bookingId } = req.params;
             const { reason } = req.body;
-            const tenantId = req.user?.tenantId?.toString() || '';
+            const isSuperAdmin = req.user?.role === 'super_admin';
+            const tenantId = isSuperAdmin ? undefined : req.user?.tenantId?.toString();
 
             const booking = await ClassService.cancelBooking(bookingId, tenantId, reason);
 
@@ -145,7 +151,8 @@ export class ClassController {
         try {
             const { bookingId } = req.params;
             const { attended } = req.body;
-            const tenantId = req.user?.tenantId?.toString() || '';
+            const isSuperAdmin = req.user?.role === 'super_admin';
+            const tenantId = isSuperAdmin ? undefined : req.user?.tenantId?.toString();
 
             const booking = await ClassService.markAttendance(bookingId, tenantId, !!attended);
 
@@ -158,7 +165,8 @@ export class ClassController {
     async getMemberBookings(req: Request, res: Response, next: NextFunction) {
         try {
             const { memberId } = req.params;
-            const tenantId = req.user?.tenantId?.toString() || '';
+            const isSuperAdmin = req.user?.role === 'super_admin';
+            const tenantId = isSuperAdmin ? undefined : req.user?.tenantId?.toString();
 
             const { bookings } = await ClassService.getMemberBookings(memberId, tenantId);
 

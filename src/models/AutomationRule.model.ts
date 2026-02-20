@@ -1,39 +1,36 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-export type TriggerType = 'event' | 'schedule' | 'condition';
-export type ActionType = 'send_notification' | 'update_status' | 'assign_task' | 'webhook';
+export type ActionType = 'send_email' | 'send_sms' | 'send_whatsapp' | 'update_field' | 'create_task' | 'send_notification';
+
+export interface TriggerCondition {
+    field: string;
+    operator: 'equals' | 'not_equals' | 'greater_than' | 'less_than' | 'contains';
+    value: any;
+}
+
+export interface TriggerAction {
+    type: ActionType;
+    config: any;
+    delay?: number; // in minutes
+}
 
 export interface IAutomationRule extends Document {
     tenantId: mongoose.Types.ObjectId;
-    branchId?: mongoose.Types.ObjectId;
     name: string;
     description: string;
-    isActive: boolean;
     trigger: {
-        type: TriggerType;
-        event?: string; // e.g., 'member.created', 'subscription.expiring'
-        schedule?: {
-            cron: string;
-            timezone: string;
-        };
-        conditions?: {
-            field: string;
-            operator: 'equals' | 'not_equals' | 'greater_than' | 'less_than' | 'contains';
-            value: any;
-        }[];
+        type: 'member_signup' | 'subscription_expiring' | 'payment_failed' | 'inactivity' | 'birthday' | 'custom';
+        condition?: TriggerCondition[];
     };
-    actions: {
-        type: ActionType;
-        config: any;
-        delay?: number; // minutes
+    actions: TriggerAction[];
+    isActive: boolean;
+    executionCount: number;
+    lastExecutedAt?: Date;
+    executionLog?: {
+        date: Date;
+        status: 'success' | 'failed';
+        details?: string;
     }[];
-    executionLog: {
-        executedAt: Date;
-        success: boolean;
-        error?: string;
-        affectedRecords: number;
-    }[];
-    createdBy: mongoose.Types.ObjectId;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -41,30 +38,22 @@ export interface IAutomationRule extends Document {
 const AutomationRuleSchema: Schema = new Schema(
     {
         tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
-        branchId: { type: Schema.Types.ObjectId, ref: 'Branch', index: true },
         name: { type: String, required: true },
         description: { type: String },
-        isActive: { type: Boolean, default: true, index: true },
         trigger: {
             type: {
                 type: String,
-                enum: ['event', 'schedule', 'condition'],
+                enum: ['member_signup', 'subscription_expiring', 'payment_failed', 'inactivity', 'birthday', 'custom'],
                 required: true,
             },
-            event: { type: String },
-            schedule: {
-                cron: { type: String },
-                timezone: { type: String, default: 'UTC' },
-            },
-            conditions: [
+            condition: [
                 {
-                    field: { type: String, required: true },
+                    field: { type: String },
                     operator: {
                         type: String,
                         enum: ['equals', 'not_equals', 'greater_than', 'less_than', 'contains'],
-                        required: true,
                     },
-                    value: { type: Schema.Types.Mixed, required: true },
+                    value: { type: Schema.Types.Mixed },
                 },
             ],
         },
@@ -72,28 +61,31 @@ const AutomationRuleSchema: Schema = new Schema(
             {
                 type: {
                     type: String,
-                    enum: ['send_notification', 'update_status', 'assign_task', 'webhook'],
-                    required: true,
+                    enum: [
+                        'send_email',
+                        'send_sms',
+                        'send_whatsapp',
+                        'update_field',
+                        'create_task',
+                        'send_notification',
+                    ],
                 },
-                config: { type: Schema.Types.Mixed, required: true },
+                config: { type: Schema.Types.Mixed },
                 delay: { type: Number, default: 0 },
             },
         ],
+        isActive: { type: Boolean, default: true, index: true },
+        executionCount: { type: Number, default: 0 },
+        lastExecutedAt: { type: Date },
         executionLog: [
             {
-                executedAt: { type: Date, required: true },
-                success: { type: Boolean, required: true },
-                error: { type: String },
-                affectedRecords: { type: Number, default: 0 },
+                date: { type: Date, default: Date.now },
+                status: { type: String, enum: ['success', 'failed'] },
+                details: { type: String },
             },
         ],
-        createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     },
     { timestamps: true }
 );
-
-// Indexes
-AutomationRuleSchema.index({ tenantId: 1, isActive: 1 });
-AutomationRuleSchema.index({ 'trigger.event': 1, isActive: 1 });
 
 export default mongoose.model<IAutomationRule>('AutomationRule', AutomationRuleSchema);

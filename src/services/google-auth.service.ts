@@ -91,7 +91,7 @@ class GoogleAuthService {
                 // Update existing user
                 user.googleId = userInfo.googleId;
                 user.profilePicture = userInfo.picture;
-                user.isEmailVerified = userInfo.emailVerified;
+                user.isEmailVerified = userInfo.emailVerified ?? false;
                 await user.save();
             }
 
@@ -99,7 +99,8 @@ class GoogleAuthService {
             const { accessToken, refreshToken } = generateTokens(user._id.toString());
 
             // Update refresh token
-            user.refreshToken = refreshToken;
+            if (!user.refreshTokens) user.refreshTokens = [];
+            user.refreshTokens.push(refreshToken);
             await user.save();
 
             return {

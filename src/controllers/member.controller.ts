@@ -66,8 +66,8 @@ const changeStatusSchema = z.object({
 });
 
 const freezeMemberSchema = z.object({
-    startDate: z.string().transform(val => new Date(val)),
-    endDate: z.string().transform(val => new Date(val)),
+    startDate: z.coerce.date(),
+    endDate: z.coerce.date(),
     reason: z.string().min(1),
 });
 
@@ -80,7 +80,10 @@ export class MemberController {
     // Create new member
     async createMember(req: Request, res: Response): Promise<void> {
         try {
-            if (!req.tenantId || !req.branchId) {
+            const tenantId = req.tenantId || (req.user?.role === 'super_admin' ? req.body.tenantId : undefined);
+            const branchId = req.branchId || (req.user?.role === 'super_admin' ? req.body.branchId : undefined);
+
+            if (!tenantId || !branchId) {
                 res.status(400).json({
                     status: 'error',
                     message: 'Tenant and branch context required',
@@ -92,8 +95,8 @@ export class MemberController {
 
             const member = await memberService.createMember({
                 ...validatedData,
-                tenantId: req.tenantId,
-                branchId: req.branchId,
+                tenantId,
+                branchId,
             });
 
             res.status(201).json({
@@ -147,7 +150,7 @@ export class MemberController {
         try {
             const { memberId } = req.params;
 
-            if (!req.tenantId) {
+            if (req.user?.role !== 'super_admin' && !req.tenantId) {
                 res.status(400).json({
                     status: 'error',
                     message: 'Tenant context required',
@@ -182,7 +185,7 @@ export class MemberController {
         try {
             const { memberId } = req.params;
 
-            if (!req.tenantId) {
+            if (req.user?.role !== 'super_admin' && !req.tenantId) {
                 res.status(400).json({
                     status: 'error',
                     message: 'Tenant context required',
@@ -220,7 +223,7 @@ export class MemberController {
         try {
             const { memberId } = req.params;
 
-            if (!req.tenantId) {
+            if (req.user?.role !== 'super_admin' && !req.tenantId) {
                 res.status(400).json({
                     status: 'error',
                     message: 'Tenant context required',
@@ -263,7 +266,7 @@ export class MemberController {
         try {
             const { memberId } = req.params;
 
-            if (!req.tenantId) {
+            if (req.user?.role !== 'super_admin' && !req.tenantId) {
                 res.status(400).json({
                     status: 'error',
                     message: 'Tenant context required',
@@ -299,7 +302,7 @@ export class MemberController {
     // Get all members
     async getMembers(req: Request, res: Response): Promise<void> {
         try {
-            if (!req.tenantId) {
+            if (req.user?.role !== 'super_admin' && !req.tenantId) {
                 res.status(400).json({
                     status: 'error',
                     message: 'Tenant context required',
@@ -344,7 +347,7 @@ export class MemberController {
     // Get member statistics
     async getMemberStats(req: Request, res: Response): Promise<void> {
         try {
-            if (!req.tenantId) {
+            if (req.user?.role !== 'super_admin' && !req.tenantId) {
                 res.status(400).json({
                     status: 'error',
                     message: 'Tenant context required',

@@ -68,9 +68,27 @@ export const connectRedis = async () => {
         return;
     }
     // ioredis connects automatically on instantiation
-    return new Promise<void>((resolve) => {
-        if (redis.status === 'ready') resolve();
-        redis.on('ready', () => resolve());
+    return new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+            if (redis.status !== 'ready') {
+                reject(new Error('Redis connection timed out after 5 seconds'));
+            }
+        }, 5000);
+
+        if (redis.status === 'ready') {
+            clearTimeout(timeout);
+            resolve();
+        }
+
+        redis.on('ready', () => {
+            clearTimeout(timeout);
+            resolve();
+        });
+
+        redis.on('error', (err: any) => {
+            // We don't reject immediately on error because ioredis might retry
+            console.error('❌ Redis error event:', err.message);
+        });
     });
 };
 

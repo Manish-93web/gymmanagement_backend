@@ -127,7 +127,7 @@ export class TrainerService {
             { _id: trainerId, tenantId },
             {
                 $set: { 'ratings.average': newAverage },
-                $inc: { 'ratings.count': 1 },
+                $inc: { 'ratings.totalReviews': 1 },
                 $push: {
                     'ratings.reviews': {
                         memberId,
@@ -196,6 +196,23 @@ export class TrainerService {
             { $set: { isActive: false } },
             { new: true }
         );
+    }
+
+    // Get trainer stats
+    async getTrainerStats(trainerId: string, tenantId: string): Promise<any> {
+        const trainer = await Trainer.findOne({ _id: trainerId, tenantId });
+        if (!trainer) {
+            throw new Error('Trainer not found');
+        }
+
+        // Mock stats for now - would aggregate from Bookings/Classes
+        return {
+            totalSessions: 120,
+            activeClients: 15,
+            averageRating: trainer.ratings.average,
+            totalReviews: trainer.ratings.totalReviews,
+            revenue: 50000,
+        };
     }
 }
 

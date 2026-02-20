@@ -9,7 +9,8 @@ export type UserRole =
     | 'staff'
     | 'member'
     | 'accountant'
-    | 'auditor';
+    | 'auditor'
+    | 'franchise_admin';
 
 export interface IUser extends Document {
     tenantId?: mongoose.Types.ObjectId;
@@ -21,6 +22,17 @@ export interface IUser extends Document {
     firstName: string;
     lastName: string;
     avatar?: string;
+    profilePicture?: string;
+    googleId?: string;
+    googleCalendarToken?: string;
+    googleRefreshToken?: string;
+    specializations?: string[];
+    availability?: {
+        day: string;
+        startTime: string;
+        endTime: string;
+    }[];
+    salary?: number;
     isActive: boolean;
     isEmailVerified: boolean;
     isMobileVerified: boolean;
@@ -61,6 +73,7 @@ const UserSchema: Schema = new Schema(
                 'member',
                 'accountant',
                 'auditor',
+                'franchise_admin',
             ],
             required: true,
             index: true,
@@ -71,6 +84,19 @@ const UserSchema: Schema = new Schema(
         firstName: { type: String, required: true, trim: true },
         lastName: { type: String, required: true, trim: true },
         avatar: { type: String },
+        profilePicture: { type: String },
+        googleId: { type: String, unique: true, sparse: true },
+        googleCalendarToken: { type: String },
+        googleRefreshToken: { type: String },
+        specializations: [{ type: String }],
+        availability: [
+            {
+                day: { type: String },
+                startTime: { type: String },
+                endTime: { type: String },
+            },
+        ],
+        salary: { type: Number },
         isActive: { type: Boolean, default: true, index: true },
         isEmailVerified: { type: Boolean, default: false },
         isMobileVerified: { type: Boolean, default: false },

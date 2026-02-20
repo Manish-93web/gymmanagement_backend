@@ -6,7 +6,7 @@ export class WorkoutController {
     async getWorkouts(req: Request, res: Response, next: NextFunction) {
         try {
             const { category, level, search, page, limit } = req.query;
-            const tenantId = req.user?.tenantId?.toString() || '';
+            const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
 
             const workouts = await workoutService.getWorkouts(
                 tenantId,
@@ -27,7 +27,7 @@ export class WorkoutController {
     async getWorkout(req: Request, res: Response, next: NextFunction) {
         try {
             const { id } = req.params;
-            const tenantId = req.user?.tenantId?.toString() || '';
+            const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
 
             const workout = await workoutService.getWorkoutById(id, tenantId);
             if (!workout) {
@@ -43,8 +43,9 @@ export class WorkoutController {
     // Create workout
     async createWorkout(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user?.tenantId?.toString() || '';
-            const branchId = req.user?.branchId?.toString() || '';
+            const isSuperAdmin = req.user?.role === 'super_admin';
+            const tenantId = isSuperAdmin ? req.body.tenantId : req.user?.tenantId?.toString();
+            const branchId = isSuperAdmin ? req.body.branchId : req.user?.branchId?.toString();
 
             const workout = await workoutService.createWorkout({
                 ...req.body,
@@ -62,7 +63,7 @@ export class WorkoutController {
     async getExercises(req: Request, res: Response, next: NextFunction) {
         try {
             const { category, muscleGroup, search, page, limit } = req.query;
-            const tenantId = req.user?.tenantId?.toString() || '';
+            const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
 
             const exercises = await workoutService.getExercises(
                 tenantId,

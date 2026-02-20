@@ -20,12 +20,12 @@ interface TriggerConfig {
 
 interface TriggerCondition {
     field: string;
-    operator: 'equals' | 'greater_than' | 'less_than' | 'contains';
+    operator: 'equals' | 'not_equals' | 'greater_than' | 'less_than' | 'contains';
     value: any;
 }
 
 interface TriggerAction {
-    type: 'send_email' | 'send_sms' | 'send_whatsapp' | 'update_field' | 'create_task';
+    type: 'send_email' | 'send_sms' | 'send_whatsapp' | 'update_field' | 'create_task' | 'send_notification';
     config: any;
 }
 
@@ -59,8 +59,8 @@ class TriggerAutomationService {
         for (const rule of rules) {
             try {
                 // Check conditions
-                if (rule.trigger.conditions && rule.trigger.conditions.length > 0) {
-                    const conditionsMet = this.checkConditions(rule.trigger.conditions, data);
+                if (rule.trigger.condition && rule.trigger.condition.length > 0) {
+                    const conditionsMet = this.checkConditions(rule.trigger.condition, data);
                     if (!conditionsMet) continue;
                 }
 
@@ -91,6 +91,8 @@ class TriggerAutomationService {
             switch (condition.operator) {
                 case 'equals':
                     return value === condition.value;
+                case 'not_equals':
+                    return value !== condition.value;
                 case 'greater_than':
                     return value > condition.value;
                 case 'less_than':
@@ -152,10 +154,7 @@ class TriggerAutomationService {
         const recipient = to === 'member' ? data.mobile : to;
         const personalizedMessage = this.personalizeMessage(message, data);
 
-        await sendSMS({
-            to: recipient,
-            message: personalizedMessage,
-        });
+        await sendSMS(recipient, personalizedMessage);
     }
 
     /**
@@ -276,8 +275,8 @@ class TriggerAutomationService {
 
         try {
             // Check conditions
-            if (rule.trigger.conditions && rule.trigger.conditions.length > 0) {
-                const conditionsMet = this.checkConditions(rule.trigger.conditions, testData);
+            if (rule.trigger.condition && rule.trigger.condition.length > 0) {
+                const conditionsMet = this.checkConditions(rule.trigger.condition, testData);
                 if (!conditionsMet) {
                     return {
                         success: false,

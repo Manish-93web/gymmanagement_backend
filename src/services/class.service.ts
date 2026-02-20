@@ -48,16 +48,22 @@ export class ClassService {
     }
 
     // Get class by ID
-    async getClassById(classId: string, tenantId: string): Promise<IClass | null> {
-        return await Class.findOne({ _id: classId, tenantId })
+    async getClassById(classId: string, tenantId?: string): Promise<IClass | null> {
+        const query: any = { _id: classId };
+        if (tenantId) query.tenantId = tenantId;
+
+        return await Class.findOne(query)
             .populate('trainerId', 'firstName lastName specializations')
             .populate('branchId', 'name');
     }
 
     // Update class
-    async updateClass(classId: string, tenantId: string, data: Partial<CreateClassDTO>): Promise<IClass | null> {
+    async updateClass(classId: string, tenantId: string | undefined, data: Partial<CreateClassDTO>): Promise<IClass | null> {
+        const query: any = { _id: classId };
+        if (tenantId) query.tenantId = tenantId;
+
         return await Class.findOneAndUpdate(
-            { _id: classId, tenantId },
+            query,
             { $set: data },
             { new: true, runValidators: true }
         );
@@ -65,7 +71,7 @@ export class ClassService {
 
     // Get classes with filters
     async getClasses(
-        tenantId: string,
+        tenantId?: string,
         branchId?: string,
         classType?: ClassType,
         trainerId?: string,
@@ -77,7 +83,8 @@ export class ClassService {
     ): Promise<{ classes: IClass[]; total: number }> {
         const skip = (page - 1) * limit;
 
-        const filter: any = { tenantId, isActive: true };
+        const filter: any = { isActive: true };
+        if (tenantId) filter.tenantId = tenantId;
         if (branchId) filter.branchId = branchId;
         if (classType) filter.classType = classType;
         if (trainerId) filter.trainerId = trainerId;
@@ -143,7 +150,7 @@ export class ClassService {
 
         // Update class enrolled count
         await Class.findByIdAndUpdate(data.classId, {
-            $inc: { 'capacity.enrolled': 1 },
+            $inc: { 'capacity.current': 1 },
         });
 
         return booking;
@@ -152,10 +159,13 @@ export class ClassService {
     // Cancel booking
     async cancelBooking(
         bookingId: string,
-        tenantId: string,
+        tenantId: string | undefined,
         reason: string
     ): Promise<IBooking | null> {
-        const booking = await Booking.findOne({ _id: bookingId, tenantId });
+        const query: any = { _id: bookingId };
+        if (tenantId) query.tenantId = tenantId;
+
+        const booking = await Booking.findOne(query);
 
         if (!booking) {
             throw new Error('Booking not found');
@@ -171,12 +181,16 @@ export class ClassService {
         }
 
         // Calculate cancellation penalty
-        const hoursUntilClass = (classDoc.schedule.startTime.getTime() - Date.now()) / (1000 * 60 * 60);
+        const classDate = new Date(classDoc.schedule.startDate);
+        const [hours, minutes] = classDoc.schedule.startTime.split(':').map(Number);
+        classDate.setHours(hours, minutes, 0, 0);
+
+        const hoursUntilClass = (classDate.getTime() - Date.now()) / (1000 * 60 * 60);
         let penalty = 0;
 
         if (classDoc.cancellationPolicy) {
-            if (hoursUntilClass < classDoc.cancellationPolicy.penaltyHours) {
-                penalty = classDoc.cancellationPolicy.penaltyAmount;
+            if (hoursUntilClass < classDoc.cancellationPolicy.hoursBeforeClass) {
+                penalty = classDoc.cancellationPolicy.penaltyAmount || 0;
             }
         }
 
@@ -196,7 +210,7 @@ export class ClassService {
 
         // Decrement class enrolled count
         await Class.findByIdAndUpdate(booking.classId, {
-            $inc: { 'capacity.enrolled': -1 },
+            $inc: { 'capacity.current': -1 },
         });
 
         // Process waitlist - move first waitlisted to confirmed
@@ -215,7 +229,7 @@ export class ClassService {
             });
 
             await Class.findByIdAndUpdate(booking.classId, {
-                $inc: { 'capacity.enrolled': 1 },
+                $inc: { 'capacity.current': 1 },
             });
         }
 
@@ -223,9 +237,12 @@ export class ClassService {
     }
 
     // Mark attendance
-    async markAttendance(bookingId: string, tenantId: string, attended: boolean): Promise<IBooking | null> {
+    async markAttendance(bookingId: string, tenantId: string | undefined, attended: boolean): Promise<IBooking | null> {
+        const query: any = { _id: bookingId };
+        if (tenantId) query.tenantId = tenantId;
+
         return await Booking.findOneAndUpdate(
-            { _id: bookingId, tenantId },
+            query,
             {
                 $set: {
                     status: attended ? 'attended' : 'no_show',
@@ -239,14 +256,15 @@ export class ClassService {
     // Get member bookings
     async getMemberBookings(
         memberId: string,
-        tenantId: string,
+        tenantId?: string,
         status?: string,
         page: number = 1,
         limit: number = 20
     ): Promise<{ bookings: IBooking[]; total: number }> {
         const skip = (page - 1) * limit;
 
-        const filter: any = { memberId, tenantId };
+        const filter: any = { memberId };
+        if (tenantId) filter.tenantId = tenantId;
         if (status) filter.status = status;
 
         const [bookings, total] = await Promise.all([
@@ -262,14 +280,17 @@ export class ClassService {
     }
 
     // Get class bookings
-    async getClassBookings(classId: string, tenantId: string): Promise<IBooking[]> {
-        return await Booking.find({ classId, tenantId })
+    async getClassBookings(classId: string, tenantId?: string): Promise<IBooking[]> {
+        const query: any = { classId };
+        if (tenantId) query.tenantId = tenantId;
+
+        return await Booking.find(query)
             .populate('memberId', 'firstName lastName membershipNumber')
             .sort({ bookedAt: 1 });
     }
 
     // Cancel class
-    async cancelClass(classId: string, tenantId: string, reason: string): Promise<IClass | null> {
+    async cancelClass(classId: string, tenantId: string | undefined, reason: string): Promise<IClass | null> {
         // Cancel all bookings
         await Booking.updateMany(
             { classId, status: { $in: ['confirmed', 'waitlisted'] } },
@@ -283,8 +304,11 @@ export class ClassService {
             }
         );
 
+        const query: any = { _id: classId };
+        if (tenantId) query.tenantId = tenantId;
+
         return await Class.findOneAndUpdate(
-            { _id: classId, tenantId },
+            query,
             { $set: { isActive: false } },
             { new: true }
         );

@@ -41,11 +41,11 @@ class AITrainerService {
         // Prepare member profile for AI
         const memberProfile = {
             goals: member.goals || [],
-            fitnessLevel: member.fitnessLevel || 'beginner',
-            medicalConditions: member.medicalHistory?.conditions || [],
+            fitnessLevel: member.healthInfo?.fitnessLevel || 'beginner',
+            medicalConditions: member.healthInfo?.medicalConditions || [],
             preferences: member.preferences || {},
-            age: this.calculateAge(member.dateOfBirth),
-            gender: member.gender,
+            age: this.calculateAge(member.personalInfo.dateOfBirth),
+            gender: member.personalInfo.gender,
         };
 
         const suggestions: TrainerSuggestion[] = [];
@@ -60,7 +60,7 @@ class AITrainerService {
                     matchScore,
                     reasons: await this.generateMatchReasons(memberProfile, trainer, matchScore),
                     specializations: trainer.specializations || [],
-                    availability: trainer.availability || 'Available',
+                    availability: trainer.availability?.map(a => a.day).join(', ') || 'Available',
                 });
             } catch (error: any) {
                 logger.error('Trainer matching failed', { trainerId: trainer._id, error });
@@ -162,9 +162,9 @@ Provide concise, actionable reasons.
         const prompt = `
 Create a ${duration}-week workout plan for:
 - Goals: ${member.goals?.join(', ') || 'General fitness'}
-- Fitness Level: ${member.fitnessLevel || 'beginner'}
-- Age: ${this.calculateAge(member.dateOfBirth)}
-- Medical Conditions: ${member.medicalHistory?.conditions?.join(', ') || 'None'}
+- Fitness Level: ${member.healthInfo?.fitnessLevel || 'beginner'}
+- Age: ${this.calculateAge(member.personalInfo.dateOfBirth)}
+- Medical Conditions: ${member.healthInfo?.medicalConditions?.join(', ') || 'None'}
 
 Format as JSON with this structure:
 {
@@ -212,12 +212,14 @@ Format as JSON with this structure:
             throw new Error('Member not found');
         }
 
+        const latestMeasurement = member.measurements?.[member.measurements.length - 1];
+
         const prompt = `
 Create a personalized diet plan for:
 - Goals: ${member.goals?.join(', ') || 'General fitness'}
-- Weight: ${member.measurements?.weight || 'Not specified'} kg
-- Height: ${member.measurements?.height || 'Not specified'} cm
-- Dietary Restrictions: ${member.dietaryRestrictions?.join(', ') || 'None'}
+- Weight: ${latestMeasurement?.weight || 'Not specified'} kg
+- Height: ${latestMeasurement?.height || 'Not specified'} cm
+- Dietary Restrictions: ${member.healthInfo?.dietaryRestrictions?.join(', ') || 'None'}
 
 Provide daily calorie target and meal suggestions.
 `;

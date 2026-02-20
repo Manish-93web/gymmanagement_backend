@@ -107,33 +107,33 @@ export class PlanService {
 
         // Calculate end date based on plan duration
         let endDate: Date;
-        if (plan.planType === 'time_based' && plan.duration) {
-            switch (plan.duration.unit) {
-                case 'day':
-                    endDate = addDays(data.startDate, plan.duration.value);
+        if (plan.type === 'time_based' && plan.duration) {
+            switch (plan.duration) {
+                case 'daily':
+                    endDate = addDays(data.startDate, plan.durationValue);
                     break;
-                case 'week':
-                    endDate = addDays(data.startDate, plan.duration.value * 7);
+                case 'weekly':
+                    endDate = addDays(data.startDate, plan.durationValue * 7);
                     break;
-                case 'month':
-                    endDate = addMonths(data.startDate, plan.duration.value);
+                case 'monthly':
+                    endDate = addMonths(data.startDate, plan.durationValue);
                     break;
-                case 'quarter':
-                    endDate = addMonths(data.startDate, plan.duration.value * 3);
+                case 'quarterly':
+                    endDate = addMonths(data.startDate, plan.durationValue * 3);
                     break;
-                case 'half_year':
-                    endDate = addMonths(data.startDate, plan.duration.value * 6);
+                case 'half_yearly':
+                    endDate = addMonths(data.startDate, plan.durationValue * 6);
                     break;
-                case 'year':
-                    endDate = addMonths(data.startDate, plan.duration.value * 12);
+                case 'yearly':
+                    endDate = addMonths(data.startDate, plan.durationValue * 12);
                     break;
                 default:
                     endDate = addMonths(data.startDate, 1);
             }
-        } else if (plan.planType === 'session_based' && plan.sessions) {
-            endDate = addDays(data.startDate, plan.sessions.validityDays);
+        } else if (plan.type === 'session_based' && plan.sessions?.sessionValidity) {
+            endDate = addDays(data.startDate, plan.sessions.sessionValidity);
         } else {
-            endDate = addMonths(data.startDate, 1);
+            endDate = addMonths(data.startDate, 1); // Default 1 month
         }
 
         const subscription = await Subscription.create({
@@ -141,9 +141,9 @@ export class PlanService {
             endDate,
             status: 'active',
             sessions: plan.sessions ? {
-                total: plan.sessions.total,
+                total: plan.sessions.totalSessions,
                 used: 0,
-                remaining: plan.sessions.total,
+                remaining: plan.sessions.totalSessions,
             } : undefined,
         });
 

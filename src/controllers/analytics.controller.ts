@@ -5,7 +5,7 @@ import AnalyticsService from '../services/analytics.service';
 export class AnalyticsController {
     async getRevenueAnalytics(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
             const { branchId, startDate, endDate } = req.query;
 
             const analytics = await AnalyticsService.getRevenueAnalytics(
@@ -15,28 +15,28 @@ export class AnalyticsController {
                 endDate ? new Date(endDate as string) : undefined
             );
 
-            res.status(200).json({ success: true, data: analytics });
+            return res.status(200).json({ success: true, data: analytics });
         } catch (error) {
-            next(error);
+            return next(error);
         }
     }
 
     async getRetentionAnalytics(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
             const { branchId } = req.query;
 
             const analytics = await AnalyticsService.getRetentionAnalytics(tenantId, branchId as string);
 
-            res.status(200).json({ success: true, data: analytics });
+            return res.status(200).json({ success: true, data: analytics });
         } catch (error) {
-            next(error);
+            return next(error);
         }
     }
 
     async getAttendanceAnalytics(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
             const { branchId, startDate, endDate } = req.query;
 
             const analytics = await AnalyticsService.getAttendanceAnalytics(
@@ -46,15 +46,15 @@ export class AnalyticsController {
                 endDate ? new Date(endDate as string) : undefined
             );
 
-            res.status(200).json({ success: true, data: analytics });
+            return res.status(200).json({ success: true, data: analytics });
         } catch (error) {
-            next(error);
+            return next(error);
         }
     }
 
     async getClassUtilization(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
             const { branchId, startDate, endDate } = req.query;
 
             const analytics = await AnalyticsService.getClassUtilization(
@@ -64,15 +64,15 @@ export class AnalyticsController {
                 endDate ? new Date(endDate as string) : undefined
             );
 
-            res.status(200).json({ success: true, data: analytics });
+            return res.status(200).json({ success: true, data: analytics });
         } catch (error) {
-            next(error);
+            return next(error);
         }
     }
 
     async getTrainerProductivity(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
             const { branchId, startDate, endDate } = req.query;
 
             const analytics = await AnalyticsService.getTrainerProductivity(
@@ -82,22 +82,22 @@ export class AnalyticsController {
                 endDate ? new Date(endDate as string) : undefined
             );
 
-            res.status(200).json({ success: true, data: analytics });
+            return res.status(200).json({ success: true, data: analytics });
         } catch (error) {
-            next(error);
+            return next(error);
         }
     }
 
     async getDashboardOverview(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
             const { branchId } = req.query;
 
             const overview = await AnalyticsService.getDashboardOverview(tenantId, branchId as string);
 
-            res.status(200).json({ success: true, data: overview });
+            return res.status(200).json({ success: true, data: overview });
         } catch (error) {
-            next(error);
+            return next(error);
         }
     }
 }

@@ -3,6 +3,9 @@ import Tenant from '../models/Tenant.model';
 import User from '../models/User.model';
 import Member from '../models/Member.model';
 import Subscription from '../models/Subscription.model';
+import systemConfigService from '../services/system-config.service';
+import auditService from '../services/audit.service';
+import backupService from '../services/backup.service';
 
 /**
  * Get all tenants with aggregated stats
@@ -30,12 +33,12 @@ export const getAllTenants = async (req: Request, res: Response) => {
             })
         );
 
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
             data: tenantStats,
         });
     } catch (error) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: 'Error fetching tenants',
             error: (error as Error).message,
@@ -67,13 +70,13 @@ export const updateTenantStatus = async (req: Request, res: Response) => {
             });
         }
 
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
             data: tenant,
             message: 'Tenant status updated successfully',
         });
     } catch (error) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: 'Error updating tenant status',
             error: (error as Error).message,
@@ -92,7 +95,6 @@ export const getPlatformMetrics = async (req: Request, res: Response) => {
 
         // Calculate Total Platform Revenue (MRR) from Subscriptions
         const subscriptions = await Subscription.find({ status: 'active' });
-        // Use pricing.totalAmount as per Subscription model
         // @ts-ignore
         const mrr = subscriptions.reduce((acc: number, sub) => acc + (sub.pricing?.totalAmount || 0), 0);
 
@@ -104,7 +106,7 @@ export const getPlatformMetrics = async (req: Request, res: Response) => {
             createdAt: { $gte: thirtyDaysAgo },
         });
 
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
             data: {
                 totalTenants,
@@ -116,10 +118,77 @@ export const getPlatformMetrics = async (req: Request, res: Response) => {
             },
         });
     } catch (error) {
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: 'Error fetching platform metrics',
             error: (error as Error).message,
         });
+    }
+};
+
+/**
+ * Get Platform Config
+ */
+export const getPlatformConfig = async (req: Request, res: Response) => {
+    // Use a fixed ObjectId for platform configuration
+    const PLATFORM_TENANT_ID = '000000000000000000000000';
+
+    try {
+        const config = await systemConfigService.getConfig(PLATFORM_TENANT_ID);
+        return res.status(200).json({ success: true, data: config });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error fetching platform config', error: (error as Error).message });
+    }
+};
+
+/**
+ * Update Platform Config
+ */
+export const updatePlatformConfig = async (req: Request, res: Response) => {
+    // Use a fixed ObjectId for platform configuration
+    const PLATFORM_TENANT_ID = '000000000000000000000000';
+
+    try {
+        const config = await systemConfigService.updateConfig(PLATFORM_TENANT_ID, req.body);
+        return res.status(200).json({ success: true, data: config, message: 'Platform configuration updated' });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error updating platform config', error: (error as Error).message });
+    }
+};
+
+/**
+ * Get Audit Logs
+ */
+export const getPlatformAuditLogs = async (req: Request, res: Response) => {
+    try {
+        const logs = await auditService.getLogs(req.query as any);
+        return res.status(200).json({ success: true, data: logs });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error fetching audit logs', error: (error as Error).message });
+    }
+};
+
+/**
+ * List Backups
+ */
+export const listBackups = async (req: Request, res: Response) => {
+    try {
+        const backups = await backupService.listBackups();
+        const stats = await backupService.getBackupStats();
+        return res.status(200).json({ success: true, data: { backups, stats } });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error listing backups', error: (error as Error).message });
+    }
+};
+
+/**
+ * Trigger Backup
+ */
+export const triggerBackup = async (req: Request, res: Response) => {
+    try {
+        const backupFile = await backupService.performBackup();
+        return res.status(200).json({ success: true, message: 'Backup completed', data: { backupFile } });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Backup failed', error: (error as Error).message });
     }
 };

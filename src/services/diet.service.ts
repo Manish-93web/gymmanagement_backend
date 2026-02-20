@@ -54,13 +54,14 @@ export class DietService {
         }
 
         const { weight, height } = latestMeasurement;
-        const age = member.dateOfBirth
-            ? Math.floor((Date.now() - member.dateOfBirth.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+        const dob = member.personalInfo.dateOfBirth;
+        const age = dob
+            ? Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
             : 30;
 
         // Calculate BMR using Mifflin-St Jeor Equation
         let bmr: number;
-        if (member.gender === 'male') {
+        if (member.personalInfo.gender === 'male') {
             bmr = 10 * weight + 6.25 * height - 5 * age + 5;
         } else {
             bmr = 10 * weight + 6.25 * height - 5 * age - 161;

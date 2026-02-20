@@ -79,7 +79,7 @@ class ScheduledReportService {
             // Execute the report
             const reportData = await CustomReportService.executeReport(
                 scheduledReport.reportId.toString(),
-                scheduledReport.filters
+                scheduledReport.filters as any
             );
 
             // Generate files

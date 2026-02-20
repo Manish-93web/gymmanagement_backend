@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
+import crypto from 'crypto';
 import PaymentService from '../services/payment.service';
+import logger from '../config/logger';
 
 // Validation schemas
 const createPaymentSchema = z.object({
@@ -38,7 +40,7 @@ export class PaymentController {
     async createPayment(req: Request, res: Response, next: NextFunction) {
         try {
             const validatedData = createPaymentSchema.parse(req.body);
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
             const branchId = req.user!.branchId?.toString();
 
             const payment = await PaymentService.createPayment({
@@ -61,7 +63,7 @@ export class PaymentController {
     async createRazorpayOrder(req: Request, res: Response, next: NextFunction) {
         try {
             const { paymentId } = req.params;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
 
             const payment = await PaymentService.getPaymentById(paymentId, tenantId);
             if (!payment) {
@@ -83,7 +85,7 @@ export class PaymentController {
     async createStripeIntent(req: Request, res: Response, next: NextFunction) {
         try {
             const { paymentId } = req.params;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
 
             const payment = await PaymentService.getPaymentById(paymentId, tenantId);
             if (!payment) {
@@ -106,7 +108,7 @@ export class PaymentController {
         try {
             const { paymentId } = req.params;
             const validatedData = processPaymentSchema.parse(req.body);
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
 
             const paymentDetails = await PaymentService.getPaymentById(paymentId, tenantId);
             if (!paymentDetails) {
@@ -135,7 +137,7 @@ export class PaymentController {
         try {
             const { paymentId } = req.params;
             const validatedData = refundSchema.parse(req.body);
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
 
             const payment = await PaymentService.processRefund(
                 paymentId,
@@ -157,7 +159,7 @@ export class PaymentController {
     async getPaymentById(req: Request, res: Response, next: NextFunction) {
         try {
             const { paymentId } = req.params;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
 
             const payment = await PaymentService.getPaymentById(paymentId, tenantId);
 
@@ -180,7 +182,7 @@ export class PaymentController {
     // Get payments
     async getPayments(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
             const { memberId, status, branchId } = req.query;
 
             const payments = await PaymentService.getPayments(
@@ -202,7 +204,7 @@ export class PaymentController {
     // Get payment statistics
     async getPaymentStats(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
             const { branchId } = req.query;
 
             const stats = await PaymentService.getPaymentStats(tenantId, branchId as string);
@@ -219,7 +221,7 @@ export class PaymentController {
     async getCheckoutDetails(req: Request, res: Response, next: NextFunction) {
         try {
             const validatedData = checkoutSchema.parse(req.body);
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
             const memberId = req.user!.role === 'member' ? req.user!._id.toString() : req.body.memberId;
 
             const pricingService = (await import('../services/pricing.service')).default;
@@ -250,6 +252,110 @@ export class PaymentController {
                 success: true,
                 data: checkoutDetails,
             });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Handle Razorpay webhook
+     * POST /api/payments/webhook/razorpay
+     * No authentication — verified via HMAC signature
+     */
+    async handleRazorpayWebhook(req: Request, res: Response, next: NextFunction) {
+        try {
+            const signature = req.headers['x-razorpay-signature'] as string;
+            const secret = process.env.RAZORPAY_WEBHOOK_SECRET || process.env.RAZORPAY_KEY_SECRET || '';
+
+            if (!signature) {
+                return res.status(400).json({ success: false, message: 'Missing signature' });
+            }
+
+            // Verify HMAC-SHA256 signature
+            const rawBody = (req as any).rawBody as string;
+            const expectedSignature = crypto
+                .createHmac('sha256', secret)
+                .update(rawBody)
+                .digest('hex');
+
+            if (expectedSignature !== signature) {
+                logger.warn('Razorpay webhook: invalid signature');
+                return res.status(400).json({ success: false, message: 'Invalid webhook signature' });
+            }
+
+            const event = req.body;
+            logger.info('Razorpay webhook received', { event: event.event });
+
+            if (event.event === 'payment.captured') {
+                const razorpayPaymentId: string = event.payload?.payment?.entity?.id;
+                const razorpayOrderId: string = event.payload?.payment?.entity?.order_id;
+
+                if (razorpayPaymentId) {
+                    await PaymentService.processPayment({
+                        paymentId: razorpayOrderId || razorpayPaymentId,
+                        gateway: 'razorpay',
+                        gatewayPaymentId: razorpayPaymentId,
+                        gatewayOrderId: razorpayOrderId,
+                    }).catch((err) => {
+                        logger.error('Failed to process Razorpay webhook payment', { err: err.message });
+                    });
+                }
+            }
+
+            res.status(200).json({ received: true });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * Handle Stripe webhook
+     * POST /api/payments/webhook/stripe
+     * No authentication — verified via Stripe-Signature header
+     */
+    async handleStripeWebhook(req: Request, res: Response, next: NextFunction) {
+        try {
+            const signature = req.headers['stripe-signature'] as string;
+            const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
+
+            if (!signature) {
+                return res.status(400).json({ success: false, message: 'Missing Stripe-Signature header' });
+            }
+
+            // Verify Stripe signature (timestamp + payload)
+            const rawBody = (req as any).rawBody as string;
+            const parts = signature.split(',');
+            const timestamp = parts.find(p => p.startsWith('t='))?.split('=')[1] || '';
+            const stripeSignature = parts.find(p => p.startsWith('v1='))?.split('=')[1] || '';
+
+            const signedPayload = `${timestamp}.${rawBody}`;
+            const expectedSignature = crypto
+                .createHmac('sha256', webhookSecret)
+                .update(signedPayload)
+                .digest('hex');
+
+            if (expectedSignature !== stripeSignature) {
+                logger.warn('Stripe webhook: invalid signature');
+                return res.status(400).json({ success: false, message: 'Invalid webhook signature' });
+            }
+
+            const event = req.body;
+            logger.info('Stripe webhook received', { type: event.type });
+
+            if (event.type === 'payment_intent.succeeded') {
+                const paymentIntentId: string = event.data?.object?.id;
+                if (paymentIntentId) {
+                    await PaymentService.processPayment({
+                        paymentId: paymentIntentId,
+                        gateway: 'stripe',
+                        gatewayPaymentId: paymentIntentId,
+                    }).catch((err) => {
+                        logger.error('Failed to process Stripe webhook payment', { err: err.message });
+                    });
+                }
+            }
+
+            res.status(200).json({ received: true });
         } catch (error) {
             next(error);
         }

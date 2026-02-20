@@ -72,13 +72,15 @@ export class WorkoutService {
     }
 
     // Get exercise by ID
-    async getExerciseById(exerciseId: string, tenantId: string): Promise<IExercise | null> {
-        return await Exercise.findOne({ _id: exerciseId, tenantId });
+    async getExerciseById(exerciseId: string, tenantId?: string): Promise<IExercise | null> {
+        const filter: any = { _id: exerciseId };
+        if (tenantId) filter.tenantId = tenantId;
+        return await Exercise.findOne(filter);
     }
 
     // Get exercises
     async getExercises(
-        tenantId: string,
+        tenantId?: string,
         category?: string,
         muscleGroup?: string,
         difficulty?: string,
@@ -89,7 +91,8 @@ export class WorkoutService {
     ): Promise<{ exercises: IExercise[]; total: number }> {
         const skip = (page - 1) * limit;
 
-        const filter: any = { tenantId };
+        const filter: any = {};
+        if (tenantId) filter.tenantId = tenantId;
         if (category) filter.category = category;
         if (muscleGroup) {
             filter.$or = [
@@ -118,8 +121,10 @@ export class WorkoutService {
     }
 
     // Get workout by ID
-    async getWorkoutById(workoutId: string, tenantId: string): Promise<IWorkout | null> {
-        return await Workout.findOne({ _id: workoutId, tenantId })
+    async getWorkoutById(workoutId: string, tenantId?: string): Promise<IWorkout | null> {
+        const filter: any = { _id: workoutId };
+        if (tenantId) filter.tenantId = tenantId;
+        return await Workout.findOne(filter)
             .populate('exercises.exerciseId')
             .populate('trainerId', 'firstName lastName')
             .populate('memberId', 'firstName lastName membershipNumber');
@@ -128,11 +133,12 @@ export class WorkoutService {
     // Get member workouts
     async getMemberWorkouts(
         memberId: string,
-        tenantId: string,
+        tenantId?: string,
         startDate?: Date,
         endDate?: Date
     ): Promise<IWorkout[]> {
-        const filter: any = { memberId, tenantId };
+        const filter: any = { memberId };
+        if (tenantId) filter.tenantId = tenantId;
         if (startDate || endDate) {
             filter.createdAt = {};
             if (startDate) filter.createdAt.$gte = startDate;
@@ -147,7 +153,7 @@ export class WorkoutService {
 
     // Get all workouts (for library)
     async getWorkouts(
-        tenantId: string,
+        tenantId?: string,
         category?: string,
         level?: string,
         search?: string,
@@ -155,7 +161,8 @@ export class WorkoutService {
         limit: number = 20
     ): Promise<{ workouts: IWorkout[]; total: number }> {
         const skip = (page - 1) * limit;
-        const filter: any = { tenantId };
+        const filter: any = {};
+        if (tenantId) filter.tenantId = tenantId;
 
         if (category) filter.category = category;
         if (level) filter.level = level;
@@ -178,8 +185,10 @@ export class WorkoutService {
 
     // Update workout
     async updateWorkout(workoutId: string, tenantId: string, data: Partial<CreateWorkoutDTO>): Promise<IWorkout | null> {
+        const filter: any = { _id: workoutId };
+        if (tenantId) filter.tenantId = tenantId;
         return await Workout.findOneAndUpdate(
-            { _id: workoutId, tenantId },
+            filter,
             { $set: data },
             { new: true, runValidators: true }
         );
@@ -231,7 +240,7 @@ export class WorkoutService {
     // Get workout logs
     async getWorkoutLogs(
         memberId: string,
-        tenantId: string,
+        tenantId?: string,
         startDate?: Date,
         endDate?: Date,
         page: number = 1,
@@ -239,7 +248,8 @@ export class WorkoutService {
     ): Promise<{ logs: IWorkoutLog[]; total: number }> {
         const skip = (page - 1) * limit;
 
-        const filter: any = { memberId, tenantId };
+        const filter: any = { memberId };
+        if (tenantId) filter.tenantId = tenantId;
         if (startDate || endDate) {
             filter.date = {};
             if (startDate) filter.date.$gte = startDate;
@@ -259,25 +269,27 @@ export class WorkoutService {
     }
 
     // Get workout statistics
-    async getWorkoutStats(memberId: string, tenantId: string): Promise<any> {
-        const totalWorkouts = await WorkoutLog.countDocuments({ memberId, tenantId });
+    async getWorkoutStats(memberId: string, tenantId?: string): Promise<any> {
+        const filter: any = { memberId };
+        if (tenantId) filter.tenantId = tenantId;
+        const totalWorkouts = await WorkoutLog.countDocuments(filter);
 
         const last30Days = new Date();
         last30Days.setDate(last30Days.getDate() - 30);
 
-        const recentWorkouts = await WorkoutLog.countDocuments({
-            memberId,
-            tenantId,
-            date: { $gte: last30Days },
-        });
+        const recentFilter = { ...filter, date: { $gte: last30Days } };
+        const recentWorkouts = await WorkoutLog.countDocuments(recentFilter);
+
+        const aggregateMatch: any = { memberId: new mongoose.Types.ObjectId(memberId) };
+        if (tenantId) aggregateMatch.tenantId = tenantId;
 
         const totalDuration = await WorkoutLog.aggregate([
-            { $match: { memberId: new mongoose.Types.ObjectId(memberId), tenantId } },
+            { $match: aggregateMatch },
             { $group: { _id: null, total: { $sum: '$totalDuration' } } },
         ]);
 
         const totalCalories = await WorkoutLog.aggregate([
-            { $match: { memberId: new mongoose.Types.ObjectId(memberId), tenantId } },
+            { $match: aggregateMatch },
             { $group: { _id: null, total: { $sum: '$caloriesBurned' } } },
         ]);
 
@@ -291,8 +303,10 @@ export class WorkoutService {
     }
 
     // Get personal records
-    async getPersonalRecords(memberId: string, tenantId: string): Promise<any[]> {
-        const logs = await WorkoutLog.find({ memberId, tenantId })
+    async getPersonalRecords(memberId: string, tenantId?: string): Promise<any[]> {
+        const filter: any = { memberId };
+        if (tenantId) filter.tenantId = tenantId;
+        const logs = await WorkoutLog.find(filter)
             .populate('exercises.exerciseId')
             .sort({ date: -1 });
 

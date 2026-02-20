@@ -29,7 +29,7 @@ export class GamificationController {
                 });
             }
 
-            const dashboard = await gamificationDashboardService.getMemberDashboard(member._id);
+            const dashboard = await gamificationDashboardService.getMemberDashboard(member._id.toString());
             res.status(200).json({
                 success: true,
                 data: dashboard,
@@ -65,7 +65,7 @@ export class GamificationController {
                 });
             }
 
-            const badges = await gamificationBadgeService.getMemberBadges(member._id);
+            const badges = await gamificationBadgeService.getMemberBadges(member._id.toString());
             res.status(200).json({
                 success: true,
                 data: badges,
@@ -101,7 +101,7 @@ export class GamificationController {
                 });
             }
 
-            const streakStats = await streakService.getStreakStats(member._id);
+            const streakStats = await streakService.getStreakStats(member._id.toString());
             res.status(200).json({
                 success: true,
                 data: streakStats,

@@ -9,6 +9,7 @@ import { config } from './config/config';
 import { connectDB } from './config/database';
 import { connectRedis } from './config/redis';
 import WebSocketService from './services/websocket.service';
+import BullMQAutomationService from './services/bullmq-automation.service';
 
 // Import routes
 import authRoutes from './routes/auth.routes';
@@ -92,6 +93,9 @@ import healthRoutes from './routes/health.routes';
 import workoutRoutes from './routes/workout.routes';
 import automationRoutes from './routes/automation.routes';
 import templateRoutes from './routes/template.routes';
+import staffRoutes from './routes/staff.routes';
+
+import retentionRoutes from './routes/retention.routes';
 
 // Register additional routes
 app.use('/api/payments', paymentRoutes);
@@ -104,6 +108,7 @@ app.use('/api/classes', classRoutes);
 app.use('/api/fitness', fitnessRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+// app.use('/api/platform', platformRoutes);
 app.use('/api/security', securityRoutes);
 app.use('/api/franchise', franchiseRoutes);
 app.use('/api/platform', platformRoutes); // Layer 1: Super Admin
@@ -112,6 +117,8 @@ app.use('/api/workouts', workoutRoutes);
 app.use('/api/exercises', workoutRoutes); // Reuse for /exercises routes
 app.use('/api/automation', automationRoutes);
 app.use('/api/templates', templateRoutes);
+app.use('/api/staff', staffRoutes);
+app.use('/api/retention', retentionRoutes);
 app.use('/api', aiCrmRoutes);
 
 // 404 handler
@@ -140,15 +147,29 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 const PORT = config.port || 5000;
 
 const startServer = async () => {
+    console.log('🏁 startServer called');
     try {
+        console.log('📡 Connecting to MongoDB...');
         // Connect to MongoDB
         await connectDB();
         console.log('✅ MongoDB connected');
 
+        console.log('📡 Connecting to Redis...');
         // Connect to Redis
         await connectRedis();
         console.log('✅ Redis connected');
 
+        // Initialize BullMQ automation queues
+        try {
+            console.log('🦾 Initializing BullMQ...');
+            // Explicitly initialize the service after Redis is connected
+            await BullMQAutomationService.initialize();
+            console.log('✅ BullMQ automation queues initialized');
+        } catch (err) {
+            console.warn('⚠️ BullMQ init failed (Redis may not be running):', err);
+        }
+
+        console.log(`📡 Starting HTTP server on port ${PORT}...`);
         // Start HTTP server (with WebSocket)
         httpServer.listen(PORT, () => {
             console.log(`🚀 Server running on port ${PORT} in ${config.env} mode`);

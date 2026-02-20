@@ -97,7 +97,7 @@ class RevenueSharingService {
 
             let ruleShare = 0;
             if (rule.shareType === 'percentage') {
-                const totalRevenue = payments.reduce((sum, p) => sum + p.amount, 0);
+                const totalRevenue = payments.reduce((sum, p) => sum + p.amount.total, 0);
                 ruleShare = (totalRevenue * rule.shareValue) / 100;
             } else {
                 // Fixed amount per transaction
@@ -111,7 +111,7 @@ class RevenueSharingService {
                 shareType: rule.shareType,
                 shareValue: rule.shareValue,
                 transactionCount: payments.length,
-                totalRevenue: payments.reduce((sum, p) => sum + p.amount, 0),
+                totalRevenue: payments.reduce((sum, p) => sum + p.amount.total, 0),
                 shareAmount: ruleShare,
             });
         }

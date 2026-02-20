@@ -44,6 +44,13 @@ export interface IDietPlan extends Document {
         dosage: string;
         timing: string;
     }[];
+    compliance: {
+        date: Date;
+        mealsFollowed: number;
+        totalMeals: number;
+        percentage: number;
+        notes?: string;
+    }[];
     isActive: boolean;
     startDate: Date;
     endDate?: Date;
@@ -104,6 +111,15 @@ const DietPlanSchema: Schema = new Schema(
                 name: { type: String, required: true },
                 dosage: { type: String, required: true },
                 timing: { type: String, required: true },
+            },
+        ],
+        compliance: [
+            {
+                date: { type: Date, required: true },
+                mealsFollowed: { type: Number, required: true },
+                totalMeals: { type: Number, required: true },
+                percentage: { type: Number, required: true },
+                notes: { type: String },
             },
         ],
         isActive: { type: Boolean, default: true },

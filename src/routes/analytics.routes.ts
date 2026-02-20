@@ -6,7 +6,7 @@ import { requireAnyRole } from '../middleware/rbac.middleware';
 const router = Router();
 
 router.use(authenticate);
-router.use(requireAnyRole('gym_owner', 'branch_manager', 'accountant', 'auditor'));
+router.use(requireAnyRole('gym_owner', 'branch_manager', 'accountant', 'auditor', 'super_admin'));
 
 router.get('/revenue', analyticsController.getRevenueAnalytics.bind(analyticsController));
 router.get('/retention', analyticsController.getRetentionAnalytics.bind(analyticsController));

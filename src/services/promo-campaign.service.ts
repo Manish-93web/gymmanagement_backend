@@ -259,7 +259,7 @@ class PromoCampaignService {
         if (campaign.couponCode) {
             const coupon = await Coupon.findOne({ code: campaign.couponCode });
             if (coupon) {
-                couponUsage = coupon.usedCount || 0;
+                couponUsage = coupon.usageCount || 0;
             }
         }
 

@@ -9,7 +9,7 @@ router.use(authenticate);
 
 // Workout routes
 router.get('/', workoutController.getWorkouts.bind(workoutController));
-router.post('/', requireAnyRole('trainer', 'gym_owner', 'branch_manager'), workoutController.createWorkout.bind(workoutController));
+router.post('/', requireAnyRole('trainer', 'gym_owner', 'branch_manager', 'super_admin'), workoutController.createWorkout.bind(workoutController));
 router.get('/:id', workoutController.getWorkout.bind(workoutController));
 
 // Exercise routes (also accessible via /workouts/exercises if desired, but frontend asks for /exercises)

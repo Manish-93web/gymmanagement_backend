@@ -2,11 +2,6 @@ import twilio from 'twilio';
 import Member from '../models/Member.model';
 import logger from '../config/logger';
 
-const client = twilio(
-    process.env.TWILIO_ACCOUNT_SID,
-    process.env.TWILIO_AUTH_TOKEN
-);
-
 const whatsappNumber = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+14155238886';
 
 interface WhatsAppMessage {
@@ -22,10 +17,38 @@ interface BulkWhatsAppMessage {
 }
 
 class WhatsAppService {
+    private client: any;
+    private initialized = false;
+
+    private ensureInitialized() {
+        if (this.initialized) return;
+
+        const accountSid = process.env.TWILIO_ACCOUNT_SID;
+        const authToken = process.env.TWILIO_AUTH_TOKEN;
+
+        if (!accountSid || !authToken) {
+            logger.warn('⚠️ Twilio credentials missing. WhatsApp features will not work.');
+            this.initialized = true;
+            return;
+        }
+
+        try {
+            this.client = twilio(accountSid, authToken);
+            this.initialized = true;
+        } catch (error) {
+            logger.error('❌ Failed to initialize Twilio client:', error);
+        }
+    }
+
     /**
      * Send WhatsApp message
      */
     async sendMessage(data: WhatsAppMessage) {
+        this.ensureInitialized();
+        if (!this.client) {
+            throw new Error('WhatsApp service not configured properly (missing Twilio credentials)');
+        }
+
         const { to, message, mediaUrl } = data;
 
         try {
@@ -39,7 +62,7 @@ class WhatsAppService {
                 messageData.mediaUrl = [mediaUrl];
             }
 
-            const response = await client.messages.create(messageData);
+            const response = await this.client.messages.create(messageData);
 
             logger.info('WhatsApp message sent', { to, messageId: response.sid });
 
@@ -116,10 +139,10 @@ class WhatsAppService {
         }
 
         const daysRemaining = Math.ceil(
-            (member.membershipExpiry.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+            (member.membershipExpiry!.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
         );
 
-        const message = `Hi ${member.firstName}! 👋\n\nYour membership expires in ${daysRemaining} days (${member.membershipExpiry.toDateString()}).\n\nRenew now to continue enjoying our services! 💪\n\nReply RENEW to get started.`;
+        const message = `Hi ${member.firstName}! 👋\n\nYour membership expires in ${daysRemaining} days (${member.membershipExpiry!.toDateString()}).\n\nRenew now to continue enjoying our services! 💪\n\nReply RENEW to get started.`;
 
         return await this.sendMessage({
             to: member.mobile,
@@ -207,8 +230,13 @@ class WhatsAppService {
      * Get message status
      */
     async getMessageStatus(messageId: string) {
+        this.ensureInitialized();
+        if (!this.client) {
+            throw new Error('WhatsApp service not configured properly');
+        }
+
         try {
-            const message = await client.messages(messageId).fetch();
+            const message = await this.client.messages(messageId).fetch();
 
             return {
                 status: message.status,
@@ -230,7 +258,6 @@ class WhatsAppService {
         const month = today.getMonth() + 1;
         const day = today.getDate();
 
-        // Find members with birthday today
         const members = await Member.find({
             tenantId,
             $expr: {

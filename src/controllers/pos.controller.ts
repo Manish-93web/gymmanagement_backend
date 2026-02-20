@@ -42,7 +42,7 @@ export class POSController {
     async createProduct(req: Request, res: Response, next: NextFunction) {
         try {
             const validatedData = createProductSchema.parse(req.body);
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.role === 'super_admin' ? req.body.tenantId : req.user?.tenantId?.toString();
             const branchId = req.user!.branchId?.toString() || '';
 
             const product = await POSService.createProduct({
@@ -59,7 +59,7 @@ export class POSController {
 
     async getProducts(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
             const { branchId, category, lowStock, page, limit } = req.query;
 
             const result = await POSService.getProducts(
@@ -80,7 +80,7 @@ export class POSController {
     async getProductById(req: Request, res: Response, next: NextFunction) {
         try {
             const { productId } = req.params;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
 
             const product = await POSService.getProductById(productId, tenantId);
 
@@ -97,7 +97,7 @@ export class POSController {
     async updateProduct(req: Request, res: Response, next: NextFunction) {
         try {
             const { productId } = req.params;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
 
             const product = await POSService.updateProduct(productId, tenantId, req.body);
 
@@ -111,7 +111,7 @@ export class POSController {
         try {
             const { productId } = req.params;
             const { quantity, type } = req.body;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
 
             const product = await POSService.updateStock(productId, tenantId, quantity, type);
 
@@ -124,7 +124,7 @@ export class POSController {
     async createSale(req: Request, res: Response, next: NextFunction) {
         try {
             const validatedData = createSaleSchema.parse(req.body);
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
             const branchId = req.user!.branchId?.toString() || '';
             const soldBy = req.user!._id.toString();
 
@@ -142,7 +142,7 @@ export class POSController {
 
     async getSales(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
             const { branchId, startDate, endDate, page, limit } = req.query;
 
             const result = await POSService.getSales(
@@ -162,7 +162,7 @@ export class POSController {
 
     async getSalesStats(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
             const { branchId, startDate, endDate } = req.query;
 
             const stats = await POSService.getSalesStats(
@@ -180,7 +180,7 @@ export class POSController {
 
     async getLowStockProducts(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
             const { branchId } = req.query;
 
             const products = await POSService.getLowStockProducts(tenantId, branchId as string);

@@ -3,7 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface ITenant extends Document {
     name: string;
     slug: string;
-    domain?: string;
+    // domain?: string;
     branding: {
         logo?: string;
         favicon?: string;
@@ -13,6 +13,13 @@ export interface ITenant extends Document {
         customCss?: string;
         customDomain?: string;
         domainStatus?: 'pending' | 'verified' | 'failed';
+    };
+    customDomain?: {
+        domain: string;
+        verified: boolean;
+        verificationToken?: string;
+        addedAt: Date;
+        verifiedAt?: Date;
     };
     isActive: boolean;
     saasPlanId?: mongoose.Types.ObjectId;
@@ -103,7 +110,7 @@ const TenantSchema: Schema = new Schema(
     {
         name: { type: String, required: true },
         slug: { type: String, required: true, unique: true, lowercase: true },
-        domain: { type: String, unique: true, sparse: true },
+        // domain: { type: String, unique: true, sparse: true }, // Removed to avoid conflict with customDomain.domain
         branding: {
             logo: { type: String },
             favicon: { type: String },
@@ -111,6 +118,13 @@ const TenantSchema: Schema = new Schema(
             secondaryColor: { type: String, default: '#8b5cf6' },
             fontFamily: { type: String, default: 'Inter' },
             customCss: { type: String },
+        },
+        customDomain: {
+            domain: { type: String, unique: true, sparse: true },
+            verified: { type: Boolean, default: false },
+            verificationToken: { type: String },
+            addedAt: { type: Date },
+            verifiedAt: { type: Date },
         },
         isActive: { type: Boolean, default: true },
         saasPlanId: { type: Schema.Types.ObjectId, ref: 'SaaSPlan' },

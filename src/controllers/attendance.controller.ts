@@ -17,31 +17,32 @@ export class AttendanceController {
     async checkIn(req: Request, res: Response, next: NextFunction) {
         try {
             const validatedData = checkInSchema.parse(req.body);
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
             const branchId = req.user!.branchId?.toString() || '';
 
             const attendance = await AttendanceService.checkIn({
                 ...validatedData,
+                checkInMethod: validatedData.method,
                 tenantId,
                 branchId,
             });
 
-            res.status(201).json({ success: true, data: attendance });
+            return res.status(201).json({ success: true, data: attendance });
         } catch (error) {
-            next(error);
+            return next(error);
         }
     }
 
     async checkOut(req: Request, res: Response, next: NextFunction) {
         try {
             const { attendanceId } = req.params;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
 
             const attendance = await AttendanceService.checkOut(attendanceId, tenantId);
 
-            res.status(200).json({ success: true, data: attendance });
+            return res.status(200).json({ success: true, data: attendance });
         } catch (error) {
-            next(error);
+            return next(error);
         }
     }
 
@@ -49,7 +50,7 @@ export class AttendanceController {
         try {
             const { memberId } = req.params;
             const { startDate, endDate } = req.query;
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
 
             const attendance = await AttendanceService.getMemberAttendance(
                 memberId,
@@ -58,28 +59,28 @@ export class AttendanceController {
                 endDate ? new Date(endDate as string) : undefined
             );
 
-            res.status(200).json({ success: true, data: attendance });
+            return res.status(200).json({ success: true, data: attendance });
         } catch (error) {
-            next(error);
+            return next(error);
         }
     }
 
     async getCurrentBranchAttendance(req: Request, res: Response, next: NextFunction) {
         try {
             const branchId = req.user!.branchId?.toString() || '';
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
 
             const attendance = await AttendanceService.getCurrentBranchAttendance(branchId, tenantId);
 
-            res.status(200).json({ success: true, data: attendance });
+            return res.status(200).json({ success: true, data: attendance });
         } catch (error) {
-            next(error);
+            return next(error);
         }
     }
 
     async getAttendanceStats(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId.toString();
+            const tenantId = req.user!.tenantId!.toString();
             const { branchId, startDate, endDate } = req.query;
 
             const stats = await AttendanceService.getAttendanceStats(
@@ -89,9 +90,9 @@ export class AttendanceController {
                 endDate ? new Date(endDate as string) : undefined
             );
 
-            res.status(200).json({ success: true, data: stats });
+            return res.status(200).json({ success: true, data: stats });
         } catch (error) {
-            next(error);
+            return next(error);
         }
     }
 }

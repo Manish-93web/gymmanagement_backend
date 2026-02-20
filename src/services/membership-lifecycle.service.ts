@@ -1,9 +1,10 @@
 import Member from '../models/Member.model';
-import Plan from '../models/Plan.model';
+import MembershipPlan from '../models/MembershipPlan.model';
 import Payment from '../models/Payment.model';
 import logger from '../config/logger';
 import { sendEmail } from '../utils/email.util';
 import { sendSMS } from '../utils/sms.util';
+import { addDays, addMonths } from '../utils/helpers.utils';
 
 interface FreezeRequest {
     memberId: string;
@@ -45,7 +46,7 @@ class MembershipLifecycleService {
         }
 
         // Calculate new expiry date
-        const currentExpiry = member.membershipExpiry;
+        const currentExpiry = member.membershipExpiry!;
         const newExpiry = new Date(currentExpiry);
         newExpiry.setDate(newExpiry.getDate() + freezeDays);
 
@@ -142,15 +143,16 @@ class MembershipLifecycleService {
         // Record transfer history
         member.transferHistory = member.transferHistory || [];
         member.transferHistory.push({
-            fromBranchId,
-            toBranchId,
+            fromBranch: member.branchId as any,
+            toBranch: new (require('mongoose').Types.ObjectId)(toBranchId),
+            transferredAt: new Date(),
             reason,
             effectiveDate,
             createdAt: new Date(),
         });
 
         // Update branch
-        member.branchId = toBranchId;
+        member.branchId = new (require('mongoose').Types.ObjectId)(toBranchId);
         await member.save();
 
         // Send notification
@@ -185,7 +187,7 @@ class MembershipLifecycleService {
             throw new Error('Member not found');
         }
 
-        const plan = await Plan.findById(planId);
+        const plan = await MembershipPlan.findById(planId);
         if (!plan) {
             throw new Error('Plan not found');
         }
@@ -197,12 +199,27 @@ class MembershipLifecycleService {
 
         // Calculate new expiry
         const startDate = new Date();
-        const expiryDate = new Date(startDate);
-        expiryDate.setDate(expiryDate.getDate() + plan.durationDays);
+        let expiryDate = new Date(startDate);
+
+        if (plan.type === 'time_based') {
+            switch (plan.duration) {
+                case 'daily': expiryDate = addDays(startDate, plan.durationValue); break;
+                case 'weekly': expiryDate = addDays(startDate, plan.durationValue * 7); break;
+                case 'monthly': expiryDate = addMonths(startDate, plan.durationValue); break;
+                case 'quarterly': expiryDate = addMonths(startDate, plan.durationValue * 3); break;
+                case 'half_yearly': expiryDate = addMonths(startDate, plan.durationValue * 6); break;
+                case 'yearly': expiryDate = addMonths(startDate, plan.durationValue * 12); break;
+                default: expiryDate = addMonths(startDate, 1);
+            }
+        } else if (plan.type === 'session_based' && plan.sessions?.sessionValidity) {
+            expiryDate = addDays(startDate, plan.sessions.sessionValidity);
+        } else {
+            expiryDate = addMonths(startDate, 1);
+        }
 
         // Update member
         member.status = 'active';
-        member.planId = planId;
+        member.planId = planId as any;
         member.membershipStart = startDate;
         member.membershipExpiry = expiryDate;
 
@@ -259,16 +276,16 @@ class MembershipLifecycleService {
                     name: `${member.firstName} ${member.lastName}`,
                     expiryDate: member.membershipExpiry,
                     daysRemaining: Math.ceil(
-                        (member.membershipExpiry.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+                        (member.membershipExpiry!.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
                     ),
                 },
             });
 
             // Send SMS
-            await sendSMS({
-                to: member.mobile,
-                message: `Hi ${member.firstName}, your membership expires on ${member.membershipExpiry.toDateString()}. Renew now to continue enjoying our services!`,
-            });
+            await sendSMS(
+                member.mobile,
+                `Hi ${member.firstName}, your membership expires on ${member.membershipExpiry!.toDateString()}. Renew now to continue enjoying our services!`
+            );
         }
 
         logger.info('Auto-reactivation workflow completed', { count: expiringMembers.length });

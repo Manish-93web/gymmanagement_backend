@@ -59,7 +59,7 @@ class SystemConfigService {
      * Get system configuration
      */
     async getConfig(tenantId: string): Promise<ConfigData> {
-        let config = await SystemConfig.findOne({ tenantId });
+        let config = await SystemConfig.findOne({ tenantId: tenantId as any });
 
         if (!config) {
             // Create default config
@@ -74,7 +74,7 @@ class SystemConfigService {
      */
     private async createDefaultConfig(tenantId: string) {
         const config = await SystemConfig.create({
-            tenantId,
+            tenantId: tenantId as any,
             general: {
                 siteName: 'My Gym',
                 siteUrl: 'https://mygym.com',
@@ -132,7 +132,7 @@ class SystemConfigService {
      */
     async updateConfig(tenantId: string, updates: Partial<ConfigData>) {
         const config = await SystemConfig.findOneAndUpdate(
-            { tenantId },
+            { tenantId: tenantId as any },
             { $set: updates },
             { new: true, upsert: true }
         );
@@ -147,7 +147,7 @@ class SystemConfigService {
      */
     async updateSection(tenantId: string, section: string, data: any) {
         const config = await SystemConfig.findOneAndUpdate(
-            { tenantId },
+            { tenantId: tenantId as any },
             { $set: { [section]: data } },
             { new: true, upsert: true }
         );
@@ -161,7 +161,7 @@ class SystemConfigService {
      * Reset to defaults
      */
     async resetToDefaults(tenantId: string) {
-        await SystemConfig.findOneAndDelete({ tenantId });
+        await SystemConfig.findOneAndDelete({ tenantId: tenantId as any });
         const config = await this.createDefaultConfig(tenantId);
 
         logger.info('System configuration reset to defaults', { tenantId });
@@ -182,7 +182,7 @@ class SystemConfigService {
      */
     async toggleFeature(tenantId: string, feature: string, enabled: boolean) {
         const config = await SystemConfig.findOneAndUpdate(
-            { tenantId },
+            { tenantId: tenantId as any },
             { $set: { [`features.${feature}`]: enabled } },
             { new: true, upsert: true }
         );
@@ -206,7 +206,7 @@ class SystemConfigService {
     async importConfig(tenantId: string, configJSON: string) {
         const configData = JSON.parse(configJSON);
         const config = await SystemConfig.findOneAndUpdate(
-            { tenantId },
+            { tenantId: tenantId as any },
             { $set: configData },
             { new: true, upsert: true }
         );

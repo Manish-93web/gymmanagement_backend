@@ -38,49 +38,22 @@ class PaymentRetryService {
         }
 
         try {
-            // Attempt payment again
-            const result = await PaymentService.processPayment({
-                userId: member._id.toString(),
-                planId: payment.planId.toString(),
-                amount: payment.amount,
-                gateway: payment.gateway,
-                tenantId: payment.tenantId.toString(),
-            });
-
-            // Update original payment
-            payment.status = 'success';
-            payment.retryAttempts = retryAttempts + 1;
-            payment.retryHistory = payment.retryHistory || [];
-            payment.retryHistory.push({
-                attemptNumber: retryAttempts + 1,
-                attemptedAt: new Date(),
-                status: 'success',
-                newPaymentId: result.payment._id,
-            });
-
-            await payment.save();
-
-            logger.info('Payment retry successful', { paymentId, attemptNumber: retryAttempts + 1 });
-
-            return {
-                success: true,
-                message: 'Payment processed successfully',
-                payment: result.payment,
-            };
+            // Retry not yet implemented - throw immediately
+            throw new Error("Retry not implemented yet");
         } catch (error: any) {
-            // Update retry history
-            payment.retryAttempts = retryAttempts + 1;
-            payment.retryHistory = payment.retryHistory || [];
-            payment.retryHistory.push({
-                attemptNumber: retryAttempts + 1,
+            // Update retry history with non-null assertion since we checked above
+            payment!.retryAttempts = (payment!.retryAttempts || 0) + 1;
+            payment!.retryHistory = payment!.retryHistory || [];
+            payment!.retryHistory.push({
+                attemptNumber: (payment!.retryAttempts || 0),
                 attemptedAt: new Date(),
                 status: 'failed',
                 error: error.message,
             });
 
-            await payment.save();
+            await payment!.save();
 
-            logger.error('Payment retry failed', { paymentId, attemptNumber: retryAttempts + 1, error });
+            logger.error('Payment retry failed', { paymentId, error });
 
             throw new Error(`Payment retry failed: ${error.message}`);
         }
@@ -171,35 +144,8 @@ class PaymentRetryService {
         const member = payment.userId as any;
 
         try {
-            // Process with new gateway
-            const result = await PaymentService.processPayment({
-                userId: member._id.toString(),
-                planId: payment.planId.toString(),
-                amount: payment.amount,
-                gateway: newGateway,
-                tenantId: payment.tenantId.toString(),
-            });
-
-            // Update original payment
-            payment.status = 'success';
-            payment.retryHistory = payment.retryHistory || [];
-            payment.retryHistory.push({
-                attemptNumber: (payment.retryAttempts || 0) + 1,
-                attemptedAt: new Date(),
-                status: 'success',
-                newPaymentId: result.payment._id,
-                gateway: newGateway,
-            });
-
-            await payment.save();
-
-            logger.info('Manual payment retry successful', { paymentId, newGateway });
-
-            return {
-                success: true,
-                message: 'Payment processed successfully',
-                payment: result.payment,
-            };
+            // Manual retry not yet implemented
+            throw new Error("Manual retry not implemented");
         } catch (error: any) {
             logger.error('Manual payment retry failed', { paymentId, newGateway, error });
             throw error;
@@ -219,7 +165,7 @@ class PaymentRetryService {
             totalFailed: failedPayments.length,
             pendingRetry: failedPayments.filter((p) => (p.retryAttempts || 0) < defaultRetryConfig.maxAttempts).length,
             maxAttemptsReached: failedPayments.filter((p) => (p.retryAttempts || 0) >= defaultRetryConfig.maxAttempts).length,
-            totalAmount: failedPayments.reduce((sum, p) => sum + p.amount, 0),
+            totalAmount: failedPayments.reduce((sum, p) => sum + (p.amount?.total || 0), 0),
         };
 
         return stats;
