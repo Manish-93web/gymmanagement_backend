@@ -119,7 +119,9 @@ app.use('/api/automation', automationRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/retention', retentionRoutes);
+import brandingRoutes from './routes/branding.routes';
 app.use('/api', aiCrmRoutes);
+app.use('/api/branding', brandingRoutes);
 
 // 404 handler
 app.use((_req: Request, res: Response) => {

@@ -2,6 +2,8 @@ import OpenAI from 'openai';
 import { config } from '../config/config';
 import Member from '../models/Member.model';
 import Exercise from '../models/Exercise.model';
+import Attendance from '../models/Attendance.model';
+import Payment from '../models/Payment.model';
 
 export class AIService {
     private openai: OpenAI | null = null;
@@ -241,47 +243,87 @@ Provide helpful, encouraging, and accurate fitness advice. Keep responses concis
     }
 
     // Predict churn risk
-    async predictChurn(memberId: string): Promise<{ risk: 'low' | 'medium' | 'high'; factors: string[] }> {
-        // This is a simplified version - in production, you'd use a trained ML model
-        const member = await Member.findById(memberId);
-
-        if (!member) {
-            throw new Error('Member not found');
+    // Predict churn risk with AI Analysis
+    async predictChurn(memberId: string): Promise<{ risk: 'low' | 'medium' | 'high'; score: number; analysis: string; factors: string[] }> {
+        this.ensureInitialized();
+        if (!this.openai) {
+            // Fallback to simple logic if AI not available
+            return this.heuristicChurnPrediction(memberId);
         }
+
+        const member = await Member.findById(memberId).populate('userId');
+        if (!member) throw new Error('Member not found');
+        const user = member.userId as any;
+
+        // Fetch History
+        const lastMonth = new Date();
+        lastMonth.setDate(lastMonth.getDate() - 30);
+
+        const [attendanceCount, lastAttendance, lastPayment] = await Promise.all([
+            Attendance.countDocuments({ memberId, checkInTime: { $gte: lastMonth } }),
+            Attendance.findOne({ memberId }).sort({ checkInTime: -1 }),
+            Payment.findOne({ memberId }).sort({ createdAt: -1 })
+        ]);
+
+        const daysSinceLastVisit = lastAttendance
+            ? Math.floor((Date.now() - lastAttendance.checkInTime.getTime()) / (1000 * 60 * 60 * 24))
+            : 999;
+
+        const prompt = `Analyze Churn Risk for this gym member:
+        Name: ${user?.firstName}
+        Member Since: ${member.createdAt.toISOString().split('T')[0]}
+        Status: ${member.status}
+        
+        Activity Data:
+        - Visits last 30 days: ${attendanceCount}
+        - Days since last visit: ${daysSinceLastVisit}
+        
+        Financial Data:
+        - Last Payment Status: ${lastPayment?.status || 'N/A'}
+        - Last Payment Date: ${lastPayment?.createdAt.toISOString().split('T')[0] || 'N/A'}
+
+        Based on these metrics, determine the likelihood of them cancelling their membership.
+        Provide a "risk" level (low, medium, high), a "score" (0-100, where 100 is quit tomorrow), a qualitative "analysis", and key "factors".
+        
+        Format as JSON: { "risk": "...", "score": 0, "analysis": "...", "factors": ["..."] }`;
+
+        try {
+            const completion = await this.openai.chat.completions.create({
+                model: 'gpt-4',
+                messages: [
+                    { role: 'system', content: 'You are an expert Retention Manager at a premium gym. You analyze behavioral data to predict churn.' },
+                    { role: 'user', content: prompt }
+                ],
+                temperature: 0.4,
+                response_format: { type: 'json_object' }
+            });
+
+            return JSON.parse(completion.choices[0].message.content || '{"risk":"low","score":0,"analysis":"Analysis failed","factors":[]}');
+        } catch (error) {
+            console.error('AI churn prediction failed:', error);
+            return this.heuristicChurnPrediction(memberId);
+        }
+    }
+
+    private async heuristicChurnPrediction(memberId: string): Promise<{ risk: 'low' | 'medium' | 'high'; score: number; analysis: string; factors: string[] }> {
+        const member = await Member.findById(memberId);
+        if (!member) throw new Error('Member not found');
 
         const factors: string[] = [];
-        let riskScore = 0;
+        let score = 0;
 
-        // Check attendance (would need to query Attendance model)
-        // For now, simplified logic
+        if (member.status === 'paused') { score += 30; factors.push('Membership Paused'); }
+        else if (member.status === 'expired') { score += 80; factors.push('Membership Expired'); }
 
-        if (member.status === 'paused') {
-            riskScore += 30;
-            factors.push('Membership is paused');
-        }
-
-        if (member.status === 'expired') {
-            riskScore += 50;
-            factors.push('Membership has expired');
-        }
-
-        // Check last activity (simplified)
         const daysSinceUpdate = Math.floor((Date.now() - member.updatedAt.getTime()) / (24 * 60 * 60 * 1000));
-        if (daysSinceUpdate > 30) {
-            riskScore += 20;
-            factors.push('No recent activity');
-        }
+        if (daysSinceUpdate > 30) { score += 20; factors.push('No activity > 30 days'); }
 
-        let risk: 'low' | 'medium' | 'high';
-        if (riskScore < 30) {
-            risk = 'low';
-        } else if (riskScore < 60) {
-            risk = 'medium';
-        } else {
-            risk = 'high';
-        }
-
-        return { risk, factors };
+        return {
+            risk: score > 60 ? 'high' : score > 30 ? 'medium' : 'low',
+            score,
+            analysis: 'Heuristic analysis based on status and recency.',
+            factors
+        };
     }
 
     // Get AI insights for member progress

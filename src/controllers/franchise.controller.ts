@@ -44,22 +44,28 @@ export class FranchiseController {
         }
     }
 
-    async getBenchmarkingReports(_req: Request, res: Response, next: NextFunction) {
+    async getBenchmarkingReports(req: Request, res: Response, next: NextFunction) {
         try {
-            // Mocking benchmarking data for now
-            const benchmarks = {
-                revenueTarget: 50000,
-                retentionBenchmark: 85,
-                attendanceTarget: 1200,
-                marketAverage: {
-                    revenue: 42000,
-                    retention: 78
-                }
-            };
+            if (!req.user) {
+                res.status(401).json({ success: false, message: 'Unauthorized' });
+                return;
+            }
+            const tenantId = req.user?.role === 'super_admin' ? (req.query.tenantId as string) : req.user?.tenantId?.toString();
+            const { branchId } = req.query;
+
+            if (!tenantId) {
+                res.status(400).json({ success: false, message: 'Tenant ID is required' });
+                return;
+            }
+
+            const report = await FranchiseService.getBenchmarkingReports(
+                tenantId,
+                branchId as string
+            );
 
             res.status(200).json({
                 success: true,
-                data: benchmarks
+                data: report
             });
         } catch (error) {
             next(error);

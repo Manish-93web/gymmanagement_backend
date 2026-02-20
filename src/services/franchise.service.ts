@@ -144,6 +144,89 @@ export class FranchiseService {
 
         return rankings.sort((a, b) => b.totalScore - a.totalScore);
     }
+
+
+    async getBenchmarkingReports(tenantId: string, branchId?: string): Promise<any> {
+        const tenantObjectId = new mongoose.Types.ObjectId(tenantId);
+        const lastMonth = new Date();
+        lastMonth.setDate(lastMonth.getDate() - 30);
+
+        // 1. Network Averages (All branches for this tenant)
+        const [networkRevenue, networkMembers, networkAttendance] = await Promise.all([
+            Payment.aggregate([
+                { $match: { tenantId: tenantObjectId, status: 'completed', paidAt: { $gte: lastMonth } } },
+                { $group: { _id: '$branchId', total: { $sum: '$amount.total' } } }, // Sum per branch first
+                { $group: { _id: null, avgRevenue: { $avg: '$total' } } } // Then avg across branches
+            ]),
+            Member.aggregate([
+                { $match: { tenantId: tenantObjectId } },
+                {
+                    $group: {
+                        _id: '$branchId',
+                        retentionRate: {
+                            $avg: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] }
+                        }
+                    }
+                },
+                { $group: { _id: null, avgRetention: { $avg: '$retentionRate' } } }
+            ]),
+            Attendance.aggregate([
+                { $match: { tenantId: tenantObjectId, checkInTime: { $gte: lastMonth } } },
+                { $group: { _id: '$branchId', totalCheckIns: { $sum: 1 } } },
+                { $group: { _id: null, avgCheckIns: { $avg: '$totalCheckIns' } } }
+            ])
+        ]);
+
+        const networkStats = {
+            avgRevenue: networkRevenue[0]?.avgRevenue || 0,
+            avgRetention: (networkMembers[0]?.avgRetention || 0) * 100,
+            avgAttendance: networkAttendance[0]?.avgCheckIns || 0
+        };
+
+        // 2. Branch Specific Data (or Top Performer if no branchId)
+        let branchStats: any = {};
+
+        if (branchId) {
+            const branchObjectId = new mongoose.Types.ObjectId(branchId);
+            const [bRev, bMem, bAtt] = await Promise.all([
+                Payment.aggregate([
+                    { $match: { branchId: branchObjectId, status: 'completed', paidAt: { $gte: lastMonth } } },
+                    { $group: { _id: null, total: { $sum: '$amount.total' } } }
+                ]),
+                Member.aggregate([
+                    { $match: { branchId: branchObjectId } },
+                    {
+                        $group: {
+                            _id: null,
+                            total: { $sum: 1 },
+                            active: { $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] } }
+                        }
+                    }
+                ]),
+                Attendance.countDocuments({ branchId: branchObjectId, checkInTime: { $gte: lastMonth } })
+            ]);
+
+            branchStats = {
+                revenue: bRev[0]?.total || 0,
+                retention: bMem[0]?.total ? (bMem[0].active / bMem[0].total) * 100 : 0,
+                attendance: bAtt || 0
+            };
+        } else {
+            // If no specific branch, just return network stats with a label
+            branchStats = {
+                revenue: networkStats.avgRevenue,
+                retention: networkStats.avgRetention,
+                attendance: networkStats.avgAttendance,
+                label: 'Network Average'
+            };
+        }
+
+        return {
+            network: networkStats,
+            branch: branchStats,
+            period: 'last_30_days'
+        };
+    }
 }
 
 export default new FranchiseService();
