@@ -6,15 +6,37 @@ import { config } from '../config/config';
 import { generateInvoiceNumber } from '../utils/helpers.utils';
 import mongoose from 'mongoose';
 
-// Initialize payment gateways
-const razorpay = new Razorpay({
-    key_id: config.razorpay.keyId,
-    key_secret: config.razorpay.keySecret,
-});
+// Service-level variables (will be initialized lazily)
+let razorpayInstance: Razorpay | null = null;
+let stripeInstance: Stripe | null = null;
 
-const stripe = new Stripe(config.stripe.secretKey, {
-    apiVersion: '2023-10-16',
-});
+const getRazorpay = () => {
+    if (!razorpayInstance) {
+        if (!config.razorpay.keyId) {
+            console.warn('⚠️ Razorpay credentials missing');
+            return null;
+        }
+        razorpayInstance = new Razorpay({
+            key_id: config.razorpay.keyId,
+            key_secret: config.razorpay.keySecret,
+        });
+    }
+    return razorpayInstance;
+};
+
+const getStripe = () => {
+    if (!stripeInstance) {
+        if (!config.stripe.secretKey) {
+            console.warn('⚠️ Stripe credentials missing');
+            return null;
+        }
+        stripeInstance = new Stripe(config.stripe.secretKey, {
+            apiVersion: '2023-10-16' as any,
+        });
+    }
+    return stripeInstance;
+};
+console.log('DEBUG: PaymentService variables defined (lazy)');
 
 export interface CreatePaymentDTO {
     tenantId: string;
@@ -76,8 +98,10 @@ export class PaymentService {
 
     // Create Razorpay order
     async createRazorpayOrder(amount: number, currency: string = 'INR'): Promise<any> {
+        const rz = getRazorpay();
+        if (!rz) throw new Error('Razorpay is not configured');
         try {
-            const order = await razorpay.orders.create({
+            const order = await rz.orders.create({
                 amount: amount * 100, // Convert to paise
                 currency,
                 receipt: `receipt_${Date.now()}`,
@@ -92,8 +116,10 @@ export class PaymentService {
 
     // Create Stripe payment intent
     async createStripePaymentIntent(amount: number, currency: string = 'usd'): Promise<any> {
+        const st = getStripe();
+        if (!st) throw new Error('Stripe is not configured');
         try {
-            const paymentIntent = await stripe.paymentIntents.create({
+            const paymentIntent = await st.paymentIntents.create({
                 amount: amount * 100, // Convert to cents
                 currency,
                 automatic_payment_methods: {
@@ -195,8 +221,10 @@ export class PaymentService {
 
         // Process refund with gateway
         if (payment.gateway?.provider === 'razorpay' && payment.gateway.paymentId) {
+            const rz = getRazorpay();
+            if (!rz) throw new Error('Razorpay is not configured');
             try {
-                await razorpay.payments.refund(payment.gateway.paymentId, {
+                await rz.payments.refund(payment.gateway.paymentId, {
                     amount: refundAmount * 100,
                 });
             } catch (error) {
@@ -204,8 +232,10 @@ export class PaymentService {
                 throw new Error('Failed to process Razorpay refund');
             }
         } else if (payment.gateway?.provider === 'stripe' && payment.gateway.paymentId) {
+            const st = getStripe();
+            if (!st) throw new Error('Stripe is not configured');
             try {
-                await stripe.refunds.create({
+                await st.refunds.create({
                     payment_intent: payment.gateway.paymentId,
                     amount: refundAmount * 100,
                 });

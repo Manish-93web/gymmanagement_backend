@@ -1,3 +1,6 @@
+import dns from 'dns';
+dns.setServers(['8.8.8.8', '8.8.4.4']);
+
 import express, { Application, Request, Response, NextFunction } from 'express';
 import http from 'http';
 import cors from 'cors';
@@ -108,7 +111,6 @@ app.use('/api/classes', classRoutes);
 app.use('/api/fitness', fitnessRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/dashboard', dashboardRoutes);
-// app.use('/api/platform', platformRoutes);
 app.use('/api/security', securityRoutes);
 app.use('/api/franchise', franchiseRoutes);
 app.use('/api/platform', platformRoutes); // Layer 1: Super Admin

@@ -9,11 +9,18 @@ import logger from '../config/logger';
 const isMock = process.env.USE_REDIS_MOCK === 'true';
 
 const connection = !isMock ? new IORedis({
-    host: process.env.REDIS_HOST || 'localhost',
+    host: process.env.REDIS_HOST || '127.0.0.1',
     port: parseInt(process.env.REDIS_PORT || '6379'),
     password: process.env.REDIS_PASSWORD,
     maxRetriesPerRequest: null,
+    lazyConnect: true,
 }) : null;
+
+if (connection) {
+    connection.on('error', (err) => {
+        logger.error('BullMQ Redis connection error:', err.message);
+    });
+}
 
 class BullMQAutomationService {
     private membershipExpiryQueue: Queue | null = null;
@@ -264,16 +271,16 @@ class BullMQAutomationService {
 
         switch (queueName) {
             case 'membership-expiry':
-                queue = this.membershipExpiryQueue;
+                queue = this.membershipExpiryQueue!;
                 break;
             case 'birthday':
-                queue = this.birthdayQueue;
+                queue = this.birthdayQueue!;
                 break;
             case 'report':
-                queue = this.reportQueue;
+                queue = this.reportQueue!;
                 break;
             case 'backup':
-                queue = this.backupQueue;
+                queue = this.backupQueue!;
                 break;
             default:
                 throw new Error('Invalid queue name');
@@ -298,16 +305,16 @@ class BullMQAutomationService {
 
         switch (queueName) {
             case 'membership-expiry':
-                queue = this.membershipExpiryQueue;
+                queue = this.membershipExpiryQueue!;
                 break;
             case 'birthday':
-                queue = this.birthdayQueue;
+                queue = this.birthdayQueue!;
                 break;
             case 'report':
-                queue = this.reportQueue;
+                queue = this.reportQueue!;
                 break;
             case 'backup':
-                queue = this.backupQueue;
+                queue = this.backupQueue!;
                 break;
             default:
                 throw new Error('Invalid queue name');
@@ -340,16 +347,16 @@ class BullMQAutomationService {
 
         switch (queueName) {
             case 'membership-expiry':
-                queue = this.membershipExpiryQueue;
+                queue = this.membershipExpiryQueue!;
                 break;
             case 'birthday':
-                queue = this.birthdayQueue;
+                queue = this.birthdayQueue!;
                 break;
             case 'report':
-                queue = this.reportQueue;
+                queue = this.reportQueue!;
                 break;
             case 'backup':
-                queue = this.backupQueue;
+                queue = this.backupQueue!;
                 break;
             default:
                 throw new Error('Invalid queue name');
@@ -376,16 +383,16 @@ class BullMQAutomationService {
 
         switch (queueName) {
             case 'membership-expiry':
-                queue = this.membershipExpiryQueue;
+                queue = this.membershipExpiryQueue!;
                 break;
             case 'birthday':
-                queue = this.birthdayQueue;
+                queue = this.birthdayQueue!;
                 break;
             case 'report':
-                queue = this.reportQueue;
+                queue = this.reportQueue!;
                 break;
             case 'backup':
-                queue = this.backupQueue;
+                queue = this.backupQueue!;
                 break;
             default:
                 throw new Error('Invalid queue name');
