@@ -129,7 +129,7 @@ export interface IMember extends Document {
 
 const MemberSchema: Schema = new Schema(
     {
-        tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
+        tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
         branchId: { type: Schema.Types.ObjectId, ref: 'Branch', required: true, index: true },
         userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
         firstName: { type: String, required: true, trim: true },

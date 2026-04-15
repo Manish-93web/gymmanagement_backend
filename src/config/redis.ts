@@ -60,7 +60,16 @@ export const redis = isMock
             return delay;
         },
         maxRetriesPerRequest: 3,
+        // Prevent crashing on connection error
+        lazyConnect: true,
     });
+
+// Handle errors to prevent unhandled error event crashes
+if (!isMock) {
+    redis.on('error', (err: any) => {
+        console.error('❌ Redis error:', err.message);
+    });
+}
 
 export const connectRedis = async () => {
     if (isMock) {
