@@ -178,36 +178,76 @@ export const getOffers = async (req: Request, res: Response) => {
 };
 
 /**
- * Get Member Offers
+ * Get Member Offers — for member role: looks up their Member doc via userId,
+ * then returns their active/pending offers. Staff can pass ?memberId=.
  */
 export const getMemberOffers = async (req: Request, res: Response) => {
     try {
-        const memberId = req.user?.role === 'member' ? req.user?._id : req.query.memberId; // Logic for member access vs staff access
-        // Ideally member ID is fetched from user record if user is member
-        // For now simplifying:
-        // retention.service.ts calls GET /retention/member/offers without params, implies current user context?
+        const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId;
+        let memberId: mongoose.Types.ObjectId | string | undefined;
 
-        // If current user is member, use their memberId. But req.user is User, we need Member ID.
-        // User schema doesn't export memberId directly, but Member has userId.
-        // If Role is member, find Member doc where userId = req.user._id
+        if (req.user?.role === 'member') {
+            // Look up the Member document for this logged-in user
+            const memberDoc = await Member.findOne({ userId: req.user._id }).select('_id');
+            if (!memberDoc) return res.status(404).json({ success: false, message: 'Member record not found' });
+            memberId = memberDoc._id as mongoose.Types.ObjectId;
+        } else {
+            memberId = req.query.memberId as string;
+            if (!memberId) return res.status(400).json({ success: false, message: 'memberId query param required for non-member roles' });
+        }
 
-        // Assuming current user context:
-        // We need to implement lookup.
+        const query: any = { memberId, status: { $in: ['active', 'pending', 'sent'] } };
+        if (tenantId) query.tenantId = tenantId;
 
-        res.status(200).json({ success: true, data: [] }); // Placeholder for now
+        // Expire any offers past their expiryDate
+        await PersonalizedOffer.updateMany(
+            { ...query, expiryDate: { $lt: new Date() } },
+            { $set: { status: 'expired' } }
+        );
+
+        const offers = await PersonalizedOffer.find(query).sort({ createdAt: -1 });
+        res.status(200).json({ success: true, data: offers });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Error fetching member offers', error: (error as Error).message });
     }
 };
 
 /**
- * Redeem Offer
+ * Redeem Offer — marks offer as redeemed for the current member.
+ * Body: { offerId }
  */
 export const redeemOffer = async (req: Request, res: Response) => {
     try {
-        const { code } = req.body;
-        // Logic to find offer by code and redeem
-        res.status(200).json({ success: true, message: 'Offer redeemed' });
+        const { offerId } = req.body;
+        if (!offerId) return res.status(400).json({ success: false, message: 'offerId is required' });
+
+        const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId;
+        const query: any = { _id: offerId };
+        if (tenantId) query.tenantId = tenantId;
+
+        const offer = await PersonalizedOffer.findOne(query);
+        if (!offer) return res.status(404).json({ success: false, message: 'Offer not found' });
+        if (offer.status === 'redeemed') return res.status(409).json({ success: false, message: 'Offer already redeemed' });
+        if (offer.status === 'expired' || (offer.expiryDate && offer.expiryDate < new Date())) {
+            return res.status(410).json({ success: false, message: 'Offer has expired' });
+        }
+
+        offer.status = 'redeemed';
+        offer.redeemedAt = new Date();
+        await offer.save();
+
+        // Log a retention action for this redemption
+        await RetentionAction.create({
+            tenantId: offer.tenantId,
+            memberId: offer.memberId,
+            type: 'offer',
+            status: 'completed',
+            notes: `Redeemed offer: ${offer.title || offer.type} (value: ${offer.value})`,
+            performedBy: req.user?._id,
+            completedAt: new Date(),
+        });
+
+        res.status(200).json({ success: true, message: 'Offer redeemed successfully', data: offer });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Error redeeming offer', error: (error as Error).message });
     }

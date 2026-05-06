@@ -17,6 +17,9 @@ router.get('/workouts/member/:memberId/stats', authenticate, fitnessController.g
 router.post('/diet/calculate-macros', requireAnyRole('trainer', 'member', 'super_admin'), fitnessController.calculateMacros.bind(fitnessController));
 router.post('/diet/plans', requireAnyRole('trainer', 'gym_owner', 'branch_manager', 'super_admin'), fitnessController.createDietPlan.bind(fitnessController));
 router.get('/diet/plans/member/:memberId', authenticate, fitnessController.getMemberDietPlans.bind(fitnessController));
+router.get('/diet/plans/:dietPlanId', authenticate, fitnessController.getDietPlanById.bind(fitnessController));
+router.put('/diet/plans/:dietPlanId', requireAnyRole('trainer', 'gym_owner', 'branch_manager', 'super_admin'), fitnessController.updateDietPlan.bind(fitnessController));
+router.delete('/diet/plans/:dietPlanId', requireAnyRole('trainer', 'gym_owner', 'branch_manager', 'super_admin'), fitnessController.deleteDietPlan.bind(fitnessController));
 router.post('/diet/plans/:dietPlanId/compliance', requireAnyRole('member', 'trainer', 'super_admin'), fitnessController.logCompliance.bind(fitnessController));
 router.get('/diet/member/:memberId/stats', authenticate, fitnessController.getDietStats.bind(fitnessController));
 

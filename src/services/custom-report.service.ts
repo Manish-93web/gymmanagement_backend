@@ -66,7 +66,7 @@ class CustomReportService {
         const Model = this.getModel(report.dataSource);
 
         // Build query
-        const query = this.buildQuery(report.filters, additionalFilters);
+        const query = this.buildQuery(report.filters as any, additionalFilters as any);
 
         // Execute query
         let queryBuilder = Model.find(query);
@@ -96,7 +96,7 @@ class CustomReportService {
         // Apply aggregations
         let aggregations: any = {};
         if (report.aggregations && report.aggregations.length > 0) {
-            aggregations = this.calculateAggregations(data, report.aggregations);
+            aggregations = this.calculateAggregations(data, report.aggregations as any);
         }
 
         // Apply sorting

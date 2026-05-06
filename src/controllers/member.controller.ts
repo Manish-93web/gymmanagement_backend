@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import memberService from '../services/member.service';
 import Branch from '../models/Branch.model';
+import Member from '../models/Member.model';
+import Attendance from '../models/Attendance.model';
 import { z } from 'zod';
 import { MemberStatus } from '../models/Member.model';
 
@@ -195,7 +197,7 @@ export class MemberController {
 
             const validatedData = updateMemberSchema.parse(req.body);
 
-            const member = await memberService.updateMember(memberId, req.tenantId, validatedData);
+            const member = await memberService.updateMember(memberId, req.tenantId!, validatedData);
 
             if (!member) {
                 res.status(404).json({
@@ -235,7 +237,7 @@ export class MemberController {
 
             const member = await memberService.changeMemberStatus(
                 memberId,
-                req.tenantId,
+                req.tenantId!,
                 status as MemberStatus,
                 reason
             );
@@ -276,7 +278,7 @@ export class MemberController {
 
             const validatedData = addMeasurementSchema.parse(req.body);
 
-            const member = await memberService.addMeasurement(memberId, req.tenantId, validatedData);
+            const member = await memberService.addMeasurement(memberId, req.tenantId!, validatedData);
 
             if (!member) {
                 res.status(404).json({
@@ -450,6 +452,207 @@ export class MemberController {
             });
         } catch (error: any) {
             res.status(400).json({ status: 'error', message: error.message || 'Failed to transfer member' });
+        }
+    }
+
+    // Upload profile picture (URL provided by Cloudinary from frontend)
+    async uploadProfilePicture(req: Request, res: Response): Promise<void> {
+        try {
+            const { memberId } = req.params;
+            const { imageUrl } = req.body;
+
+            if (!imageUrl) {
+                res.status(400).json({ status: 'error', message: 'imageUrl is required' });
+                return;
+            }
+
+            const member = await Member.findOneAndUpdate(
+                { _id: memberId, ...(req.tenantId ? { tenantId: req.tenantId } : {}) },
+                { 'personalInfo.profilePicture': imageUrl },
+                { new: true }
+            );
+
+            if (!member) {
+                res.status(404).json({ status: 'error', message: 'Member not found' });
+                return;
+            }
+
+            res.status(200).json({ status: 'success', message: 'Profile picture updated', data: { profilePicture: imageUrl } });
+        } catch (error: any) {
+            res.status(400).json({ status: 'error', message: error.message || 'Failed to update profile picture' });
+        }
+    }
+
+    // Add transformation photo
+    async addTransformationPhoto(req: Request, res: Response): Promise<void> {
+        try {
+            const { memberId } = req.params;
+            const { images, weight, description, date } = req.body;
+
+            if (!images || !Array.isArray(images) || images.length === 0) {
+                res.status(400).json({ status: 'error', message: 'images array is required' });
+                return;
+            }
+
+            const member = await Member.findOneAndUpdate(
+                { _id: memberId, ...(req.tenantId ? { tenantId: req.tenantId } : {}) },
+                {
+                    $push: {
+                        transformationGallery: {
+                            date: date ? new Date(date) : new Date(),
+                            images,
+                            weight: weight || 0,
+                            description,
+                        },
+                    },
+                },
+                { new: true }
+            );
+
+            if (!member) {
+                res.status(404).json({ status: 'error', message: 'Member not found' });
+                return;
+            }
+
+            res.status(200).json({ status: 'success', message: 'Transformation photo added', data: member.transformationGallery });
+        } catch (error: any) {
+            res.status(400).json({ status: 'error', message: error.message || 'Failed to add transformation photo' });
+        }
+    }
+
+    // Get expiry alerts — members whose membership expires in the next N days
+    async getExpiryAlerts(req: Request, res: Response): Promise<void> {
+        try {
+            if (!req.tenantId) {
+                res.status(400).json({ status: 'error', message: 'Tenant context required' });
+                return;
+            }
+
+            const days = parseInt(req.query.days as string) || 7;
+            const now = new Date();
+            const future = new Date();
+            future.setDate(future.getDate() + days);
+
+            const expiring = await Member.find({
+                tenantId: req.tenantId,
+                membershipExpiry: { $gte: now, $lte: future },
+                status: 'active',
+            })
+                .select('firstName lastName email mobile membershipExpiry membershipNumber planId')
+                .populate('planId', 'name')
+                .limit(100)
+                .lean();
+
+            const expired = await Member.find({
+                tenantId: req.tenantId,
+                membershipExpiry: { $lt: now },
+                status: { $in: ['active', 'expired'] },
+            })
+                .select('firstName lastName email mobile membershipExpiry membershipNumber planId')
+                .populate('planId', 'name')
+                .limit(50)
+                .lean();
+
+            res.status(200).json({
+                status: 'success',
+                data: {
+                    expiringSoon: expiring,
+                    alreadyExpired: expired,
+                    totalExpiring: expiring.length,
+                    totalExpired: expired.length,
+                },
+            });
+        } catch (error: any) {
+            res.status(400).json({ status: 'error', message: error.message || 'Failed to get expiry alerts' });
+        }
+    }
+
+    // Get member timeline (activity history: status changes + attendance)
+    async getMemberTimeline(req: Request, res: Response): Promise<void> {
+        try {
+            const { memberId } = req.params;
+
+            const member = await Member.findOne({
+                _id: memberId,
+                ...(req.tenantId ? { tenantId: req.tenantId } : {}),
+            })
+                .select('statusHistory measurements documents createdAt')
+                .lean();
+
+            if (!member) {
+                res.status(404).json({ status: 'error', message: 'Member not found' });
+                return;
+            }
+
+            // Recent attendance entries
+            const recentAttendance = await Attendance.find({ memberId })
+                .sort({ checkInTime: -1 })
+                .limit(20)
+                .lean();
+
+            const timeline: { date: Date; type: string; title: string; detail?: string }[] = [];
+
+            // Status history events
+            (member.statusHistory || []).forEach((s: any) => {
+                timeline.push({
+                    date: s.changedAt,
+                    type: 'status',
+                    title: `Status changed to ${s.status}`,
+                    detail: s.reason,
+                });
+            });
+
+            // Measurement events
+            (member.measurements || []).forEach((m: any) => {
+                timeline.push({
+                    date: m.date,
+                    type: 'measurement',
+                    title: 'Body measurement recorded',
+                    detail: `Weight: ${m.weight}kg, Height: ${m.height}cm`,
+                });
+            });
+
+            // Attendance events
+            recentAttendance.forEach((a: any) => {
+                timeline.push({
+                    date: a.checkInTime,
+                    type: 'attendance',
+                    title: 'Gym visit',
+                    detail: a.checkOutTime ? `Duration: ${Math.round((new Date(a.checkOutTime).getTime() - new Date(a.checkInTime).getTime()) / 60000)} min` : 'Still checked in',
+                });
+            });
+
+            // Joined event
+            timeline.push({
+                date: (member as any).createdAt,
+                type: 'join',
+                title: 'Member joined',
+            });
+
+            timeline.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+            res.status(200).json({ status: 'success', data: { timeline: timeline.slice(0, 50) } });
+        } catch (error: any) {
+            res.status(400).json({ status: 'error', message: error.message || 'Failed to get member timeline' });
+        }
+    }
+
+    async changeMemberPlan(req: Request, res: Response): Promise<void> {
+        try {
+            const { memberId } = req.params;
+            const { planId } = req.body;
+            if (!planId) { res.status(400).json({ status: 'error', message: 'planId is required' }); return; }
+            const tenantId = req.tenantId!;
+            const Subscription = (await import('../models/Subscription.model')).default;
+            const updated = await Subscription.findOneAndUpdate(
+                { memberId, tenantId, status: 'active' },
+                { planId, updatedAt: new Date() },
+                { new: true }
+            );
+            if (!updated) { res.status(404).json({ status: 'error', message: 'Active subscription not found' }); return; }
+            res.status(200).json({ status: 'success', data: updated });
+        } catch (error: any) {
+            res.status(400).json({ status: 'error', message: error.message || 'Failed to change plan' });
         }
     }
 

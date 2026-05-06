@@ -171,6 +171,18 @@ export class AIAndCRMController {
         }
     }
 
+    async getLeadById(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { leadId } = req.params;
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const lead = await CRMService.getLeadById(leadId, tenantId);
+            if (!lead) return res.status(404).json({ success: false, message: 'Lead not found' });
+            res.status(200).json({ success: true, data: lead });
+        } catch (error) {
+            next(error);
+        }
+    }
+
     async updateLeadStatus(req: Request, res: Response, next: NextFunction) {
         try {
             const { leadId } = req.params;
@@ -226,6 +238,47 @@ export class AIAndCRMController {
             const funnel = await CRMService.getSalesFunnel(tenantId, branchId as string);
 
             res.status(200).json({ success: true, data: funnel });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async convertLead(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { leadId } = req.params;
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const changedBy = req.user?._id?.toString() || 'system';
+            const lead = await CRMService.updateLeadStatus(leadId, 'converted' as any, tenantId, changedBy);
+            if (!lead) return res.status(404).json({ success: false, message: 'Lead not found' });
+            res.status(200).json({ success: true, message: 'Lead converted', data: lead });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async createPublicLead(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { tenantSlug, firstName, lastName, email, mobile, source = 'website', interestedIn, notes } = req.body;
+            if (!firstName || !mobile) {
+                return res.status(400).json({ success: false, message: 'firstName and mobile are required' });
+            }
+            const Tenant = (await import('../models/Tenant.model')).default;
+            const tenant = tenantSlug
+                ? await Tenant.findOne({ slug: tenantSlug })
+                : await Tenant.findById(req.body.tenantId);
+            if (!tenant) return res.status(404).json({ success: false, message: 'Gym not found' });
+            const lead = await CRMService.createLead({
+                tenantId: tenant._id.toString(),
+                branchId: '',
+                firstName,
+                lastName: lastName || '',
+                email,
+                mobile,
+                source,
+                interestedIn,
+                notes,
+            });
+            res.status(201).json({ success: true, data: lead });
         } catch (error) {
             next(error);
         }

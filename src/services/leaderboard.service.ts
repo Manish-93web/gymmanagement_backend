@@ -3,7 +3,7 @@ import Attendance from '../models/Attendance.model';
 import Workout from '../models/Workout.model';
 import logger from '../config/logger';
 
-interface LeaderboardEntry {
+export interface LeaderboardEntry {
     rank: number;
     memberId: string;
     name: string;

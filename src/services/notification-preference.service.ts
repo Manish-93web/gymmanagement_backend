@@ -77,7 +77,7 @@ class NotificationPreferenceService {
             });
         }
 
-        return preferences.toObject() as PreferenceConfig;
+        return preferences.toObject() as unknown as PreferenceConfig;
     }
 
     /**

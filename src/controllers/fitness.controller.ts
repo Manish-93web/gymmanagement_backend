@@ -212,12 +212,43 @@ export class FitnessController {
             const { memberId } = req.params;
             const tenantId = req.user?.tenantId?.toString() || '';
 
-            const dietStats = await DietService.getComplianceStats(memberId, tenantId); // Note: Should probably be getMemberDietPlans + loop or new service method
+            const dietStats = await DietService.getComplianceStats(memberId, tenantId);
 
             res.status(200).json({ success: true, data: dietStats });
         } catch (error) {
             next(error);
         }
+    }
+
+    async getDietPlanById(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { dietPlanId } = req.params;
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const plan = await DietService.getDietPlanById(dietPlanId, tenantId);
+            if (!plan) return res.status(404).json({ success: false, message: 'Diet plan not found' });
+            res.status(200).json({ success: true, data: plan });
+        } catch (error) { next(error); }
+    }
+
+    async updateDietPlan(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { dietPlanId } = req.params;
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const plan = await DietService.updateDietPlan(dietPlanId, tenantId, req.body);
+            if (!plan) return res.status(404).json({ success: false, message: 'Diet plan not found' });
+            res.status(200).json({ success: true, data: plan });
+        } catch (error) { next(error); }
+    }
+
+    async deleteDietPlan(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { dietPlanId } = req.params;
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const DietPlan = (await import('../models/DietPlan.model')).default;
+            const result = await DietPlan.findOneAndDelete({ _id: dietPlanId, tenantId });
+            if (!result) return res.status(404).json({ success: false, message: 'Diet plan not found' });
+            res.status(200).json({ success: true, message: 'Diet plan deleted' });
+        } catch (error) { next(error); }
     }
 }
 

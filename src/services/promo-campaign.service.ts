@@ -91,7 +91,7 @@ class PromoCampaignService {
         const memberIds = members.map((m) => m._id.toString());
 
         // Email
-        if (campaign.channels.includes('email')) {
+        if (campaign.channels?.includes('email')) {
             try {
                 const emailResult = await this.sendEmailPromo(campaign, memberIds);
                 results.email = emailResult;
@@ -101,7 +101,7 @@ class PromoCampaignService {
         }
 
         // WhatsApp
-        if (campaign.channels.includes('whatsapp')) {
+        if (campaign.channels?.includes('whatsapp')) {
             try {
                 const whatsappResult = await this.sendWhatsAppPromo(campaign, memberIds);
                 results.whatsapp = whatsappResult;
@@ -271,7 +271,7 @@ class PromoCampaignService {
             smsSent: campaign.smsSent || 0,
             whatsappSent: campaign.whatsappSent || 0,
             couponUsage,
-            conversionRate: campaign.totalReach > 0 ? (couponUsage / campaign.totalReach) * 100 : 0,
+            conversionRate: (campaign.totalReach ?? 0) > 0 ? (couponUsage / (campaign.totalReach ?? 1)) * 100 : 0,
             estimatedRevenue: revenue,
             roi: campaign.budget ? ((revenue - campaign.budget) / campaign.budget) * 100 : 0,
             startDate: campaign.startDate,

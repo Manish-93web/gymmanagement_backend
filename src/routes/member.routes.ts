@@ -30,4 +30,15 @@ router.post('/:memberId/transfer', requirePermission('member:update'), memberCon
 // Member measurements
 router.post('/:memberId/measurements', requirePermission('member:update'), memberController.addMeasurement.bind(memberController));
 
+// Profile picture & transformation gallery
+router.put('/:memberId/profile-picture', requirePermission('member:update'), memberController.uploadProfilePicture.bind(memberController));
+router.post('/:memberId/transformation', requirePermission('member:update'), memberController.addTransformationPhoto.bind(memberController));
+
+// Expiry alerts & timeline
+router.get('/alerts/expiry', requirePermission('member:read'), memberController.getExpiryAlerts.bind(memberController));
+router.get('/:memberId/timeline', requirePermission('member:read'), memberController.getMemberTimeline.bind(memberController));
+
+// Change subscription plan
+router.patch('/:memberId/plan', requirePermission('member:update'), memberController.changeMemberPlan.bind(memberController));
+
 export default router;

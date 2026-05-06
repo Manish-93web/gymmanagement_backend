@@ -131,7 +131,7 @@ const MemberSchema: Schema = new Schema(
     {
         tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
         branchId: { type: Schema.Types.ObjectId, ref: 'Branch', required: true, index: true },
-        userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
+        userId: { type: Schema.Types.ObjectId, ref: 'User', unique: true, sparse: true },
         firstName: { type: String, required: true, trim: true },
         lastName: { type: String, required: true, trim: true },
         email: { type: String, required: true, lowercase: true, trim: true },
@@ -232,7 +232,7 @@ const MemberSchema: Schema = new Schema(
             },
         },
         referredBy: { type: Schema.Types.ObjectId, ref: 'Member' },
-        referralCode: { type: String, unique: true, required: true },
+        referralCode: { type: String, unique: true, sparse: true },
         tags: [{ type: String }],
         notes: { type: String },
         freezeHistory: [
