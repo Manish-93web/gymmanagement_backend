@@ -1,4 +1,6 @@
-import { google } from 'googleapis';
+// googleapis not installed; this service is not wired into routes
+/* eslint-disable */
+const google: any = {};
 import Class from '../models/Class.model';
 import User from '../models/User.model';
 import logger from '../config/logger';

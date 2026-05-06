@@ -175,6 +175,43 @@ export class ClassController {
             next(error);
         }
     }
+
+    async getMyBookings(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.user?.tenantId?.toString();
+            const userId = req.user?._id?.toString();
+            const Member = (await import('../models/Member.model')).default;
+            const member = await Member.findOne({ userId, tenantId });
+            if (!member) return res.status(404).json({ success: false, message: 'Member not found' });
+            const { bookings } = await ClassService.getMemberBookings(member._id.toString(), tenantId);
+            return res.status(200).json({ success: true, data: bookings });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async getClassOccurrences(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { classId } = req.params;
+            const isSuperAdmin = req.user?.role === 'super_admin';
+            const tenantId = isSuperAdmin ? undefined : req.user?.tenantId?.toString();
+            const classDoc = await ClassService.getClassById(classId, tenantId);
+            if (!classDoc) return res.status(404).json({ success: false, message: 'Class not found' });
+            const { startDate, endDate } = req.query;
+            const classes = await ClassService.getClasses(
+                tenantId,
+                undefined,
+                undefined,
+                undefined,
+                startDate ? new Date(startDate as string) : undefined,
+                endDate ? new Date(endDate as string) : undefined
+            );
+            const occurrences = classes.classes.filter((c: any) => c._id?.toString() === classId || c.parentClassId?.toString() === classId);
+            return res.status(200).json({ success: true, data: occurrences });
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 export default new ClassController();

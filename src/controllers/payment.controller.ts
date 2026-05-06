@@ -257,6 +257,26 @@ export class PaymentController {
         }
     }
 
+    async exportPayments(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.user!.tenantId!.toString();
+            const { startDate, endDate, status } = req.query;
+            const query: any = { tenantId };
+            if (startDate || endDate) {
+                query.createdAt = {};
+                if (startDate) query.createdAt.$gte = new Date(startDate as string);
+                if (endDate) query.createdAt.$lte = new Date(endDate as string);
+            }
+            if (status) query.status = status;
+            const Payment = (await import('../models/Payment.model')).default;
+            const payments = await Payment.find(query)
+                .populate('memberId', 'firstName lastName membershipNumber email mobile')
+                .sort({ createdAt: -1 })
+                .limit(5000);
+            return res.status(200).json({ success: true, data: payments });
+        } catch (error) { next(error); }
+    }
+
     /**
      * Handle Razorpay webhook
      * POST /api/payments/webhook/razorpay

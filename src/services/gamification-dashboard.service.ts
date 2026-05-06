@@ -34,7 +34,7 @@ class GamificationDashboardService {
         // Calculate progress to next badge
         const allBadges = await GamificationBadgeService.getAllBadgesWithStatus(
             memberId,
-            member.tenantId
+            member.tenantId.toString()
         );
         const nextBadges = allBadges.filter((b) => !b.earned).slice(0, 3);
 

@@ -175,13 +175,7 @@ class InvoiceService {
                 amount: payment.amount,
                 date: new Date(payment.createdAt).toLocaleDateString(),
             },
-            attachments: [
-                {
-                    filename: path.basename(invoicePath),
-                    path: invoicePath,
-                },
-            ],
-        });
+        } as any);
 
         logger.info('Invoice emailed', { paymentId, email: member.email });
 

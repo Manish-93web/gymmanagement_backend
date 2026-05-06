@@ -105,7 +105,7 @@ export class TrainerController {
             const { trainerId } = req.params;
             const tenantId = req.user!.tenantId!.toString();
 
-            const trainer = await TrainerService.addCertification(trainerId, req.body, tenantId);
+            const trainer = await TrainerService.addCertification(trainerId, tenantId, req.body);
 
             res.status(200).json({ success: true, data: trainer });
         } catch (error) {
@@ -119,7 +119,7 @@ export class TrainerController {
             const { availability } = req.body;
             const tenantId = req.user!.tenantId!.toString();
 
-            const trainer = await TrainerService.updateAvailability(trainerId, availability, tenantId);
+            const trainer = await TrainerService.updateAvailability(trainerId, tenantId, availability);
 
             res.status(200).json({ success: true, data: trainer });
         } catch (error) {

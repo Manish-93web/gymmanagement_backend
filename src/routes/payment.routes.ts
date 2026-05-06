@@ -87,4 +87,11 @@ router.post(
     paymentController.getCheckoutDetails.bind(paymentController)
 );
 
+// Export payments
+router.get(
+    '/export',
+    requireAnyRole('gym_owner', 'branch_manager', 'accountant', 'auditor', 'super_admin'),
+    paymentController.exportPayments.bind(paymentController)
+);
+
 export default router;

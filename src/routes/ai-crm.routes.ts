@@ -5,6 +5,9 @@ import { requireAnyRole } from '../middleware/rbac.middleware';
 
 const router = Router();
 
+// Public lead submission (no auth — kiosk/website)
+router.post('/crm/leads/public', aiCrmController.createPublicLead.bind(aiCrmController));
+
 router.use(authenticate);
 
 // AI routes
@@ -17,9 +20,11 @@ router.get('/ai/insights/:memberId', requireAnyRole('trainer', 'member', 'super_
 // CRM routes
 router.post('/crm/leads', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), aiCrmController.createLead.bind(aiCrmController));
 router.get('/crm/leads', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), aiCrmController.getLeads.bind(aiCrmController));
+router.get('/crm/leads/:leadId', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), aiCrmController.getLeadById.bind(aiCrmController));
 router.patch('/crm/leads/:leadId/status', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), aiCrmController.updateLeadStatus.bind(aiCrmController));
 router.post('/crm/leads/:leadId/follow-up', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), aiCrmController.addFollowUp.bind(aiCrmController));
 router.get('/crm/stats', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), aiCrmController.getLeadStats.bind(aiCrmController));
 router.get('/crm/funnel', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), aiCrmController.getSalesFunnel.bind(aiCrmController));
+router.post('/crm/leads/:leadId/convert', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), aiCrmController.convertLead.bind(aiCrmController));
 
 export default router;

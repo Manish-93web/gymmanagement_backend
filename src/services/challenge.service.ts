@@ -123,7 +123,10 @@ class ChallengeService {
         }
 
         participant.progress = progress;
-        participant.completed = progress >= challenge.goal.target;
+        if (progress >= challenge.goal.target && participant.status !== 'completed') {
+            participant.status = 'completed';
+            participant.completedAt = new Date();
+        }
         await participant.save();
 
         return participant;

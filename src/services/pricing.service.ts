@@ -103,7 +103,7 @@ export class PricingService {
         let addonsTotal = 0;
         if (params.addOnIds && params.addOnIds.length > 0) {
             params.addOnIds.forEach(id => {
-                const addon = plan.addOns.find(a => a._id?.toString() === id);
+                const addon = plan.addOns.find((a: any) => a._id?.toString() === id);
                 if (addon) {
                     addonsTotal += addon.price;
                 }

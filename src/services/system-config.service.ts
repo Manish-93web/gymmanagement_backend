@@ -66,7 +66,7 @@ class SystemConfigService {
             config = await this.createDefaultConfig(tenantId);
         }
 
-        return config.toObject() as ConfigData;
+        return config.toObject() as unknown as ConfigData;
     }
 
     /**

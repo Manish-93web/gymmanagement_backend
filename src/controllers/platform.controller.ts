@@ -192,3 +192,220 @@ export const triggerBackup = async (req: Request, res: Response) => {
         return res.status(500).json({ success: false, message: 'Backup failed', error: (error as Error).message });
     }
 };
+
+/**
+ * List all super_admin users
+ */
+export const getAdmins = async (req: Request, res: Response) => {
+    try {
+        const admins = await User.find({ role: 'super_admin' })
+            .select('firstName lastName email mobile createdAt lastLogin isActive')
+            .sort({ createdAt: -1 });
+        return res.status(200).json({ success: true, data: admins });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error fetching admins', error: (error as Error).message });
+    }
+};
+
+/**
+ * Get all support tickets across all tenants
+ */
+export const getAllSupportTickets = async (req: Request, res: Response) => {
+    try {
+        const SupportTicket = (await import('../models/SupportTicket.model')).default;
+        const { status, priority, page = '1', limit = '20' } = req.query as Record<string, string>;
+        const filter: any = {};
+        if (status) filter.status = status;
+        if (priority) filter.priority = priority;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const [tickets, total] = await Promise.all([
+            SupportTicket.find(filter)
+                .populate('userId', 'firstName lastName email')
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(parseInt(limit)),
+            SupportTicket.countDocuments(filter),
+        ]);
+        return res.status(200).json({ success: true, data: { tickets, total, page: parseInt(page) } });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error fetching tickets', error: (error as Error).message });
+    }
+};
+
+/**
+ * Get all subscription plans across the platform
+ */
+export const getPlatformPlans = async (req: Request, res: Response) => {
+    try {
+        const Plan = (await import('../models/SaaSPlan.model')).default;
+        const plans = await Plan.find({ isActive: true }).sort({ 'pricing.monthly': 1 });
+        return res.status(200).json({ success: true, data: plans });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error fetching plans', error: (error as Error).message });
+    }
+};
+
+/**
+ * Get platform-wide payment/revenue summary
+ */
+export const getPlatformPayments = async (req: Request, res: Response) => {
+    try {
+        const Payment = (await import('../models/Payment.model')).default;
+        const { startDate, endDate, tenantId, page = '1', limit = '20' } = req.query as Record<string, string>;
+        const filter: any = { status: 'completed' };
+        if (tenantId) filter.tenantId = tenantId;
+        if (startDate || endDate) {
+            filter.createdAt = {};
+            if (startDate) filter.createdAt.$gte = new Date(startDate);
+            if (endDate) filter.createdAt.$lte = new Date(endDate);
+        }
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const [payments, total] = await Promise.all([
+            Payment.find(filter)
+                .populate('memberId', 'firstName lastName')
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(parseInt(limit)),
+            Payment.countDocuments(filter),
+        ]);
+        return res.status(200).json({ success: true, data: { payments, total, page: parseInt(page) } });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error fetching payments', error: (error as Error).message });
+    }
+};
+
+/** View a specific tenant's members */
+export const viewTenantMembers = async (req: Request, res: Response) => {
+    try {
+        const { tenantId } = req.params;
+        const { page = '1', limit = '20', status, search } = req.query as Record<string, string>;
+        const filter: any = { tenantId };
+        if (status) filter.status = status;
+        if (search) filter.$or = [
+            { firstName: { $regex: search, $options: 'i' } },
+            { lastName: { $regex: search, $options: 'i' } },
+            { mobile: { $regex: search, $options: 'i' } }
+        ];
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const [members, total] = await Promise.all([
+            Member.find(filter).sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)),
+            Member.countDocuments(filter)
+        ]);
+        return res.status(200).json({ success: true, data: { members, total } });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error fetching members', error: (error as Error).message });
+    }
+};
+
+/** View a specific tenant's attendance */
+export const viewTenantAttendance = async (req: Request, res: Response) => {
+    try {
+        const { tenantId } = req.params;
+        const { startDate, endDate } = req.query as Record<string, string>;
+        const Attendance = (await import('../models/Attendance.model')).default;
+        const filter: any = { tenantId };
+        if (startDate || endDate) {
+            filter.checkIn = {};
+            if (startDate) filter.checkIn.$gte = new Date(startDate);
+            if (endDate) filter.checkIn.$lte = new Date(endDate);
+        }
+        const records = await Attendance.find(filter)
+            .populate('memberId', 'firstName lastName')
+            .sort({ checkIn: -1 }).limit(100);
+        return res.status(200).json({ success: true, data: records });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error fetching attendance', error: (error as Error).message });
+    }
+};
+
+/** View a specific tenant's finance */
+export const viewTenantFinance = async (req: Request, res: Response) => {
+    try {
+        const { tenantId } = req.params;
+        const Payment = (await import('../models/Payment.model')).default;
+        const [payments, total] = await Promise.all([
+            Payment.find({ tenantId, status: 'completed' })
+                .populate('memberId', 'firstName lastName')
+                .sort({ createdAt: -1 }).limit(50),
+            Payment.aggregate([
+                { $match: { tenantId: new (require('mongoose').Types.ObjectId)(tenantId), status: 'completed' } },
+                { $group: { _id: null, total: { $sum: '$amount.total' } } }
+            ])
+        ]);
+        return res.status(200).json({ success: true, data: { payments, totalRevenue: total[0]?.total || 0 } });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error fetching finance data', error: (error as Error).message });
+    }
+};
+
+/** Create an impersonation session for a tenant */
+export const createViewSession = async (req: Request, res: Response) => {
+    try {
+        const { tenantId } = req.params;
+        const jwt = require('jsonwebtoken');
+        const { config } = require('../config/config');
+        const tenant = await Tenant.findById(tenantId);
+        if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
+        const owner = await User.findOne({ tenantId, role: 'gym_owner' });
+        if (!owner) return res.status(404).json({ success: false, message: 'Gym owner not found' });
+        const token = jwt.sign(
+            { userId: owner._id, tenantId, impersonatedBy: req.user!._id, role: 'gym_owner' },
+            config.jwt.secret,
+            { expiresIn: '4h' }
+        );
+        return res.status(200).json({ success: true, data: { token, tenantName: tenant.name } });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error creating view session', error: (error as Error).message });
+    }
+};
+
+/** Get / update platform branding config */
+export const getPlatformBranding = async (req: Request, res: Response) => {
+    try {
+        const config = await systemConfigService.getConfig('branding') || { primaryColor: '#FF5F1F', logoUrl: '', appName: 'GYM.OS' };
+        return res.status(200).json({ success: true, data: config });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error fetching branding', error: (error as Error).message });
+    }
+};
+
+export const updatePlatformBranding = async (req: Request, res: Response) => {
+    try {
+        await systemConfigService.updateConfig('platform', req.body);
+        return res.status(200).json({ success: true, message: 'Branding updated' });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error updating branding', error: (error as Error).message });
+    }
+};
+
+/** Get platform analytics */
+export const getPlatformAnalytics = async (req: Request, res: Response) => {
+    try {
+        const { period = '30d' } = req.query;
+        const days = period === '7d' ? 7 : period === '90d' ? 90 : 30;
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - days);
+
+        const Payment = (await import('../models/Payment.model')).default;
+        const [newTenants, newMembers, revenue] = await Promise.all([
+            Tenant.countDocuments({ createdAt: { $gte: startDate } }),
+            Member.countDocuments({ createdAt: { $gte: startDate } }),
+            Payment.aggregate([
+                { $match: { status: 'completed', createdAt: { $gte: startDate } } },
+                { $group: { _id: null, total: { $sum: '$amount.total' } } }
+            ])
+        ]);
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                period: `Last ${days} days`,
+                newTenants,
+                newMembers,
+                revenue: revenue[0]?.total || 0
+            }
+        });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error fetching analytics', error: (error as Error).message });
+    }
+};

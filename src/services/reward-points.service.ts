@@ -132,7 +132,7 @@ class RewardPointsService {
             });
 
             // Restore stock
-            await RewardItem.findByIdAndUpdate(redemption.itemId, {
+            await RewardItem.findByIdAndUpdate(redemption.rewardId, {
                 $inc: {
                     redeemedCount: -1,
                     stock: 1,
@@ -140,9 +140,9 @@ class RewardPointsService {
             });
         }
 
-        redemption.status = status;
+        redemption.status = status as any;
         if (status === 'delivered') {
-            redemption.deliveredAt = new Date();
+            (redemption as any).deliveredAt = new Date();
         }
         await redemption.save();
 
