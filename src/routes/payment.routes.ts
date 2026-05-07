@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import Payment from '../models/Payment.model';
 import paymentController from '../controllers/payment.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireAnyRole } from '../middleware/rbac.middleware';
@@ -64,6 +65,46 @@ router.get(
     '/stats',
     requireAnyRole('gym_owner', 'branch_manager', 'accountant', 'auditor', 'super_admin'),
     paymentController.getPaymentStats.bind(paymentController)
+);
+
+// Revenue analytics — monthly revenue grouped by month
+router.get(
+    '/revenue-analytics',
+    requireAnyRole('gym_owner', 'branch_manager', 'accountant', 'auditor', 'super_admin'),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const tenantId = req.tenantId;
+            const monthlyRevenue = await Payment.aggregate([
+                { $match: { tenantId, status: 'completed' } },
+                {
+                    $group: {
+                        _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
+                        revenue: { $sum: '$amount' },
+                        count: { $sum: 1 },
+                    },
+                },
+                { $sort: { '_id.year': 1, '_id.month': 1 } },
+                { $limit: 12 },
+                {
+                    $project: {
+                        _id: 0,
+                        month: {
+                            $let: {
+                                vars: {
+                                    months: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+                                },
+                                in: { $arrayElemAt: ['$$months', { $subtract: ['$_id.month', 1] }] },
+                            },
+                        },
+                        year: '$_id.year',
+                        revenue: 1,
+                        count: 1,
+                    },
+                },
+            ]);
+            res.json({ success: true, data: { monthlyRevenue } });
+        } catch (err) { next(err); }
+    }
 );
 
 // Get payment by ID

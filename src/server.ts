@@ -54,6 +54,10 @@ import subscriptionRoutes from './routes/subscription.routes';
 import publicRoutes from './routes/public.routes';
 import cronRoutes from './routes/cron.routes';
 import demoRoutes from './routes/demo.routes';
+import whatsappQuickRoutes from './routes/whatsapp-quick.routes';
+import branchesRoutes from './routes/branches.routes';
+import saasAlertsRoutes from './routes/saas-alerts.routes';
+import uploadRoutes from './routes/upload.routes';
 
 const app: Application = express();
 const httpServer = http.createServer(app);
@@ -142,7 +146,11 @@ app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/public', publicRoutes);
 app.use('/api/cron', cronRoutes);
 app.use('/api/demo', demoRoutes);
-app.use('/api', aiCrmRoutes);
+app.use('/api/whatsapp-quick', whatsappQuickRoutes);
+app.use('/api/branches', branchesRoutes);
+app.use('/api/saas-alerts', saasAlertsRoutes);
+app.use('/api/upload', uploadRoutes);
+app.use('/api', aiCrmRoutes); // handles /api/ai/* and /api/crm/* via ai-crm router
 
 // 404 handler
 app.use((_req: Request, res: Response) => {

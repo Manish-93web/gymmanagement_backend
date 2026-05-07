@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import BiometricDevice from '../models/BiometricDevice.model';
 import BiometricMember from '../models/BiometricMember.model';
+import BiometricRawLog from '../models/BiometricRawLog.model';
+import BiometricSyncJob from '../models/BiometricSyncJob.model';
+import BiometricSettings from '../models/BiometricSettings.model';
 import Attendance from '../models/Attendance.model';
 import Member from '../models/Member.model';
 import { AttendanceService } from '../services/attendance.service';
@@ -86,11 +89,22 @@ class BiometricController {
             const device = await BiometricDevice.findOne({ _id: req.params.id, tenantId: req.tenantId });
             if (!device) { res.status(404).json({ success: false, message: 'Device not found' }); return; }
             await BiometricDevice.findByIdAndUpdate(device._id, { status: 'syncing', lastSync: new Date() });
-            // Simulate sync completion
+
+            const job = await new BiometricSyncJob({
+                tenantId: req.tenantId,
+                branchId: device.branchId,
+                deviceId: device._id,
+                trigger: 'manual',
+                status: 'running',
+                startedAt: new Date(),
+            }).save();
+
             setTimeout(async () => {
                 await BiometricDevice.findByIdAndUpdate(device._id, { status: 'online' });
+                await BiometricSyncJob.findByIdAndUpdate((job as any)._id, { status: 'completed', completedAt: new Date() });
             }, 2000);
-            res.json({ success: true, message: 'Sync initiated', data: { syncedAt: new Date() } });
+
+            res.json({ success: true, message: 'Sync initiated', data: { syncedAt: new Date(), jobId: (job as any)._id } });
         } catch (error) { next(error); }
     }
 
@@ -98,17 +112,18 @@ class BiometricController {
         try {
             const { page = '1', limit = '50' } = req.query as Record<string, string>;
             const skip = (parseInt(page) - 1) * parseInt(limit);
-            // Pull from attendance records linked to this device/branch
             const device = await BiometricDevice.findOne({ _id: req.params.id, tenantId: req.tenantId });
             if (!device) { res.status(404).json({ success: false, message: 'Device not found' }); return; }
 
-            const logs = await Attendance.find({ tenantId: req.tenantId, branchId: device.branchId })
-                .sort({ checkInTime: -1 })
-                .skip(skip)
-                .limit(parseInt(limit))
-                .populate('memberId', 'firstName lastName membershipNumber');
+            const [rawLogs, total] = await Promise.all([
+                BiometricRawLog.find({ tenantId: req.tenantId, deviceId: device._id })
+                    .sort({ punchTime: -1 })
+                    .skip(skip)
+                    .limit(parseInt(limit)),
+                BiometricRawLog.countDocuments({ tenantId: req.tenantId, deviceId: device._id }),
+            ]);
 
-            res.json({ success: true, data: logs });
+            res.json({ success: true, data: { logs: rawLogs, total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) } });
         } catch (error) { next(error); }
     }
 
@@ -201,16 +216,24 @@ class BiometricController {
 
     async getSettings(req: Request, res: Response, next: NextFunction) {
         try {
-            const devices = await BiometricDevice.find({ tenantId: req.tenantId, isActive: true }).select('settings name branchId');
+            const tenantId = req.tenantId!;
+            const branchId = req.branchId;
+            const filter: any = { tenantId };
+            if (branchId) filter.branchId = branchId;
+
+            const [settings, devices] = await Promise.all([
+                BiometricSettings.findOne(filter),
+                BiometricDevice.find({ tenantId, isActive: true }).select('settings name branchId'),
+            ]);
+
             res.json({
                 success: true,
                 data: {
-                    globalSettings: {
-                        autoSync: true,
-                        syncInterval: 30,
-                        verificationMode: 'finger',
-                        accessControl: false,
+                    globalSettings: settings || {
+                        dedupeWindowMinutes: 5,
+                        autoCheckoutAfterMinutes: 180,
                         timezone: 'Asia/Kolkata',
+                        attendanceSourcePriority: ['biometric', 'qr', 'manual'],
                     },
                     deviceSettings: devices,
                 },
@@ -220,13 +243,23 @@ class BiometricController {
 
     async updateSettings(req: Request, res: Response, next: NextFunction) {
         try {
-            const { deviceId, settings } = req.body;
+            const tenantId = req.tenantId!;
+            const branchId = req.branchId;
+            const { deviceId, settings, ...globalSettings } = req.body;
+
             if (deviceId) {
                 await BiometricDevice.findOneAndUpdate(
-                    { _id: deviceId, tenantId: req.tenantId },
+                    { _id: deviceId, tenantId },
                     { $set: { settings } }
                 );
             }
+
+            if (Object.keys(globalSettings).length > 0) {
+                const filter: any = { tenantId };
+                if (branchId) filter.branchId = branchId;
+                await BiometricSettings.findOneAndUpdate(filter, { $set: globalSettings }, { upsert: true, new: true });
+            }
+
             res.json({ success: true, message: 'Settings updated' });
         } catch (error) { next(error); }
     }
@@ -260,21 +293,37 @@ class BiometricController {
 
     async handleWebhook(req: Request, res: Response, next: NextFunction) {
         try {
-            const { deviceId, memberId, direction, timestamp } = req.body;
+            const { deviceId, biometricUserId, memberId, direction, timestamp, rawPayload } = req.body;
             const device = await BiometricDevice.findOne({ deviceId });
             if (!device) { res.status(404).json({ success: false, message: 'Device not found' }); return; }
 
             await BiometricDevice.findByIdAndUpdate(device._id, { lastPing: new Date(), status: 'online' });
 
+            const punchTime = timestamp ? new Date(timestamp) : new Date();
+
+            const rawLog = await new BiometricRawLog({
+                tenantId: device.tenantId,
+                branchId: device.branchId,
+                deviceId: device._id,
+                biometricUserId: biometricUserId || memberId,
+                eventType: direction === 'out' ? 'check_out' : 'check_in',
+                punchTime,
+                deviceLocalTime: punchTime,
+                rawPayload: rawPayload || req.body,
+                processed: false,
+            }).save();
+
             const member = await Member.findOne({ _id: memberId, tenantId: device.tenantId });
             if (member) {
+                let attendanceId: string | undefined;
                 if (direction === 'in') {
-                    await attendanceService.checkIn({
+                    const record = await attendanceService.checkIn({
                         memberId: member._id.toString(),
                         tenantId: device.tenantId.toString(),
                         branchId: device.branchId.toString(),
                         checkInMethod: 'biometric',
                     });
+                    attendanceId = (record as any)?._id?.toString();
                 } else if (direction === 'out') {
                     const open = await Attendance.findOne({
                         memberId: member._id,
@@ -283,9 +332,14 @@ class BiometricController {
                     }).sort({ checkInTime: -1 });
                     if (open) {
                         await attendanceService.checkOut(open._id.toString(), device.tenantId.toString());
+                        attendanceId = open._id.toString();
                     }
                 }
+                await BiometricRawLog.findByIdAndUpdate((rawLog as any)._id, { processed: true, processedAt: new Date(), attendanceId });
+            } else {
+                await BiometricRawLog.findByIdAndUpdate((rawLog as any)._id, { skippedReason: 'member_not_found' });
             }
+
             res.json({ success: true, message: 'Webhook processed' });
         } catch (error) { next(error); }
     }

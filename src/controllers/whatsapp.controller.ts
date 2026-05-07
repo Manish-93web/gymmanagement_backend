@@ -1,17 +1,19 @@
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
+import WhatsAppLog from '../models/WhatsAppLog.model';
 
-// In-memory scheduled messages store (replace with DB model in production)
+// In-memory store for scheduled messages (TODO: migrate to DB model)
 const scheduledMessages: any[] = [];
 
 class WhatsAppController {
-    // GET /api/whatsapp-quick/scheduled
+    // GET /api/whatsapp/scheduled
     async getScheduled(req: Request, res: Response, next: NextFunction) {
         try {
             const tenantId = req.tenantId;
-            const { page = '1', limit = '20', status } = req.query as Record<string, string>;
-            let msgs = scheduledMessages.filter(m => m.tenantId === tenantId);
+            const { page = '1', limit = '20', status, due } = req.query as Record<string, string>;
+            let msgs = scheduledMessages.filter(m => m.tenantId?.toString() === tenantId?.toString());
             if (status) msgs = msgs.filter(m => m.status === status);
+            if (due === 'true') msgs = msgs.filter(m => m.status === 'pending' && new Date(m.scheduledFor) <= new Date());
             const total = msgs.length;
             const skip = (parseInt(page) - 1) * parseInt(limit);
             const data = msgs.slice(skip, skip + parseInt(limit));
@@ -19,7 +21,7 @@ class WhatsAppController {
         } catch (error) { next(error); }
     }
 
-    // POST /api/whatsapp-quick/scheduled
+    // POST /api/whatsapp/scheduled
     async createScheduled(req: Request, res: Response, next: NextFunction) {
         try {
             const tenantId = req.tenantId!;
@@ -46,61 +48,125 @@ class WhatsAppController {
         } catch (error) { next(error); }
     }
 
-    // GET /api/whatsapp-quick/scheduled/:id
+    // GET /api/whatsapp/scheduled/:id
     async getScheduledById(req: Request, res: Response, next: NextFunction) {
         try {
-            const msg = scheduledMessages.find(m => m._id === req.params.id && m.tenantId === req.tenantId);
+            const msg = scheduledMessages.find(m => m._id === req.params.id && m.tenantId?.toString() === req.tenantId?.toString());
             if (!msg) { res.status(404).json({ success: false, message: 'Scheduled message not found' }); return; }
             res.json({ success: true, data: msg });
         } catch (error) { next(error); }
     }
 
-    // PUT /api/whatsapp-quick/scheduled/:id
+    // PUT /api/whatsapp/scheduled/:id
     async updateScheduled(req: Request, res: Response, next: NextFunction) {
         try {
-            const idx = scheduledMessages.findIndex(m => m._id === req.params.id && m.tenantId === req.tenantId);
+            const idx = scheduledMessages.findIndex(m => m._id === req.params.id && m.tenantId?.toString() === req.tenantId?.toString());
             if (idx === -1) { res.status(404).json({ success: false, message: 'Not found' }); return; }
             Object.assign(scheduledMessages[idx], req.body, { updatedAt: new Date() });
             res.json({ success: true, data: scheduledMessages[idx] });
         } catch (error) { next(error); }
     }
 
-    // DELETE /api/whatsapp-quick/scheduled/:id
+    // DELETE /api/whatsapp/scheduled/:id
     async deleteScheduled(req: Request, res: Response, next: NextFunction) {
         try {
-            const idx = scheduledMessages.findIndex(m => m._id === req.params.id && m.tenantId === req.tenantId);
+            const idx = scheduledMessages.findIndex(m => m._id === req.params.id && m.tenantId?.toString() === req.tenantId?.toString());
             if (idx !== -1) scheduledMessages.splice(idx, 1);
             res.json({ success: true, message: 'Deleted' });
         } catch (error) { next(error); }
     }
 
-    // GET /api/whatsapp-quick/stats
+    // POST /api/whatsapp-quick/logs — save a message log entry
+    async saveLog(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.tenantId!;
+            const user = req.user!;
+            const { memberId, memberName, phone, type, message, status = 'opened' } = req.body;
+
+            if (!memberId || !memberName || !phone || !type || !message) {
+                res.status(400).json({ success: false, message: 'memberId, memberName, phone, type, message are required' });
+                return;
+            }
+
+            const log = await WhatsAppLog.create({
+                tenantId,
+                memberId,
+                memberName,
+                phone,
+                type,
+                message,
+                status,
+                sentBy: user._id,
+                sentByName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+                sentAt: new Date(),
+            });
+
+            res.status(201).json({ success: true, data: log });
+        } catch (error) { next(error); }
+    }
+
+    // GET /api/whatsapp/stats — aggregate stats from WhatsAppLog model
     async getStats(req: Request, res: Response, next: NextFunction) {
         try {
             const tenantId = req.tenantId;
-            const msgs = scheduledMessages.filter(m => m.tenantId === tenantId);
-            const stats = {
-                total: msgs.length,
-                scheduled: msgs.filter(m => m.status === 'scheduled').length,
-                sent: msgs.filter(m => m.status === 'sent').length,
-                failed: msgs.filter(m => m.status === 'failed').length,
-                creditsUsed: msgs.filter(m => m.status === 'sent').length,
-                creditsRemaining: 1000, // placeholder
-            };
-            res.json({ success: true, data: stats });
+
+            const now = new Date();
+            const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const startOfWeek = new Date(now);
+            startOfWeek.setDate(now.getDate() - now.getDay());
+
+            const [total, today, thisWeek, byTypeRaw, recentLogs, monthlyRaw] = await Promise.all([
+                WhatsAppLog.countDocuments({ tenantId }),
+                WhatsAppLog.countDocuments({ tenantId, sentAt: { $gte: startOfDay } }),
+                WhatsAppLog.countDocuments({ tenantId, sentAt: { $gte: startOfWeek } }),
+                WhatsAppLog.aggregate([
+                    { $match: { tenantId: new mongoose.Types.ObjectId(tenantId as string) } },
+                    { $group: { _id: '$type', count: { $sum: 1 } } },
+                ]),
+                WhatsAppLog.find({ tenantId }).sort({ sentAt: -1 }).limit(10).lean(),
+                WhatsAppLog.aggregate([
+                    { $match: { tenantId: new mongoose.Types.ObjectId(tenantId as string) } },
+                    { $group: { _id: { month: { $month: '$sentAt' }, year: { $year: '$sentAt' } }, count: { $sum: 1 } } },
+                    { $sort: { '_id.year': -1, '_id.month': -1 } },
+                    { $limit: 12 },
+                ]),
+            ]);
+
+            const byType: Record<string, number> = {};
+            let mostUsed: string | null = null;
+            let maxCount = 0;
+            for (const entry of byTypeRaw) {
+                byType[entry._id] = entry.count;
+                if (entry.count > maxCount) { maxCount = entry.count; mostUsed = entry._id; }
+            }
+
+            const monthlyStats = monthlyRaw.map(m => ({
+                month: new Date(m._id.year, m._id.month - 1).toLocaleString('en', { month: 'long' }),
+                year: m._id.year,
+                count: m.count,
+            }));
+
+            res.json({ success: true, data: { total, today, thisWeek, byType, mostUsed, recentLogs, monthlyStats } });
         } catch (error) { next(error); }
     }
 
-    // GET /api/whatsapp-quick/logs
+    // GET /api/whatsapp/logs
     async getLogs(req: Request, res: Response, next: NextFunction) {
         try {
             const tenantId = req.tenantId;
-            const sent = scheduledMessages.filter(m => m.tenantId === tenantId && m.status === 'sent');
-            res.json({ success: true, data: sent });
+            const { memberId, page = '1', limit = '20' } = req.query as Record<string, string>;
+            const filter: any = { tenantId };
+            if (memberId) filter.memberId = memberId;
+            const skip = (parseInt(page) - 1) * parseInt(limit);
+            const [logs, total] = await Promise.all([
+                WhatsAppLog.find(filter).sort({ sentAt: -1 }).skip(skip).limit(parseInt(limit)).lean(),
+                WhatsAppLog.countDocuments(filter),
+            ]);
+            res.json({ success: true, data: { logs, pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) } } });
         } catch (error) { next(error); }
     }
 
-    // POST /api/whatsapp-quick/create-pdf-link
+    // POST /api/whatsapp/create-pdf-link
     async createPdfLink(req: Request, res: Response, next: NextFunction) {
         try {
             const { paymentId, type } = req.body;
@@ -108,14 +174,13 @@ class WhatsAppController {
                 res.status(400).json({ success: false, message: 'paymentId and type required' });
                 return;
             }
-            // Generate a shareable link token
             const token = Buffer.from(`${paymentId}:${type}:${Date.now()}`).toString('base64url');
             const link = `${process.env.FRONTEND_URL || 'http://localhost:3001'}/p/${type}/${token}`;
             res.json({ success: true, data: { link, token, expiresIn: '24h' } });
         } catch (error) { next(error); }
     }
 
-    // POST /api/whatsapp-quick/send-bulk
+    // POST /api/whatsapp/send-bulk
     async sendBulk(req: Request, res: Response, next: NextFunction) {
         try {
             const { recipients, message, templateId } = req.body;
