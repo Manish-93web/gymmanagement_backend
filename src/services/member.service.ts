@@ -95,7 +95,7 @@ export class MemberService {
         const referralCode = generateReferralCode(membershipNumber);
 
         // 1. Create User account for the member
-        const user = await User.create({
+        const user = await (User as any).create({
             tenantId: data.tenantId,
             branchId: data.branchId,
             role: 'member',
@@ -108,7 +108,7 @@ export class MemberService {
         });
 
         // 2. Create member
-        const member = await Member.create({
+        const member = await (Member as any).create({
             tenantId: data.tenantId,
             branchId: data.branchId,
             userId: user._id,

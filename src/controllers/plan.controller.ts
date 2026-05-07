@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+﻿import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import PlanService from '../services/plan.service';
 
@@ -86,7 +86,7 @@ export class PlanController {
     // Get plan by ID
     async getPlanById(req: Request, res: Response, next: NextFunction) {
         try {
-            const { planId } = req.params;
+            const { planId } = req.params as Record<string, string>;
             const tenantId = req.user!.tenantId!.toString();
 
             const plan = await PlanService.getPlanById(planId, tenantId);
@@ -131,7 +131,7 @@ export class PlanController {
     // Update plan
     async updatePlan(req: Request, res: Response, next: NextFunction) {
         try {
-            const { planId } = req.params;
+            const { planId } = req.params as Record<string, string>;
             const tenantId = req.user!.tenantId!.toString();
 
             const plan = await PlanService.updatePlan(planId, tenantId, req.body);
@@ -149,7 +149,7 @@ export class PlanController {
     // Deactivate plan
     async deactivatePlan(req: Request, res: Response, next: NextFunction) {
         try {
-            const { planId } = req.params;
+            const { planId } = req.params as Record<string, string>;
             const tenantId = req.user!.tenantId!.toString();
 
             const plan = await PlanService.deactivatePlan(planId, tenantId);
@@ -192,7 +192,7 @@ export class PlanController {
     // Freeze subscription
     async freezeSubscription(req: Request, res: Response, next: NextFunction) {
         try {
-            const { subscriptionId } = req.params;
+            const { subscriptionId } = req.params as Record<string, string>;
             const { days, reason } = req.body;
             const tenantId = req.user!.tenantId!.toString();
 
@@ -216,7 +216,7 @@ export class PlanController {
     // Unfreeze subscription
     async unfreezeSubscription(req: Request, res: Response, next: NextFunction) {
         try {
-            const { subscriptionId } = req.params;
+            const { subscriptionId } = req.params as Record<string, string>;
             const tenantId = req.user!.tenantId!.toString();
 
             const subscription = await PlanService.unfreezeSubscription(subscriptionId, tenantId);
@@ -234,7 +234,7 @@ export class PlanController {
     // Cancel subscription
     async cancelSubscription(req: Request, res: Response, next: NextFunction) {
         try {
-            const { subscriptionId } = req.params;
+            const { subscriptionId } = req.params as Record<string, string>;
             const { reason, refundAmount } = req.body;
             const tenantId = req.user!.tenantId!.toString();
 
@@ -258,7 +258,7 @@ export class PlanController {
     // Renew subscription
     async renewSubscription(req: Request, res: Response, next: NextFunction) {
         try {
-            const { subscriptionId } = req.params;
+            const { subscriptionId } = req.params as Record<string, string>;
             const tenantId = req.user!.tenantId!.toString();
 
             const subscription = await PlanService.renewSubscription(subscriptionId, tenantId);
@@ -276,7 +276,7 @@ export class PlanController {
     // Get member subscriptions
     async getMemberSubscriptions(req: Request, res: Response, next: NextFunction) {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
             const tenantId = req.user!.tenantId!.toString();
 
             const subscriptions = await PlanService.getMemberSubscriptions(memberId, tenantId);
@@ -292,3 +292,4 @@ export class PlanController {
 }
 
 export default new PlanController();
+

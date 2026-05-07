@@ -217,6 +217,75 @@ export class MarketingController {
         } catch (error) { return next(error); }
     }
 
+    async sendCampaign(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.user!.tenantId;
+            const campaign = await Campaign.findOne({ _id: req.params.campaignId, tenantId });
+            if (!campaign) return res.status(404).json({ success: false, message: 'Campaign not found' });
+            if ((campaign as any).status === 'sending' || (campaign as any).status === 'completed') {
+                return res.status(400).json({ success: false, message: `Campaign already ${(campaign as any).status}` });
+            }
+
+            const target = (campaign as any).targetAudience || {};
+            const recipientQuery: any = { tenantId, status: 'active' };
+            if (target.planId) recipientQuery.planId = target.planId;
+            if (target.branchId) recipientQuery.branchId = target.branchId;
+
+            const recipients = await Member.find(recipientQuery)
+                .select('email mobile firstName lastName')
+                .limit(10000)
+                .lean();
+
+            await Campaign.findByIdAndUpdate(req.params.campaignId, {
+                status: 'sending',
+                'analytics.totalRecipients': recipients.length,
+                sentAt: new Date(),
+            });
+
+            // Dispatch asynchronously — response returns immediately
+            setImmediate(async () => {
+                try {
+                    const NotificationService = (await import('../services/notification.service')).default;
+                    const type: string = (campaign as any).type || 'email';
+                    const channel = type === 'sms' ? 'sms' : type === 'whatsapp' ? 'whatsapp' : 'email';
+                    const subject = (campaign as any).content?.subject || (campaign as any).name || '';
+                    const message = (campaign as any).content?.message || subject;
+                    let sent = 0;
+
+                    for (const member of recipients) {
+                        try {
+                            await NotificationService.sendNotification({
+                                recipientId: (member as any)._id.toString(),
+                                recipientType: 'member',
+                                tenantId: tenantId!.toString(),
+                                branchId: '',
+                                channel,
+                                subject,
+                                message,
+                            });
+                            sent++;
+                        } catch { /* skip per-recipient failures */ }
+                    }
+
+                    await Campaign.findByIdAndUpdate(req.params.campaignId, {
+                        status: 'completed',
+                        'analytics.sent': sent,
+                        'analytics.delivered': sent,
+                        completedAt: new Date(),
+                    });
+                } catch {
+                    await Campaign.findByIdAndUpdate(req.params.campaignId, { status: 'draft' });
+                }
+            });
+
+            return res.json({
+                success: true,
+                message: `Campaign dispatched to ${recipients.length} recipients`,
+                data: { recipientCount: recipients.length, status: 'sending' },
+            });
+        } catch (error) { return next(error); }
+    }
+
     async processReferralConversion(req: Request, res: Response, next: NextFunction) {
         try {
             const { referralCode, newMemberId } = req.body;

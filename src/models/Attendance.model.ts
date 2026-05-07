@@ -61,5 +61,6 @@ const AttendanceSchema: Schema = new Schema(
 AttendanceSchema.index({ tenantId: 1, branchId: 1, checkInTime: -1 });
 AttendanceSchema.index({ memberId: 1, checkInTime: -1 });
 AttendanceSchema.index({ checkInTime: 1, checkOutTime: 1 });
+AttendanceSchema.index({ tenantId: 1, createdAt: -1 });
 
 export default mongoose.model<IAttendance>('Attendance', AttendanceSchema);

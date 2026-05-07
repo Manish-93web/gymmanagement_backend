@@ -232,8 +232,8 @@ class SocialFeedService {
             visibility: { $in: ['public', 'members'] },
         };
 
-        const total = await Post.countDocuments(query);
-        const posts = await Post.find(query)
+        const total = await Post.countDocuments(query as any);
+        const posts = await Post.find(query as any)
             .populate('authorId', 'firstName lastName profilePicture')
             .sort({ createdAt: -1 })
             .skip((page - 1) * limit)

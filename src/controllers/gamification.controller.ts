@@ -161,7 +161,7 @@ export class GamificationController {
             }
             const existing = await ChallengeParticipant.findOne({ challengeId, memberId: member._id });
             if (existing) return res.status(400).json({ success: false, message: 'Already joined this challenge' });
-            await ChallengeParticipant.create({ challengeId, memberId: member._id, userId: user._id, tenantId: user.tenantId });
+            await (ChallengeParticipant as any).create({ challengeId, memberId: member._id, userId: user._id, tenantId: user.tenantId });
             await Challenge.findByIdAndUpdate(challengeId, { $inc: { participantCount: 1 } });
             res.status(200).json({ success: true, message: 'Joined challenge successfully' });
         } catch (error: any) {

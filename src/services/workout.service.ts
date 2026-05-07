@@ -67,7 +67,7 @@ export interface LogWorkoutDTO {
 export class WorkoutService {
     // Create exercise
     async createExercise(data: CreateExerciseDTO): Promise<IExercise> {
-        const exercise = await Exercise.create(data);
+        const exercise = await (Exercise as any).create(data);
         return exercise;
     }
 

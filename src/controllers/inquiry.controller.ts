@@ -61,7 +61,7 @@ export class InquiryController {
                 return res.status(400).json({ success: false, message: 'branchId is required' });
             }
 
-            const inquiry = await Lead.create({
+            const inquiry = await (Lead as any).create({
                 firstName: resolvedFirstName,
                 lastName: resolvedLastName,
                 email: email || `inquiry_${Date.now()}@noemail.local`,

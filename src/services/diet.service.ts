@@ -127,7 +127,7 @@ export class DietService {
 
     // Create diet plan
     async createDietPlan(data: CreateDietPlanDTO): Promise<IDietPlan> {
-        const dietPlan = await DietPlan.create(data);
+        const dietPlan = await (DietPlan as any).create(data);
         return dietPlan;
     }
 

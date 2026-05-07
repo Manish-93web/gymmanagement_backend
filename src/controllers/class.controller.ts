@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+﻿import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import ClassService from '../services/class.service';
 
@@ -82,7 +82,7 @@ export class ClassController {
 
     async getClassById(req: Request, res: Response, next: NextFunction) {
         try {
-            const { classId } = req.params;
+            const { classId } = req.params as Record<string, string>;
             const isSuperAdmin = req.user?.role === 'super_admin';
             const tenantId = isSuperAdmin ? undefined : req.user?.tenantId?.toString();
 
@@ -100,7 +100,7 @@ export class ClassController {
 
     async updateClass(req: Request, res: Response, next: NextFunction) {
         try {
-            const { classId } = req.params;
+            const { classId } = req.params as Record<string, string>;
             const isSuperAdmin = req.user?.role === 'super_admin';
             const tenantId = isSuperAdmin ? undefined : req.user?.tenantId?.toString();
 
@@ -134,7 +134,7 @@ export class ClassController {
 
     async cancelBooking(req: Request, res: Response, next: NextFunction) {
         try {
-            const { bookingId } = req.params;
+            const { bookingId } = req.params as Record<string, string>;
             const { reason } = req.body;
             const isSuperAdmin = req.user?.role === 'super_admin';
             const tenantId = isSuperAdmin ? undefined : req.user?.tenantId?.toString();
@@ -149,7 +149,7 @@ export class ClassController {
 
     async markAttendance(req: Request, res: Response, next: NextFunction) {
         try {
-            const { bookingId } = req.params;
+            const { bookingId } = req.params as Record<string, string>;
             const { attended } = req.body;
             const isSuperAdmin = req.user?.role === 'super_admin';
             const tenantId = isSuperAdmin ? undefined : req.user?.tenantId?.toString();
@@ -164,7 +164,7 @@ export class ClassController {
 
     async getMemberBookings(req: Request, res: Response, next: NextFunction) {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
             const isSuperAdmin = req.user?.role === 'super_admin';
             const tenantId = isSuperAdmin ? undefined : req.user?.tenantId?.toString();
 
@@ -192,7 +192,7 @@ export class ClassController {
 
     async getClassOccurrences(req: Request, res: Response, next: NextFunction) {
         try {
-            const { classId } = req.params;
+            const { classId } = req.params as Record<string, string>;
             const isSuperAdmin = req.user?.role === 'super_admin';
             const tenantId = isSuperAdmin ? undefined : req.user?.tenantId?.toString();
             const classDoc = await ClassService.getClassById(classId, tenantId);
@@ -215,3 +215,4 @@ export class ClassController {
 }
 
 export default new ClassController();
+

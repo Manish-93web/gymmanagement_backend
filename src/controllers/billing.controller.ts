@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+﻿import { Request, Response, NextFunction } from 'express';
 import Payment from '../models/Payment.model';
 import Member from '../models/Member.model';
 import mongoose from 'mongoose';
@@ -23,7 +23,7 @@ export class BillingController {
 
     async getInvoiceById(req: Request, res: Response, next: NextFunction) {
         try {
-            const payment = await Payment.findById(req.params.paymentId)
+            const payment = await Payment.findOne({ _id: req.params.paymentId, tenantId: req.user!.tenantId })
                 .populate('memberId', 'firstName lastName email mobile')
                 .populate('planId', 'name');
             if (!payment) return res.status(404).json({ success: false, message: 'Invoice not found' });
@@ -33,7 +33,7 @@ export class BillingController {
 
     async downloadInvoice(req: Request, res: Response, next: NextFunction) {
         try {
-            const payment = await Payment.findById(req.params.paymentId)
+            const payment = await Payment.findOne({ _id: req.params.paymentId, tenantId: req.user!.tenantId })
                 .populate('memberId', 'firstName lastName email')
                 .populate('planId', 'name price');
             if (!payment) return res.status(404).json({ success: false, message: 'Payment not found' });
@@ -120,8 +120,8 @@ export class BillingController {
             const now = new Date();
             const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
             const [total, thisMonth] = await Promise.all([
-                AuditLog.countDocuments({ tenantId, action: 'whatsapp_sent' }),
-                AuditLog.countDocuments({ tenantId, action: 'whatsapp_sent', createdAt: { $gte: monthStart } })
+                AuditLog.countDocuments({ tenantId, action: 'whatsapp_sent' } as any),
+                AuditLog.countDocuments({ tenantId, action: 'whatsapp_sent', createdAt: { $gte: monthStart } } as any)
             ]);
             return res.json({ success: true, data: { totalSent: total, sentThisMonth: thisMonth } });
         } catch (error) { return next(error); }
@@ -129,3 +129,4 @@ export class BillingController {
 }
 
 export default new BillingController();
+

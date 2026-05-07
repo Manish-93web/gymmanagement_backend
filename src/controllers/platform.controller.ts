@@ -338,24 +338,48 @@ export const viewTenantFinance = async (req: Request, res: Response) => {
     }
 };
 
+/** Get a single tenant by ID */
+export const getTenantById = async (req: Request, res: Response) => {
+    try {
+        const { tenantId } = req.params;
+        const tenant = await Tenant.findById(tenantId).select('name slug isActive subscription contactInfo createdAt');
+        if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
+        const [memberCount, owner] = await Promise.all([
+            Member.countDocuments({ tenantId }),
+            User.findOne({ tenantId, role: 'gym_owner' }).select('firstName lastName email mobile')
+        ]);
+        return res.status(200).json({ success: true, data: { ...tenant.toObject(), stats: { totalMembers: memberCount }, owner } });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error fetching tenant', error: (error as Error).message });
+    }
+};
+
 /** Create an impersonation session for a tenant */
 export const createViewSession = async (req: Request, res: Response) => {
     try {
         const { tenantId } = req.params;
-        const jwt = require('jsonwebtoken');
-        const { config } = require('../config/config');
         const tenant = await Tenant.findById(tenantId);
         if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
-        const owner = await User.findOne({ tenantId, role: 'gym_owner' });
-        if (!owner) return res.status(404).json({ success: false, message: 'Gym owner not found' });
-        const token = jwt.sign(
-            { userId: owner._id, tenantId, impersonatedBy: req.user!._id, role: 'gym_owner' },
-            config.jwt.secret,
-            { expiresIn: '4h' }
-        );
-        return res.status(200).json({ success: true, data: { token, tenantName: tenant.name } });
+        const session = {
+            gymId: tenantId,
+            gymName: (tenant as any).name,
+            gymSlug: (tenant as any).slug || '',
+            sessionStartedAt: new Date().toISOString(),
+            adminId: req.user!._id,
+        };
+        return res.status(200).json({ success: true, data: session });
     } catch (error) {
         return res.status(500).json({ success: false, message: 'Error creating view session', error: (error as Error).message });
+    }
+};
+
+/** End an impersonation session (audit log only) */
+export const endViewSession = async (req: Request, res: Response) => {
+    try {
+        const { tenantId } = req.params;
+        return res.status(200).json({ success: true, message: `View session for tenant ${tenantId} ended` });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error ending view session', error: (error as Error).message });
     }
 };
 

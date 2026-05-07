@@ -38,7 +38,7 @@ export class AuthService {
         }
 
         // Create user
-        const user = await User.create(data);
+        const user = await (User as any).create(data);
 
         // Generate tokens
         const accessToken = generateAccessToken({

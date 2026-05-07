@@ -37,7 +37,7 @@ export interface AddFollowUpDTO {
 export class CRMService {
     // Create lead
     async createLead(data: CreateLeadDTO): Promise<ILead> {
-        const lead = await Lead.create({
+        const lead = await (Lead as any).create({
             ...data,
             status: 'new',
             statusHistory: [{

@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+﻿import { Request, Response, NextFunction } from 'express';
 import BiometricDevice from '../models/BiometricDevice.model';
 import BiometricMember from '../models/BiometricMember.model';
 import BiometricRawLog from '../models/BiometricRawLog.model';
@@ -44,7 +44,7 @@ class BiometricController {
 
     async getDevice(req: Request, res: Response, next: NextFunction) {
         try {
-            const device = await BiometricDevice.findOne({ _id: req.params.id, tenantId: req.tenantId });
+            const device = await BiometricDevice.findOne({ _id: req.params.id as string, tenantId: req.tenantId });
             if (!device) { res.status(404).json({ success: false, message: 'Device not found' }); return; }
             res.json({ success: true, data: device });
         } catch (error) { next(error); }
@@ -53,7 +53,7 @@ class BiometricController {
     async updateDevice(req: Request, res: Response, next: NextFunction) {
         try {
             const device = await BiometricDevice.findOneAndUpdate(
-                { _id: req.params.id, tenantId: req.tenantId },
+                { _id: req.params.id as string, tenantId: req.tenantId },
                 { $set: req.body },
                 { new: true }
             );
@@ -65,7 +65,7 @@ class BiometricController {
     async deleteDevice(req: Request, res: Response, next: NextFunction) {
         try {
             await BiometricDevice.findOneAndUpdate(
-                { _id: req.params.id, tenantId: req.tenantId },
+                { _id: req.params.id as string, tenantId: req.tenantId },
                 { isActive: false }
             );
             res.json({ success: true, message: 'Device removed' });
@@ -74,7 +74,7 @@ class BiometricController {
 
     async testDevice(req: Request, res: Response, next: NextFunction) {
         try {
-            const device = await BiometricDevice.findOne({ _id: req.params.id, tenantId: req.tenantId });
+            const device = await BiometricDevice.findOne({ _id: req.params.id as string, tenantId: req.tenantId });
             if (!device) { res.status(404).json({ success: false, message: 'Device not found' }); return; }
             // Simulate ping — in production this would connect to device IP
             const reachable = !!(device.ipAddress);
@@ -86,7 +86,7 @@ class BiometricController {
 
     async syncDevice(req: Request, res: Response, next: NextFunction) {
         try {
-            const device = await BiometricDevice.findOne({ _id: req.params.id, tenantId: req.tenantId });
+            const device = await BiometricDevice.findOne({ _id: req.params.id as string, tenantId: req.tenantId });
             if (!device) { res.status(404).json({ success: false, message: 'Device not found' }); return; }
             await BiometricDevice.findByIdAndUpdate(device._id, { status: 'syncing', lastSync: new Date() });
 
@@ -112,7 +112,7 @@ class BiometricController {
         try {
             const { page = '1', limit = '50' } = req.query as Record<string, string>;
             const skip = (parseInt(page) - 1) * parseInt(limit);
-            const device = await BiometricDevice.findOne({ _id: req.params.id, tenantId: req.tenantId });
+            const device = await BiometricDevice.findOne({ _id: req.params.id as string, tenantId: req.tenantId });
             if (!device) { res.status(404).json({ success: false, message: 'Device not found' }); return; }
 
             const [rawLogs, total] = await Promise.all([
@@ -191,7 +191,7 @@ class BiometricController {
 
     async getMemberEnrollment(req: Request, res: Response, next: NextFunction) {
         try {
-            const enrollment = await BiometricMember.findOne({ _id: req.params.id, tenantId: req.tenantId })
+            const enrollment = await BiometricMember.findOne({ _id: req.params.id as string, tenantId: req.tenantId })
                 .populate('memberId', 'firstName lastName membershipNumber')
                 .populate('deviceId', 'name location type');
             if (!enrollment) { res.status(404).json({ success: false, message: 'Enrollment not found' }); return; }
@@ -202,7 +202,7 @@ class BiometricController {
     async removeEnrollment(req: Request, res: Response, next: NextFunction) {
         try {
             const enrollment = await BiometricMember.findOneAndUpdate(
-                { _id: req.params.id, tenantId: req.tenantId },
+                { _id: req.params.id as string, tenantId: req.tenantId },
                 { isActive: false },
                 { new: true }
             );
@@ -359,3 +359,4 @@ class BiometricController {
 }
 
 export default new BiometricController();
+

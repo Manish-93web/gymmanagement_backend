@@ -1,2 +1,2 @@
-// This file is now empty to avoid conflicts with inline augmentation in auth.middleware.ts
-export { };
+// This file is intentionally empty — Express augmentations are in auth.middleware.ts
+export {};

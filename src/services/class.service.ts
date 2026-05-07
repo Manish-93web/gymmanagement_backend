@@ -43,7 +43,7 @@ export interface CreateBookingDTO {
 export class ClassService {
     // Create class
     async createClass(data: CreateClassDTO): Promise<IClass> {
-        const classDoc = await Class.create(data);
+        const classDoc = await (Class as any).create(data);
         return classDoc;
     }
 
@@ -122,19 +122,19 @@ export class ClassService {
         }
 
         // Check capacity
-        const currentBookings = await Booking.countDocuments({
+        const currentBookings = await (Booking as any).countDocuments({
             classId: data.classId,
-            status: { $in: ['confirmed', 'attended'] },
+            status: { $in: ['confirmed', 'completed'] },
         });
 
         if (currentBookings >= classDoc.capacity.max) {
             // Add to waitlist
-            const booking = await Booking.create({
+            const booking = await (Booking as any).create({
                 ...data,
-                status: 'waitlisted',
-                waitlistPosition: (await Booking.countDocuments({
+                status: 'waitlist',
+                waitlistPosition: (await (Booking as any).countDocuments({
                     classId: data.classId,
-                    status: 'waitlisted',
+                    status: 'waitlist',
                 })) + 1,
             });
 
@@ -142,7 +142,7 @@ export class ClassService {
         }
 
         // Create confirmed booking
-        const booking = await Booking.create({
+        const booking = await (Booking as any).create({
             ...data,
             status: 'confirmed',
             bookedAt: new Date(),
@@ -214,9 +214,9 @@ export class ClassService {
         });
 
         // Process waitlist - move first waitlisted to confirmed
-        const waitlistedBooking = await Booking.findOne({
+        const waitlistedBooking = await (Booking as any).findOne({
             classId: booking.classId,
-            status: 'waitlisted',
+            status: 'waitlist',
         }).sort({ waitlistPosition: 1 });
 
         if (waitlistedBooking) {
@@ -292,8 +292,8 @@ export class ClassService {
     // Cancel class
     async cancelClass(classId: string, tenantId: string | undefined, reason: string): Promise<IClass | null> {
         // Cancel all bookings
-        await Booking.updateMany(
-            { classId, status: { $in: ['confirmed', 'waitlisted'] } },
+        await (Booking as any).updateMany(
+            { classId, status: { $in: ['confirmed', 'waitlist'] } },
             {
                 $set: {
                     status: 'cancelled',

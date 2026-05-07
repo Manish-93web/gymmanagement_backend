@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+﻿import { Request, Response } from 'express';
 import memberService from '../services/member.service';
 import Branch from '../models/Branch.model';
 import Member from '../models/Member.model';
@@ -150,7 +150,7 @@ export class MemberController {
     // Get member by ID
     async getMember(req: Request, res: Response): Promise<void> {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
 
             if (req.user?.role !== 'super_admin' && !req.tenantId) {
                 res.status(400).json({
@@ -185,7 +185,7 @@ export class MemberController {
     // Update member
     async updateMember(req: Request, res: Response): Promise<void> {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
 
             if (req.user?.role !== 'super_admin' && !req.tenantId) {
                 res.status(400).json({
@@ -223,7 +223,7 @@ export class MemberController {
     // Change member status
     async changeStatus(req: Request, res: Response): Promise<void> {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
 
             if (req.user?.role !== 'super_admin' && !req.tenantId) {
                 res.status(400).json({
@@ -266,7 +266,7 @@ export class MemberController {
     // Add measurement
     async addMeasurement(req: Request, res: Response): Promise<void> {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
 
             if (req.user?.role !== 'super_admin' && !req.tenantId) {
                 res.status(400).json({
@@ -374,7 +374,7 @@ export class MemberController {
     // Freeze member
     async freezeMember(req: Request, res: Response): Promise<void> {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
             const { startDate, endDate, reason } = freezeMemberSchema.parse(req.body);
 
             if (!req.tenantId) {
@@ -402,7 +402,7 @@ export class MemberController {
     // Reactivate member
     async reactivateMember(req: Request, res: Response): Promise<void> {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
             const { reason } = req.body;
 
             if (!req.tenantId) {
@@ -430,7 +430,7 @@ export class MemberController {
     // Transfer member
     async transferMember(req: Request, res: Response): Promise<void> {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
             const { newBranchId, reason } = transferMemberSchema.parse(req.body);
 
             if (!req.tenantId) {
@@ -458,7 +458,7 @@ export class MemberController {
     // Upload profile picture (URL provided by Cloudinary from frontend)
     async uploadProfilePicture(req: Request, res: Response): Promise<void> {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
             const { imageUrl } = req.body;
 
             if (!imageUrl) {
@@ -486,7 +486,7 @@ export class MemberController {
     // Add transformation photo
     async addTransformationPhoto(req: Request, res: Response): Promise<void> {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
             const { images, weight, description, date } = req.body;
 
             if (!images || !Array.isArray(images) || images.length === 0) {
@@ -570,7 +570,7 @@ export class MemberController {
     // Get member timeline (activity history: status changes + attendance)
     async getMemberTimeline(req: Request, res: Response): Promise<void> {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
 
             const member = await Member.findOne({
                 _id: memberId,
@@ -585,7 +585,7 @@ export class MemberController {
             }
 
             // Recent attendance entries
-            const recentAttendance = await Attendance.find({ memberId })
+            const recentAttendance = await Attendance.find({ memberId, ...(req.tenantId ? { tenantId: req.tenantId } : {}) })
                 .sort({ checkInTime: -1 })
                 .limit(20)
                 .lean();
@@ -639,7 +639,7 @@ export class MemberController {
 
     async changeMemberPlan(req: Request, res: Response): Promise<void> {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
             const { planId } = req.body;
             if (!planId) { res.status(400).json({ status: 'error', message: 'planId is required' }); return; }
             const tenantId = req.tenantId!;
@@ -691,3 +691,4 @@ export class MemberController {
 }
 
 export default new MemberController();
+

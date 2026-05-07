@@ -48,7 +48,7 @@ export interface CreateSubscriptionDTO {
 export class PlanService {
     // Create membership plan
     async createPlan(data: CreatePlanDTO): Promise<IMembershipPlan> {
-        const plan = await MembershipPlan.create(data);
+        const plan = await (MembershipPlan as any).create(data);
         return plan;
     }
 

@@ -189,7 +189,7 @@ export class POSService {
             const tax = data.tax || 0;
             const total = subtotal - discount + tax;
 
-            const sale = await Sale.create([{
+            const sale = await (Sale as any).create([{
                 ...data,
                 items,
                 subtotal,

@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+﻿import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
 import PaymentService from '../services/payment.service';
@@ -62,7 +62,7 @@ export class PaymentController {
     // Create Razorpay order
     async createRazorpayOrder(req: Request, res: Response, next: NextFunction) {
         try {
-            const { paymentId } = req.params;
+            const { paymentId } = req.params as Record<string, string>;
             const tenantId = req.user!.tenantId!.toString();
 
             const payment = await PaymentService.getPaymentById(paymentId, tenantId);
@@ -84,7 +84,7 @@ export class PaymentController {
     // Create Stripe payment intent
     async createStripeIntent(req: Request, res: Response, next: NextFunction) {
         try {
-            const { paymentId } = req.params;
+            const { paymentId } = req.params as Record<string, string>;
             const tenantId = req.user!.tenantId!.toString();
 
             const payment = await PaymentService.getPaymentById(paymentId, tenantId);
@@ -106,7 +106,7 @@ export class PaymentController {
     // Process payment
     async processPayment(req: Request, res: Response, next: NextFunction) {
         try {
-            const { paymentId } = req.params;
+            const { paymentId } = req.params as Record<string, string>;
             const validatedData = processPaymentSchema.parse(req.body);
             const tenantId = req.user!.tenantId!.toString();
 
@@ -135,7 +135,7 @@ export class PaymentController {
     // Process refund
     async processRefund(req: Request, res: Response, next: NextFunction) {
         try {
-            const { paymentId } = req.params;
+            const { paymentId } = req.params as Record<string, string>;
             const validatedData = refundSchema.parse(req.body);
             const tenantId = req.user!.tenantId!.toString();
 
@@ -158,7 +158,7 @@ export class PaymentController {
     // Get payment by ID
     async getPaymentById(req: Request, res: Response, next: NextFunction) {
         try {
-            const { paymentId } = req.params;
+            const { paymentId } = req.params as Record<string, string>;
             const tenantId = req.user!.tenantId!.toString();
 
             const payment = await PaymentService.getPaymentById(paymentId, tenantId);
@@ -383,3 +383,4 @@ export class PaymentController {
 }
 
 export default new PaymentController();
+

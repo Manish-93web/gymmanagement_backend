@@ -34,7 +34,7 @@ export class PublicController {
             if (existing) {
                 return res.json({ success: true, message: 'Already registered', data: existing });
             }
-            const lead = await Lead.create({
+            const lead = await (Lead as any).create({
                 tenantId: resolvedTenantId,
                 firstName, lastName, mobile, email,
                 source: source || 'website',
@@ -53,12 +53,12 @@ export class PublicController {
             const { tenantSlug } = req.query;
             let tenantId: any;
             if (tenantSlug) {
-                const tenant = await Tenant.findOne({ slug: tenantSlug }, '_id');
+                const tenant = await (Tenant as any).findOne({ slug: tenantSlug }, '_id');
                 if (!tenant) return res.status(404).json({ success: false, message: 'Gym not found' });
                 tenantId = tenant._id;
             }
             const query = tenantId ? { tenantId, status: 'active' } : { status: 'active' };
-            const memberCount = await Member.countDocuments(query);
+            const memberCount = await (Member as any).countDocuments(query);
             return res.json({ success: true, data: { activeMembers: memberCount } });
         } catch (error) {
             return res.status(500).json({ success: false, message: 'Error fetching stats' });
@@ -70,7 +70,7 @@ export class PublicController {
             const { slug } = req.params;
             // WhatsApp PDF links stored in AuditLog details
             const AuditLog = (await import('../models/AuditLog.model')).default;
-            const record = await AuditLog.findOne({ action: 'pdf_link_created', 'details.slug': slug });
+            const record = await (AuditLog as any).findOne({ action: 'pdf_link_created', 'details.slug': slug });
             if (!record) return res.status(404).json({ success: false, message: 'PDF not found or expired' });
             return res.json({ success: true, data: (record as any).details });
         } catch (error) {

@@ -18,7 +18,7 @@ router.get('/:ruleId/logs', automationController.getExecutionLogs.bind(automatio
 // BullMQ queue statistics
 router.get('/queues/:queueName/stats', async (req: Request, res: Response) => {
     try {
-        const { queueName } = req.params;
+        const { queueName } = req.params as Record<string, string>;
         const BullMQService = (await import('../services/bullmq-automation.service')).default;
         const stats = await BullMQService.getQueueStats(queueName);
         res.status(200).json({ success: true, data: stats });

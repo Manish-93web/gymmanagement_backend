@@ -1,6 +1,7 @@
 import express from 'express';
 import {
     getAllTenants,
+    getTenantById,
     updateTenantStatus,
     getPlatformMetrics,
     getPlatformConfig,
@@ -16,6 +17,7 @@ import {
     viewTenantAttendance,
     viewTenantFinance,
     createViewSession,
+    endViewSession,
     getPlatformBranding,
     updatePlatformBranding,
     getPlatformAnalytics,
@@ -29,6 +31,7 @@ const router = express.Router();
 router.use(authenticate, requireRole('super_admin'));
 
 router.get('/tenants', getAllTenants);
+router.get('/tenants/:tenantId', getTenantById);
 router.patch('/tenants/:tenantId/status', updateTenantStatus);
 router.get('/metrics', getPlatformMetrics);
 
@@ -50,6 +53,7 @@ router.get('/tenants/:tenantId/view/members', viewTenantMembers);
 router.get('/tenants/:tenantId/view/attendance', viewTenantAttendance);
 router.get('/tenants/:tenantId/view/finance', viewTenantFinance);
 router.post('/tenants/:tenantId/view-session', createViewSession);
+router.delete('/tenants/:tenantId/view-session', endViewSession);
 
 // Platform branding & analytics
 router.get('/branding', getPlatformBranding);

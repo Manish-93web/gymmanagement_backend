@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+﻿import { Request, Response, NextFunction } from 'express';
 import Tenant from '../models/Tenant.model';
 import User from '../models/User.model';
 import Payment from '../models/Payment.model';
@@ -30,12 +30,12 @@ export class AdminController {
 
     async getGym(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenant = await Tenant.findById(req.params.gymId).populate('owner', 'firstName lastName email mobile');
+            const tenant = await Tenant.findById(req.params.gymId as string).populate('owner', 'firstName lastName email mobile');
             if (!tenant) return res.status(404).json({ success: false, message: 'Gym not found' });
             const [memberCount, totalPayments] = await Promise.all([
                 Member.countDocuments({ tenantId: tenant._id }),
                 Payment.aggregate([
-                    { $match: { tenantId: new mongoose.Types.ObjectId(req.params.gymId), status: 'completed' } },
+                    { $match: { tenantId: new mongoose.Types.ObjectId(req.params.gymId as string), status: 'completed' } },
                     { $group: { _id: null, total: { $sum: '$amount.total' } } }
                 ])
             ]);
@@ -45,7 +45,7 @@ export class AdminController {
 
     async updateGym(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenant = await Tenant.findByIdAndUpdate(req.params.gymId, req.body, { new: true });
+            const tenant = await Tenant.findByIdAndUpdate(req.params.gymId as string, req.body, { new: true });
             if (!tenant) return res.status(404).json({ success: false, message: 'Gym not found' });
             return res.json({ success: true, data: tenant });
         } catch (error) { return next(error); }
@@ -55,16 +55,16 @@ export class AdminController {
         try {
             const { reason } = req.body;
             const tenant = await Tenant.findByIdAndUpdate(
-                req.params.gymId,
+                req.params.gymId as string,
                 { isActive: false, suspendedAt: new Date(), suspensionReason: reason },
                 { new: true }
             );
             if (!tenant) return res.status(404).json({ success: false, message: 'Gym not found' });
-            await AuditLog.create({
+            await (AuditLog as any).create({
                 userId: req.user!._id,
                 action: 'SUSPEND_GYM',
                 resourceType: 'Tenant',
-                resourceId: req.params.gymId,
+                resourceId: req.params.gymId as string,
                 changes: { reason },
                 ipAddress: req.ip,
                 tenantId: req.user!.tenantId
@@ -76,7 +76,7 @@ export class AdminController {
     async reactivateGym(req: Request, res: Response, next: NextFunction) {
         try {
             const tenant = await Tenant.findByIdAndUpdate(
-                req.params.gymId,
+                req.params.gymId as string,
                 { isActive: true, $unset: { suspendedAt: 1, suspensionReason: 1 } },
                 { new: true }
             );
@@ -89,11 +89,11 @@ export class AdminController {
         try {
             const { days } = req.body;
             if (!days) return res.status(400).json({ success: false, message: 'days is required' });
-            const tenant = await Tenant.findById(req.params.gymId);
+            const tenant = await Tenant.findById(req.params.gymId as string);
             if (!tenant) return res.status(404).json({ success: false, message: 'Gym not found' });
             const currentExpiry = (tenant as any).trialEndsAt || new Date();
             const newExpiry = new Date(currentExpiry.getTime() + days * 24 * 60 * 60 * 1000);
-            await Tenant.findByIdAndUpdate(req.params.gymId, { trialEndsAt: newExpiry });
+            await Tenant.findByIdAndUpdate(req.params.gymId as string, { trialEndsAt: newExpiry });
             return res.json({ success: true, message: `Trial extended by ${days} days`, data: { newExpiry } });
         } catch (error) { return next(error); }
     }
@@ -102,7 +102,7 @@ export class AdminController {
         try {
             const { plan } = req.body;
             const tenant = await Tenant.findByIdAndUpdate(
-                req.params.gymId,
+                req.params.gymId as string,
                 { 'subscription.plan': plan, 'subscription.updatedAt': new Date() },
                 { new: true }
             );
@@ -115,7 +115,7 @@ export class AdminController {
         try {
             const { note } = req.body;
             const tenant = await Tenant.findByIdAndUpdate(
-                req.params.gymId,
+                req.params.gymId as string,
                 { $push: { adminNotes: { note, addedBy: req.user!._id, addedAt: new Date() } } },
                 { new: true }
             );
@@ -126,11 +126,11 @@ export class AdminController {
 
     async generateInvoice(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenant = await Tenant.findById(req.params.gymId);
+            const tenant = await Tenant.findById(req.params.gymId as string);
             if (!tenant) return res.status(404).json({ success: false, message: 'Gym not found' });
             const invoice = {
                 invoiceNumber: `INV-${Date.now()}`,
-                tenantId: req.params.gymId,
+                tenantId: req.params.gymId as string,
                 tenantName: tenant.name,
                 generatedAt: new Date(),
                 amount: req.body.amount || 0,
@@ -142,7 +142,7 @@ export class AdminController {
 
     async getAuditHistory(req: Request, res: Response, next: NextFunction) {
         try {
-            const logs = await AuditLog.find({ resourceId: req.params.gymId })
+            const logs = await AuditLog.find({ resourceId: req.params.gymId as string })
                 .populate('userId', 'firstName lastName')
                 .sort({ createdAt: -1 })
                 .limit(100);
@@ -162,7 +162,7 @@ export class AdminController {
                 config.jwt.secret,
                 { expiresIn: '2h' }
             );
-            await AuditLog.create({
+            await (AuditLog as any).create({
                 userId: req.user!._id,
                 action: 'IMPERSONATE_GYM',
                 resourceType: 'Tenant',
@@ -212,31 +212,31 @@ export class AdminController {
 
     async convertTrial(req: Request, res: Response, next: NextFunction) {
         try {
-            const { gymId } = req.params;
+            const { gymId } = req.params as Record<string, string>;
             const { planId, billingCycle } = req.body;
             const tenant = await Tenant.findByIdAndUpdate(gymId,
                 { $set: { 'subscription.status': 'active', 'subscription.plan': planId || 'starter', 'subscription.billingCycle': billingCycle || 'monthly', trialEndsAt: null } },
                 { new: true }
             );
             if (!tenant) { res.status(404).json({ success: false, message: 'Gym not found' }); return; }
-            await AuditLog.create({ tenantId: gymId, userId: req.user!._id, action: 'trial_converted', resourceType: 'Tenant', resourceId: gymId, details: { planId } });
+            await (AuditLog as any).create({ tenantId: gymId, userId: req.user!._id, action: 'trial_converted', resourceType: 'Tenant', resourceId: gymId, details: { planId } });
             return res.json({ success: true, message: 'Trial converted to paid', data: tenant });
         } catch (error) { return next(error); }
     }
 
     async pauseTrial(req: Request, res: Response, next: NextFunction) {
         try {
-            const { gymId } = req.params;
+            const { gymId } = req.params as Record<string, string>;
             const tenant = await Tenant.findByIdAndUpdate(gymId, { $set: { 'subscription.status': 'paused' } }, { new: true });
             if (!tenant) { res.status(404).json({ success: false, message: 'Gym not found' }); return; }
-            await AuditLog.create({ tenantId: gymId, userId: req.user!._id, action: 'trial_paused', resourceType: 'Tenant', resourceId: gymId });
+            await (AuditLog as any).create({ tenantId: gymId, userId: req.user!._id, action: 'trial_paused', resourceType: 'Tenant', resourceId: gymId });
             return res.json({ success: true, data: tenant });
         } catch (error) { return next(error); }
     }
 
     async restartTrial(req: Request, res: Response, next: NextFunction) {
         try {
-            const { gymId } = req.params;
+            const { gymId } = req.params as Record<string, string>;
             const newTrialEnd = new Date();
             newTrialEnd.setDate(newTrialEnd.getDate() + 14);
             const tenant = await Tenant.findByIdAndUpdate(gymId,
@@ -244,28 +244,28 @@ export class AdminController {
                 { new: true }
             );
             if (!tenant) { res.status(404).json({ success: false, message: 'Gym not found' }); return; }
-            await AuditLog.create({ tenantId: gymId, userId: req.user!._id, action: 'trial_restarted', resourceType: 'Tenant', resourceId: gymId });
+            await (AuditLog as any).create({ tenantId: gymId, userId: req.user!._id, action: 'trial_restarted', resourceType: 'Tenant', resourceId: gymId });
             return res.json({ success: true, data: tenant });
         } catch (error) { return next(error); }
     }
 
     async reduceTrial(req: Request, res: Response, next: NextFunction) {
         try {
-            const { gymId } = req.params;
+            const { gymId } = req.params as Record<string, string>;
             const { days } = req.body;
             const tenant = await Tenant.findById(gymId);
             if (!tenant) { res.status(404).json({ success: false, message: 'Gym not found' }); return; }
             const newDate = new Date((tenant as any).trialEndsAt || new Date());
             newDate.setDate(newDate.getDate() - (days || 7));
             await Tenant.findByIdAndUpdate(gymId, { trialEndsAt: newDate });
-            await AuditLog.create({ tenantId: gymId, userId: req.user!._id, action: 'trial_reduced', resourceType: 'Tenant', resourceId: gymId, details: { days } });
+            await (AuditLog as any).create({ tenantId: gymId, userId: req.user!._id, action: 'trial_reduced', resourceType: 'Tenant', resourceId: gymId, details: { days } });
             return res.json({ success: true, message: `Trial reduced by ${days} days` });
         } catch (error) { return next(error); }
     }
 
     async setRenewalDate(req: Request, res: Response, next: NextFunction) {
         try {
-            const { gymId } = req.params;
+            const { gymId } = req.params as Record<string, string>;
             const { renewalDate } = req.body;
             const tenant = await Tenant.findByIdAndUpdate(gymId, { 'subscription.renewalDate': new Date(renewalDate) }, { new: true });
             if (!tenant) { res.status(404).json({ success: false, message: 'Gym not found' }); return; }
@@ -275,24 +275,24 @@ export class AdminController {
 
     async logWhatsApp(req: Request, res: Response, next: NextFunction) {
         try {
-            const { gymId } = req.params;
+            const { gymId } = req.params as Record<string, string>;
             const { message, creditsUsed = 1 } = req.body;
-            await AuditLog.create({ tenantId: gymId, userId: req.user!._id, action: 'whatsapp_sent', resourceType: 'Tenant', resourceId: gymId, details: { message, creditsUsed } });
+            await (AuditLog as any).create({ tenantId: gymId, userId: req.user!._id, action: 'whatsapp_sent', resourceType: 'Tenant', resourceId: gymId, details: { message, creditsUsed } });
             return res.json({ success: true, message: 'WhatsApp log recorded' });
         } catch (error) { return next(error); }
     }
 
     async getWhatsAppHistory(req: Request, res: Response, next: NextFunction) {
         try {
-            const { gymId } = req.params;
-            const logs = await AuditLog.find({ tenantId: gymId, action: 'whatsapp_sent' }).sort({ createdAt: -1 }).limit(50);
+            const { gymId } = req.params as Record<string, string>;
+            const logs = await (AuditLog as any).find({ tenantId: gymId, action: 'whatsapp_sent' }).sort({ createdAt: -1 }).limit(50);
             return res.json({ success: true, data: logs });
         } catch (error) { return next(error); }
     }
 
     async getGymTickets(req: Request, res: Response, next: NextFunction) {
         try {
-            const { gymId } = req.params;
+            const { gymId } = req.params as Record<string, string>;
             const SupportTicket = require('../models/SupportTicket.model').default;
             const tickets = await SupportTicket.find({ tenantId: gymId }).sort({ createdAt: -1 }).limit(50);
             return res.json({ success: true, data: tickets });
@@ -301,3 +301,5 @@ export class AdminController {
 }
 
 export default new AdminController();
+
+

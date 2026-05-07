@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+﻿import { Request, Response, NextFunction } from 'express';
 import AuditLog from '../models/AuditLog.model';
 import logger from '../config/logger';
 
@@ -22,7 +22,7 @@ class AuditService {
      */
     async log(data: AuditLogData): Promise<void> {
         try {
-            await AuditLog.create({
+            await (AuditLog as any).create({
                 ...data,
                 timestamp: new Date(),
             });
@@ -53,7 +53,7 @@ class AuditService {
                 tenantId: user?.tenantId,
                 action: `${req.method} ${req.path}`,
                 resource: req.path.split('/')[2] || 'unknown',
-                resourceId: req.params.id,
+                resourceId: req.params.id as string,
                 metadata: {
                     method: req.method,
                     path: req.path,
@@ -194,3 +194,4 @@ class AuditService {
 }
 
 export default new AuditService();
+

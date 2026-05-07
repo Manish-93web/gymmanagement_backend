@@ -106,7 +106,7 @@ export class SubscriptionController {
                 tenantId, memberId: sub.memberId, subscriptionId: sub._id,
                 action: 'cancelled', performedBy: req.user!._id, notes: reason
             });
-            await Member.findByIdAndUpdate(sub.memberId, { status: 'expired' });
+            await Member.findOneAndUpdate({ _id: sub.memberId, tenantId }, { status: 'expired' });
             return res.json({ success: true, message: 'Subscription cancelled', data: sub });
         } catch (error) { return next(error); }
     }
@@ -130,7 +130,7 @@ export class SubscriptionController {
                 tenantId, memberId: sub.memberId, subscriptionId: sub._id,
                 action: 'frozen', performedBy: req.user!._id, notes: reason
             });
-            await Member.findByIdAndUpdate(sub.memberId, { status: 'frozen' });
+            await Member.findOneAndUpdate({ _id: sub.memberId, tenantId }, { status: 'frozen' });
             return res.json({ success: true, message: 'Subscription frozen' });
         } catch (error) { return next(error); }
     }
@@ -148,7 +148,7 @@ export class SubscriptionController {
                 tenantId, memberId: sub.memberId, subscriptionId: sub._id,
                 action: 'unfrozen', performedBy: req.user!._id
             });
-            await Member.findByIdAndUpdate(sub.memberId, { status: 'active' });
+            await Member.findOneAndUpdate({ _id: sub.memberId, tenantId }, { status: 'active' });
             return res.json({ success: true, message: 'Subscription unfrozen', data: sub });
         } catch (error) { return next(error); }
     }
@@ -169,7 +169,7 @@ export class SubscriptionController {
                 tenantId, memberId: sub.memberId, subscriptionId: sub._id,
                 action: 'renewed', performedBy: req.user!._id
             });
-            await Member.findByIdAndUpdate(sub.memberId, { status: 'active' });
+            await Member.findOneAndUpdate({ _id: sub.memberId, tenantId }, { status: 'active' });
             return res.json({ success: true, message: 'Subscription renewed', data: updated });
         } catch (error) { return next(error); }
     }

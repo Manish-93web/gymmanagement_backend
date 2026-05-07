@@ -100,6 +100,100 @@ export class AnalyticsController {
             return next(error);
         }
     }
+
+    async getEngagementAnalytics(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.user!.tenantId!.toString();
+            const { branchId, startDate, endDate } = req.query;
+
+            const retention = await AnalyticsService.getRetentionAnalytics(tenantId, branchId as string);
+            const attendance = await AnalyticsService.getAttendanceAnalytics(
+                tenantId,
+                branchId as string,
+                startDate ? new Date(startDate as string) : undefined,
+                endDate ? new Date(endDate as string) : undefined
+            );
+
+            return res.status(200).json({
+                success: true,
+                data: {
+                    retention,
+                    attendance,
+                    summary: {
+                        activeMembers: retention.activeMembers ?? 0,
+                        atRiskMembers: retention.atRiskMembers ?? 0,
+                        avgAttendancePerWeek: attendance.averagePerDay ? Number((attendance.averagePerDay * 7).toFixed(1)) : 0,
+                    },
+                },
+            });
+        } catch (error) {
+            return next(error);
+        }
+    }
+
+    async exportAnalytics(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.user!.tenantId!.toString();
+            const { name } = req.params;
+            const { branchId, startDate, endDate, format = 'json' } = req.query;
+
+            let data: any;
+            switch (name) {
+                case 'revenue':
+                    data = await AnalyticsService.getRevenueAnalytics(
+                        tenantId, branchId as string,
+                        startDate ? new Date(startDate as string) : undefined,
+                        endDate ? new Date(endDate as string) : undefined
+                    );
+                    break;
+                case 'retention':
+                    data = await AnalyticsService.getRetentionAnalytics(tenantId, branchId as string);
+                    break;
+                case 'attendance':
+                    data = await AnalyticsService.getAttendanceAnalytics(
+                        tenantId, branchId as string,
+                        startDate ? new Date(startDate as string) : undefined,
+                        endDate ? new Date(endDate as string) : undefined
+                    );
+                    break;
+                case 'class-utilization':
+                    data = await AnalyticsService.getClassUtilization(
+                        tenantId, branchId as string,
+                        startDate ? new Date(startDate as string) : undefined,
+                        endDate ? new Date(endDate as string) : undefined
+                    );
+                    break;
+                case 'trainer-productivity':
+                    data = await AnalyticsService.getTrainerProductivity(
+                        tenantId, branchId as string,
+                        startDate ? new Date(startDate as string) : undefined,
+                        endDate ? new Date(endDate as string) : undefined
+                    );
+                    break;
+                case 'dashboard':
+                    data = await AnalyticsService.getDashboardOverview(tenantId, branchId as string);
+                    break;
+                default:
+                    return res.status(400).json({ success: false, message: `Unknown report: ${name}` });
+            }
+
+            if (format === 'csv') {
+                const rows = Array.isArray(data) ? data : [data];
+                const headers = Object.keys(rows[0] || {});
+                const csv = [
+                    headers.join(','),
+                    ...rows.map((r: any) => headers.map(h => JSON.stringify(r[h] ?? '')).join(',')),
+                ].join('\n');
+                res.setHeader('Content-Type', 'text/csv');
+                res.setHeader('Content-Disposition', `attachment; filename="${name}-export.csv"`);
+                return res.send(csv);
+            }
+
+            return res.status(200).json({ success: true, data });
+        } catch (error) {
+            return next(error);
+        }
+    }
 }
 
 export default new AnalyticsController();

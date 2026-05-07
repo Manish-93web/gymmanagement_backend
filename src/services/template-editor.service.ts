@@ -17,7 +17,7 @@ class TemplateEditorService {
      * Create email template
      */
     async createEmailTemplate(data: TemplateData) {
-        const template = await EmailTemplate.create({
+        const template = await (EmailTemplate as any).create({
             ...data,
             createdAt: new Date(),
         });
@@ -31,7 +31,7 @@ class TemplateEditorService {
      * Create SMS template
      */
     async createSMSTemplate(data: Omit<TemplateData, 'subject'>) {
-        const template = await SMSTemplate.create({
+        const template = await (SMSTemplate as any).create({
             ...data,
             createdAt: new Date(),
         });
@@ -219,7 +219,7 @@ class TemplateEditorService {
             throw new Error('Email template not found');
         }
 
-        const duplicate = await EmailTemplate.create({
+        const duplicate = await (EmailTemplate as any).create({
             name: `${original.name} (Copy)`,
             subject: original.subject,
             content: original.content,

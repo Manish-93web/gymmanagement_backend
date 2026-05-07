@@ -24,7 +24,7 @@ class UserManagementService {
             throw new Error('User with this email already exists');
         }
 
-        const user = await User.create({
+        const user = await (User as any).create({
             ...data,
             createdAt: new Date(),
         });

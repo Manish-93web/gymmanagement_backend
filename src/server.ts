@@ -6,8 +6,10 @@ import http from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import hpp from 'hpp';
+import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
+import { randomUUID } from 'crypto';
 import { config } from './config/config';
 import { connectDB } from './config/database';
 import { connectRedis } from './config/redis';
@@ -65,6 +67,15 @@ const httpServer = http.createServer(app);
 // Initialize WebSocket
 export const websocketService = new WebSocketService(httpServer);
 
+// Gzip compression
+app.use(compression());
+
+// Per-request ID for log tracing
+app.use((req: Request, _res: Response, next: NextFunction) => {
+    (req as any).requestId = randomUUID();
+    next();
+});
+
 // Security middleware
 app.use(helmet());
 app.use(hpp());
@@ -85,25 +96,87 @@ const apiLimiter = rateLimit({
 });
 app.use('/api/', apiLimiter);
 
+// Request timeout middleware (30 seconds)
+app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setTimeout(30000, () => {
+        if (!res.headersSent) {
+            res.status(503).json({ success: false, message: 'Request timeout' });
+        }
+    });
+    next();
+});
+
+// Bulk operation guard — reject payloads with arrays > 500 items
+app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.body && typeof req.body === 'object') {
+        const checkDepth = (obj: any, depth = 0): boolean => {
+            if (depth > 3) return false;
+            if (Array.isArray(obj) && obj.length > 500) return true;
+            if (typeof obj === 'object' && obj !== null) {
+                return Object.values(obj).some((v) => checkDepth(v, depth + 1));
+            }
+            return false;
+        };
+        if (checkDepth(req.body)) {
+            res.status(400).json({ success: false, message: 'Bulk operation exceeds maximum batch size of 500' });
+            return;
+        }
+    }
+    next();
+});
+
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Logging
+// Serve locally uploaded files (fallback when Cloudinary is not configured)
+app.use('/uploads', express.static('public/uploads'));
+
+// Per-tenant request ID logging
+morgan.token('tenant-id', (req: any) => req.user?.tenantId?.toString() || '-');
+morgan.token('request-id', (req: any) => req.requestId || '-');
+
 if (config.env === 'development') {
-    app.use(morgan('dev'));
+    app.use(morgan(':method :url :status :response-time ms [tenant=:tenant-id] [req=:request-id]'));
 } else {
-    app.use(morgan('combined'));
+    app.use(morgan('combined :req[x-forwarded-for] :tenant-id :request-id'));
 }
 
-// Health check
-app.get('/health', (_req: Request, res: Response) => {
-    res.status(200).json({
+// Detailed health check — DB + Redis status
+app.get('/health', async (_req: Request, res: Response) => {
+    const checks: Record<string, any> = {
         status: 'OK',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
         environment: config.env,
-    });
+        memory: {
+            rss: `${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`,
+            heapUsed: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
+        },
+        services: {},
+    };
+
+    // MongoDB check
+    const mongoose = await import('mongoose');
+    const dbState = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+    checks.services.mongodb = {
+        status: dbState[mongoose.default.connection.readyState] || 'unknown',
+        healthy: mongoose.default.connection.readyState === 1,
+    };
+
+    // Redis check
+    const { redis } = await import('./config/redis');
+    try {
+        await redis.set('health_check', '1');
+        checks.services.redis = { status: 'connected', healthy: true };
+    } catch {
+        checks.services.redis = { status: 'error', healthy: false };
+    }
+
+    const allHealthy = Object.values(checks.services as Record<string, any>).every((s) => s.healthy);
+    if (!allHealthy) checks.status = 'DEGRADED';
+
+    res.status(allHealthy ? 200 : 503).json(checks);
 });
 
 // API routes
@@ -204,13 +277,47 @@ const startServer = async () => {
     }
 };
 
-process.on('SIGTERM', () => {
-    httpServer.close(() => process.exit(0));
-});
+// Graceful shutdown handler
+const gracefulShutdown = async (signal: string) => {
+    console.log(`\n⚡ ${signal} received — initiating graceful shutdown...`);
 
-process.on('SIGINT', () => {
-    httpServer.close(() => process.exit(0));
-});
+    // Stop accepting new connections
+    httpServer.close(async () => {
+        console.log('✅ HTTP server closed');
+
+        try {
+            // Close MongoDB
+            const mongoose = await import('mongoose');
+            await mongoose.default.connection.close();
+            console.log('✅ MongoDB connection closed');
+        } catch (err) {
+            console.error('❌ Error closing MongoDB:', err);
+        }
+
+        try {
+            // Close Redis
+            const { redis } = await import('./config/redis');
+            if (typeof (redis as any).quit === 'function') {
+                await (redis as any).quit();
+                console.log('✅ Redis connection closed');
+            }
+        } catch (err) {
+            console.error('❌ Error closing Redis:', err);
+        }
+
+        console.log('👋 Shutdown complete');
+        process.exit(0);
+    });
+
+    // Force exit after 10s if graceful shutdown takes too long
+    setTimeout(() => {
+        console.error('❌ Forced shutdown after timeout');
+        process.exit(1);
+    }, 10000);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 process.on('unhandledRejection', (err: Error) => {
     console.error('Unhandled Promise Rejection:', err);

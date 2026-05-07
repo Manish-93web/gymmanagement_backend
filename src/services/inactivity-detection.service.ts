@@ -71,7 +71,7 @@ class InactivityDetectionService {
 
                     if (!existingAlert) {
                         // Create alert
-                        const alert = await InactivityAlert.create({
+                        const alert = await (InactivityAlert as any).create({
                             memberId: member._id,
                             tenantId,
                             level: config.level,

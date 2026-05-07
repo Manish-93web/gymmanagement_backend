@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+﻿import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import POSService from '../services/pos.service';
 
@@ -79,7 +79,7 @@ export class POSController {
 
     async getProductById(req: Request, res: Response, next: NextFunction) {
         try {
-            const { productId } = req.params;
+            const { productId } = req.params as Record<string, string>;
             const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
 
             const product = await POSService.getProductById(productId, tenantId);
@@ -96,7 +96,7 @@ export class POSController {
 
     async updateProduct(req: Request, res: Response, next: NextFunction) {
         try {
-            const { productId } = req.params;
+            const { productId } = req.params as Record<string, string>;
             const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
 
             const product = await POSService.updateProduct(productId, tenantId, req.body);
@@ -109,7 +109,7 @@ export class POSController {
 
     async updateStock(req: Request, res: Response, next: NextFunction) {
         try {
-            const { productId } = req.params;
+            const { productId } = req.params as Record<string, string>;
             const { quantity, type } = req.body;
             const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
 
@@ -193,3 +193,4 @@ export class POSController {
 }
 
 export default new POSController();
+

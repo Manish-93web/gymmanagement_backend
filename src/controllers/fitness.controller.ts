@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+﻿import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import WorkoutService from '../services/workout.service';
 import DietService from '../services/diet.service';
@@ -81,7 +81,7 @@ export class FitnessController {
 
     async getMemberWorkouts(req: Request, res: Response, next: NextFunction) {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
             const { startDate, endDate } = req.query;
             const tenantId = req.user?.tenantId?.toString() || '';
 
@@ -100,7 +100,7 @@ export class FitnessController {
 
     async getPersonalRecords(req: Request, res: Response, next: NextFunction) {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
             const tenantId = req.user?.tenantId?.toString() || '';
 
             const prs = await WorkoutService.getPersonalRecords(memberId, tenantId);
@@ -113,7 +113,7 @@ export class FitnessController {
 
     async getWorkoutStats(req: Request, res: Response, next: NextFunction) {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
             const tenantId = req.user?.tenantId?.toString() || '';
 
             const stats = await WorkoutService.getWorkoutStats(memberId, tenantId);
@@ -175,7 +175,7 @@ export class FitnessController {
 
     async getMemberDietPlans(req: Request, res: Response, next: NextFunction) {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
             const tenantId = req.user?.tenantId?.toString() || '';
 
             const dietPlans = await DietService.getMemberDietPlans(memberId, tenantId);
@@ -188,7 +188,7 @@ export class FitnessController {
 
     async logCompliance(req: Request, res: Response, next: NextFunction) {
         try {
-            const { dietPlanId } = req.params;
+            const { dietPlanId } = req.params as Record<string, string>;
             const { date, mealsFollowed, totalMeals, notes } = req.body;
             const tenantId = req.user?.tenantId?.toString() || '';
 
@@ -209,7 +209,7 @@ export class FitnessController {
 
     async getDietStats(req: Request, res: Response, next: NextFunction) {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
             const tenantId = req.user?.tenantId?.toString() || '';
 
             const dietStats = await DietService.getComplianceStats(memberId, tenantId);
@@ -222,7 +222,7 @@ export class FitnessController {
 
     async getDietPlanById(req: Request, res: Response, next: NextFunction) {
         try {
-            const { dietPlanId } = req.params;
+            const { dietPlanId } = req.params as Record<string, string>;
             const tenantId = req.user?.tenantId?.toString() || '';
             const plan = await DietService.getDietPlanById(dietPlanId, tenantId);
             if (!plan) return res.status(404).json({ success: false, message: 'Diet plan not found' });
@@ -232,7 +232,7 @@ export class FitnessController {
 
     async updateDietPlan(req: Request, res: Response, next: NextFunction) {
         try {
-            const { dietPlanId } = req.params;
+            const { dietPlanId } = req.params as Record<string, string>;
             const tenantId = req.user?.tenantId?.toString() || '';
             const plan = await DietService.updateDietPlan(dietPlanId, tenantId, req.body);
             if (!plan) return res.status(404).json({ success: false, message: 'Diet plan not found' });
@@ -242,7 +242,7 @@ export class FitnessController {
 
     async deleteDietPlan(req: Request, res: Response, next: NextFunction) {
         try {
-            const { dietPlanId } = req.params;
+            const { dietPlanId } = req.params as Record<string, string>;
             const tenantId = req.user?.tenantId?.toString() || '';
             const DietPlan = (await import('../models/DietPlan.model')).default;
             const result = await DietPlan.findOneAndDelete({ _id: dietPlanId, tenantId });
@@ -253,3 +253,4 @@ export class FitnessController {
 }
 
 export default new FitnessController();
+

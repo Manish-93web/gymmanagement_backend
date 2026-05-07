@@ -20,7 +20,7 @@ export interface SendNotificationDTO {
 export class NotificationService {
     // Send notification
     async sendNotification(data: SendNotificationDTO): Promise<INotification> {
-        const notification = await Notification.create({
+        const notification = await (Notification as any).create({
             ...data,
             status: data.scheduledFor ? 'scheduled' : 'pending',
             attempts: [],
@@ -183,7 +183,7 @@ export class NotificationService {
 
     // Get scheduled notifications
     async getScheduledNotifications(tenantId: string): Promise<INotification[]> {
-        return await Notification.find({
+        return await (Notification as any).find({
             tenantId,
             status: 'scheduled',
             scheduledFor: { $lte: new Date() },

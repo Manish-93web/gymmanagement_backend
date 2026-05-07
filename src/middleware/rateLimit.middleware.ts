@@ -55,3 +55,33 @@ export const userRateLimiter = (maxRequests: number, windowSeconds: number) => {
         next();
     };
 };
+
+// Per-tenant rate limiter — isolates quota per gym
+export const tenantRateLimiter = (maxRequests: number, windowSeconds: number) => {
+    return async (req: Request, res: Response, next: Function): Promise<void> => {
+        const tenantId = (req as any).user?.tenantId?.toString();
+
+        if (!tenantId) {
+            next();
+            return;
+        }
+
+        const key = `rate_limit:tenant:${tenantId}`;
+        const current = await redisUtils.incr(key);
+
+        if (current === 1) {
+            await redisUtils.setEx(key, current.toString(), windowSeconds);
+        }
+
+        if (current > maxRequests) {
+            res.status(429).json({
+                success: false,
+                error: 'Tenant rate limit exceeded',
+                retryAfter: windowSeconds,
+            });
+            return;
+        }
+
+        next();
+    };
+};

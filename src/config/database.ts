@@ -6,9 +6,13 @@ export const connectDB = async (): Promise<void> => {
         const uri = config.env === 'test' ? config.mongodb.testUri : config.mongodb.uri;
 
         await mongoose.connect(uri, {
-            maxPoolSize: 10,
+            maxPoolSize: 20,
+            minPoolSize: 5,
+            maxIdleTimeMS: 30000,
             serverSelectionTimeoutMS: 5000,
             socketTimeoutMS: 45000,
+            connectTimeoutMS: 10000,
+            heartbeatFrequencyMS: 10000,
         });
 
         console.log(`✅ MongoDB Connected: ${mongoose.connection.host}`);

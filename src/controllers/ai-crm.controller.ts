@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+﻿import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import AIService from '../services/ai.service';
 import CRMService from '../services/crm.service';
@@ -109,7 +109,7 @@ export class AIAndCRMController {
 
     async predictChurn(req: Request, res: Response, next: NextFunction) {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
             const prediction = await AIService.predictChurn(memberId);
 
             res.status(200).json({ success: true, data: prediction });
@@ -120,7 +120,7 @@ export class AIAndCRMController {
 
     async getProgressInsights(req: Request, res: Response, next: NextFunction) {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
             const tenantId = req.user?.tenantId?.toString() || '';
 
             const insights = await AIService.getProgressInsights(memberId, tenantId);
@@ -173,7 +173,7 @@ export class AIAndCRMController {
 
     async getLeadById(req: Request, res: Response, next: NextFunction) {
         try {
-            const { leadId } = req.params;
+            const { leadId } = req.params as Record<string, string>;
             const tenantId = req.user?.tenantId?.toString() || '';
             const lead = await CRMService.getLeadById(leadId, tenantId);
             if (!lead) return res.status(404).json({ success: false, message: 'Lead not found' });
@@ -185,7 +185,7 @@ export class AIAndCRMController {
 
     async updateLeadStatus(req: Request, res: Response, next: NextFunction) {
         try {
-            const { leadId } = req.params;
+            const { leadId } = req.params as Record<string, string>;
             const { status, reason } = req.body;
             const tenantId = req.user?.tenantId?.toString() || '';
             const changedBy = req.user?._id?.toString() || 'system';
@@ -200,7 +200,7 @@ export class AIAndCRMController {
 
     async addFollowUp(req: Request, res: Response, next: NextFunction) {
         try {
-            const { leadId } = req.params;
+            const { leadId } = req.params as Record<string, string>;
             const validatedData = addFollowUpSchema.parse(req.body);
             const tenantId = req.user?.tenantId?.toString() || '';
             const userId = req.user?._id?.toString() || 'system';
@@ -245,7 +245,7 @@ export class AIAndCRMController {
 
     async convertLead(req: Request, res: Response, next: NextFunction) {
         try {
-            const { leadId } = req.params;
+            const { leadId } = req.params as Record<string, string>;
             const tenantId = req.user?.tenantId?.toString() || '';
             const changedBy = req.user?._id?.toString() || 'system';
             const lead = await CRMService.updateLeadStatus(leadId, 'converted' as any, tenantId, changedBy);
@@ -286,3 +286,4 @@ export class AIAndCRMController {
 }
 
 export default new AIAndCRMController();
+

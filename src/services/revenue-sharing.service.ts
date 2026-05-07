@@ -130,7 +130,7 @@ class RevenueSharingService {
     async calculateAllRevenueShares(tenantId: string, startDate: Date, endDate: Date) {
         const eligibleRoles = ['trainer', 'branch_manager', 'staff'];
 
-        const users = await User.find({
+        const users = await (User as any).find({
             tenantId,
             role: { $in: eligibleRoles },
             isActive: true,

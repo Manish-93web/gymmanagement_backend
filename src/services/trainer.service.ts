@@ -50,7 +50,7 @@ export class TrainerService {
             throw new Error('Trainer profile already exists for this user');
         }
 
-        const trainer = await Trainer.create(data);
+        const trainer = await (Trainer as any).create(data);
         return trainer;
     }
 

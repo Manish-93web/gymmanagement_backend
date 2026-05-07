@@ -1,8 +1,16 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import memberController from '../controllers/member.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requirePermission } from '../middleware/rbac.middleware';
 import { tenantContext } from '../middleware/tenant.middleware';
+import { invalidateTenantCache } from '../middleware/cache.middleware';
+
+// Invalidate tenant cache after any mutation
+const invalidateCache = async (req: Request, _res: Response, next: NextFunction) => {
+    const tenantId = (req as any).user?.tenantId?.toString();
+    if (tenantId) await invalidateTenantCache(tenantId).catch(() => {});
+    next();
+};
 
 const router = Router();
 
@@ -15,11 +23,11 @@ router.use(tenantContext);
 
 // Member CRUD
 router.get('/me', memberController.getProfile.bind(memberController));
-router.post('/', requirePermission('member:create'), memberController.createMember.bind(memberController));
+router.post('/', requirePermission('member:create'), invalidateCache, memberController.createMember.bind(memberController));
 router.get('/', requirePermission('member:read'), memberController.getMembers.bind(memberController));
 router.get('/stats', requirePermission('member:read'), memberController.getMemberStats.bind(memberController));
 router.get('/:memberId', requirePermission('member:read'), memberController.getMember.bind(memberController));
-router.put('/:memberId', requirePermission('member:update'), memberController.updateMember.bind(memberController));
+router.put('/:memberId', requirePermission('member:update'), invalidateCache, memberController.updateMember.bind(memberController));
 
 // Member status management
 router.patch('/:memberId/status', requirePermission('member:update'), memberController.changeStatus.bind(memberController));

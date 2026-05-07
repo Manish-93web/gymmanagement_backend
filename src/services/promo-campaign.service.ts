@@ -25,7 +25,7 @@ class PromoCampaignService {
      * Create promotional campaign
      */
     async createCampaign(data: PromoCampaignData) {
-        const campaign = await PromoCampaign.create({
+        const campaign = await (PromoCampaign as any).create({
             ...data,
             status: 'draft',
             createdAt: new Date(),
@@ -33,23 +33,23 @@ class PromoCampaignService {
 
         // Auto-create coupon if discount campaign
         if (data.type === 'discount' && data.discountValue) {
-            const couponCode = `PROMO${campaign._id.toString().slice(-6).toUpperCase()}`;
+            const couponCode = `PROMO${(campaign as any)._id.toString().slice(-6).toUpperCase()}`;
 
-            await Coupon.create({
+            await (Coupon as any).create({
                 code: couponCode,
                 type: data.discountType || 'percentage',
                 value: data.discountValue,
                 validFrom: data.startDate,
                 validUntil: data.endDate,
                 tenantId: data.tenantId,
-                campaignId: campaign._id,
+                campaignId: (campaign as any)._id,
             });
 
-            campaign.couponCode = couponCode;
-            await campaign.save();
+            (campaign as any).couponCode = couponCode;
+            await (campaign as any).save();
         }
 
-        logger.info('Promo campaign created', { campaignId: campaign._id });
+        logger.info('Promo campaign created', { campaignId: (campaign as any)._id });
 
         return campaign;
     }

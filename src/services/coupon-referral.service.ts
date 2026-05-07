@@ -37,7 +37,7 @@ class CouponReferralService {
             throw new Error('Coupon code already exists');
         }
 
-        const coupon = await Coupon.create({
+        const coupon = await (Coupon as any).create({
             ...data,
             isActive: true,
             usedCount: 0,
@@ -171,7 +171,7 @@ class CouponReferralService {
         const referralCode = `REF${referrerId.slice(-6).toUpperCase()}${Date.now().toString(36).toUpperCase()}`;
 
         // Create referral
-        const referral = await Referral.create({
+        const referral = await (Referral as any).create({
             referrerId,
             refereeEmail,
             refereePhone,

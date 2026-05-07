@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+﻿import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 import crypto from 'crypto';
@@ -39,7 +39,7 @@ export class AttendanceController {
 
     async checkOut(req: Request, res: Response, next: NextFunction) {
         try {
-            const { attendanceId } = req.params;
+            const { attendanceId } = req.params as Record<string, string>;
             const tenantId = req.user!.tenantId!.toString();
 
             const attendance = await AttendanceService.checkOut(attendanceId, tenantId);
@@ -52,7 +52,7 @@ export class AttendanceController {
 
     async getMemberAttendance(req: Request, res: Response, next: NextFunction) {
         try {
-            const { memberId } = req.params;
+            const { memberId } = req.params as Record<string, string>;
             const { startDate, endDate } = req.query;
             const tenantId = req.user!.tenantId!.toString();
 
@@ -163,13 +163,17 @@ export class AttendanceController {
 
     async manualCorrection(req: Request, res: Response, next: NextFunction) {
         try {
-            const { attendanceId } = req.params;
+            const { attendanceId } = req.params as Record<string, string>;
             const { checkInTime, checkOutTime, notes, reason } = req.body;
-            const attendance = await Attendance.findByIdAndUpdate(attendanceId, {
-                ...(checkInTime && { checkInTime: new Date(checkInTime) }),
-                ...(checkOutTime && { checkOutTime: new Date(checkOutTime) }),
-                notes: `[CORRECTED by ${req.user!.firstName} ${req.user!.lastName}] ${reason || ''}. ${notes || ''}`
-            }, { new: true });
+            const attendance = await Attendance.findOneAndUpdate(
+                { _id: attendanceId, tenantId: req.user!.tenantId },
+                {
+                    ...(checkInTime && { checkInTime: new Date(checkInTime) }),
+                    ...(checkOutTime && { checkOutTime: new Date(checkOutTime) }),
+                    notes: `[CORRECTED by ${req.user!.firstName} ${req.user!.lastName}] ${reason || ''}. ${notes || ''}`
+                },
+                { new: true }
+            );
             if (!attendance) return res.status(404).json({ success: false, message: 'Attendance record not found' });
             return res.status(200).json({ success: true, data: attendance });
         } catch (error) { return next(error); }
@@ -233,3 +237,4 @@ export class AttendanceController {
 }
 
 export default new AttendanceController();
+

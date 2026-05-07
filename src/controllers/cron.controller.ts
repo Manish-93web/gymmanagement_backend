@@ -26,7 +26,7 @@ export class CronController {
                     await Subscription.findByIdAndUpdate(sub._id, {
                         endDate: newEndDate, status: 'active'
                     });
-                    await SubscriptionHistory.create({
+                    await (SubscriptionHistory as any).create({
                         tenantId: sub.tenantId, memberId: sub.memberId,
                         subscriptionId: sub._id, action: 'renewed',
                         performedBy: new mongoose.Types.ObjectId(), notes: 'Auto-renewal'
@@ -65,7 +65,7 @@ export class CronController {
             const expiredTrials = await Tenant.find({
                 'subscription.status': 'trial',
                 trialEndsAt: { $lte: now }
-            });
+            } as any);
 
             let updated = 0;
             for (const tenant of expiredTrials) {
@@ -80,7 +80,7 @@ export class CronController {
             const expiringTrials = await Tenant.countDocuments({
                 'subscription.status': 'trial',
                 trialEndsAt: { $gte: now, $lte: warningDate }
-            });
+            } as any);
 
             return res.json({
                 success: true,

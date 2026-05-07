@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+﻿import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import TrainerService from '../services/trainer.service';
 
@@ -55,7 +55,7 @@ export class TrainerController {
 
     async getTrainerById(req: Request, res: Response, next: NextFunction) {
         try {
-            const { trainerId } = req.params;
+            const { trainerId } = req.params as Record<string, string>;
             const tenantId = req.user!.tenantId!.toString();
 
             const trainer = await TrainerService.getTrainerById(trainerId, tenantId);
@@ -89,7 +89,7 @@ export class TrainerController {
 
     async updateTrainer(req: Request, res: Response, next: NextFunction) {
         try {
-            const { trainerId } = req.params;
+            const { trainerId } = req.params as Record<string, string>;
             const tenantId = req.user!.tenantId!.toString();
 
             const trainer = await TrainerService.updateTrainer(trainerId, tenantId, req.body);
@@ -102,7 +102,7 @@ export class TrainerController {
 
     async addCertification(req: Request, res: Response, next: NextFunction) {
         try {
-            const { trainerId } = req.params;
+            const { trainerId } = req.params as Record<string, string>;
             const tenantId = req.user!.tenantId!.toString();
 
             const trainer = await TrainerService.addCertification(trainerId, tenantId, req.body);
@@ -115,7 +115,7 @@ export class TrainerController {
 
     async updateAvailability(req: Request, res: Response, next: NextFunction) {
         try {
-            const { trainerId } = req.params;
+            const { trainerId } = req.params as Record<string, string>;
             const { availability } = req.body;
             const tenantId = req.user!.tenantId!.toString();
 
@@ -129,7 +129,7 @@ export class TrainerController {
 
     async addRating(req: Request, res: Response, next: NextFunction) {
         try {
-            const { trainerId } = req.params;
+            const { trainerId } = req.params as Record<string, string>;
             const { memberId, rating, review } = req.body;
             const tenantId = req.user!.tenantId!.toString();
 
@@ -143,7 +143,7 @@ export class TrainerController {
 
     async getTrainerStats(req: Request, res: Response, next: NextFunction) {
         try {
-            const { trainerId } = req.params;
+            const { trainerId } = req.params as Record<string, string>;
             const tenantId = req.user!.tenantId!.toString();
 
             const stats = await TrainerService.getTrainerStats(trainerId, tenantId);
@@ -156,3 +156,4 @@ export class TrainerController {
 }
 
 export default new TrainerController();
+

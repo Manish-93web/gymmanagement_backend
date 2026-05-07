@@ -9,7 +9,7 @@ const sendNotificationSchema = z.object({
     subject: z.string().optional(),
     message: z.string(),
     templateId: z.string().optional(),
-    data: z.record(z.any()).optional(),
+    data: z.record(z.string(), z.any()).optional(),
     scheduledFor: z.string().optional(),
 });
 
@@ -133,8 +133,8 @@ export class NotificationController {
 
     async retryFailedNotification(req: Request, res: Response, next: NextFunction) {
         try {
-            const { notificationId } = req.params;
-            const tenantId = req.user?.tenantId?.toString() || '';
+            const { notificationId } = req.params as Record<string, string>;
+            const tenantId = (req.user?.tenantId?.toString() || '') as string;
 
             const notification = await NotificationService.retryNotification(notificationId, tenantId);
 

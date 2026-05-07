@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+﻿import { Request, Response, NextFunction } from 'express';
 import workoutService from '../services/workout.service';
 
 export class WorkoutController {
@@ -26,7 +26,7 @@ export class WorkoutController {
     // Get single workout
     async getWorkout(req: Request, res: Response, next: NextFunction) {
         try {
-            const { id } = req.params;
+            const { id } = req.params as Record<string, string>;
             const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
 
             const workout = await workoutService.getWorkoutById(id, tenantId);
@@ -84,3 +84,4 @@ export class WorkoutController {
 }
 
 export default new WorkoutController();
+

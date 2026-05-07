@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+﻿import { Request, Response } from 'express';
 import socialFeedService from '../services/social-feed.service';
 import communityGroupService from '../services/community-group.service';
 import memberMessagingService from '../services/member-messaging.service';
@@ -118,7 +118,7 @@ export class CommunityController {
     async likePost(req: Request, res: Response) {
         try {
             const user = (req as any).user;
-            const { postId } = req.params;
+            const { postId } = req.params as Record<string, string>;
 
             const result = await socialFeedService.likePost(postId, user._id);
 
@@ -137,7 +137,7 @@ export class CommunityController {
     async commentOnPost(req: Request, res: Response) {
         try {
             const user = (req as any).user;
-            const { postId } = req.params;
+            const { postId } = req.params as Record<string, string>;
             const { content } = req.body;
 
             const comment = await socialFeedService.commentOnPost(postId, user._id, content);
@@ -159,7 +159,7 @@ export class CommunityController {
      */
     async getPostComments(req: Request, res: Response) {
         try {
-            const { postId } = req.params;
+            const { postId } = req.params as Record<string, string>;
             const { page, limit } = req.query;
 
             const result = await socialFeedService.getPostComments(
@@ -186,7 +186,7 @@ export class CommunityController {
     async deletePost(req: Request, res: Response) {
         try {
             const user = (req as any).user;
-            const { postId } = req.params;
+            const { postId } = req.params as Record<string, string>;
 
             await socialFeedService.deletePost(postId, user._id);
 
@@ -245,7 +245,7 @@ export class CommunityController {
      */
     async getMessages(req: Request, res: Response) {
         try {
-            const { conversationId } = req.params;
+            const { conversationId } = req.params as Record<string, string>;
             const { page, limit } = req.query;
 
             const result = await memberMessagingService.getMessages(
@@ -272,7 +272,7 @@ export class CommunityController {
     async joinGroup(req: Request, res: Response) {
         try {
             const user = (req as any).user;
-            const { groupId } = req.params;
+            const { groupId } = req.params as Record<string, string>;
 
             const result = await communityGroupService.joinGroup(groupId, user._id);
 
@@ -291,7 +291,7 @@ export class CommunityController {
     async leaveGroup(req: Request, res: Response) {
         try {
             const user = (req as any).user;
-            const { groupId } = req.params;
+            const { groupId } = req.params as Record<string, string>;
 
             const result = await communityGroupService.leaveGroup(groupId, user._id);
 
@@ -306,3 +306,4 @@ export class CommunityController {
 }
 
 export default new CommunityController();
+

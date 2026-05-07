@@ -33,7 +33,7 @@ export class AutomationController {
             const tenantId = req.user?.tenantId;
             const branchId = req.user?.branchId;
 
-            const rule = await AutomationRule.create({
+            const rule = await (AutomationRule as any).create({
                 ...validatedData,
                 tenantId,
                 branchId,

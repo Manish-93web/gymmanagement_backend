@@ -132,13 +132,12 @@ UserSchema.index({ tenantId: 1, role: 1 });
 UserSchema.index({ tenantId: 1, branchId: 1 });
 
 // Hash password before saving
-UserSchema.pre('save', async function (this: IUser, next) {
-    if (!this.isModified('password')) return next();
+UserSchema.pre('save', async function (this: IUser) {
+    if (!this.isModified('password')) return;
 
     const salt = await bcrypt.genSalt(12);
     this.password = await bcrypt.hash(this.password, salt);
     this.lastPasswordChange = new Date();
-    next();
 });
 
 // Compare password method

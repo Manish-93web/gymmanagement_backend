@@ -91,7 +91,7 @@ class PayrollService {
     async generateBulkPayroll(tenantId: string, month: number, year: number) {
         const staffRoles = ['trainer', 'branch_manager', 'staff', 'accountant'];
 
-        const users = await User.find({
+        const users = await (User as any).find({
             tenantId,
             role: { $in: staffRoles },
             isActive: true,

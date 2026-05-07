@@ -1,23 +1,28 @@
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import WhatsAppLog from '../models/WhatsAppLog.model';
-
-// In-memory store for scheduled messages (TODO: migrate to DB model)
-const scheduledMessages: any[] = [];
+import WaReminder from '../models/WaReminder.model';
 
 class WhatsAppController {
-    // GET /api/whatsapp/scheduled
+    // GET /api/whatsapp/scheduled  — due=true returns array of ScheduledReminder
     async getScheduled(req: Request, res: Response, next: NextFunction) {
         try {
             const tenantId = req.tenantId;
             const { page = '1', limit = '20', status, due } = req.query as Record<string, string>;
-            let msgs = scheduledMessages.filter(m => m.tenantId?.toString() === tenantId?.toString());
-            if (status) msgs = msgs.filter(m => m.status === status);
-            if (due === 'true') msgs = msgs.filter(m => m.status === 'pending' && new Date(m.scheduledFor) <= new Date());
-            const total = msgs.length;
+            const filter: any = { tenantId };
+            if (status) filter.status = status;
+            if (due === 'true') {
+                filter.status = 'pending';
+                filter.scheduledFor = { $lte: new Date() };
+                const reminders = await WaReminder.find(filter).sort({ scheduledFor: 1 }).lean();
+                return res.json({ success: true, data: reminders });
+            }
             const skip = (parseInt(page) - 1) * parseInt(limit);
-            const data = msgs.slice(skip, skip + parseInt(limit));
-            res.json({ success: true, data: { messages: data, total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) } });
+            const [messages, total] = await Promise.all([
+                WaReminder.find(filter).sort({ scheduledFor: -1 }).skip(skip).limit(parseInt(limit)).lean(),
+                WaReminder.countDocuments(filter),
+            ]);
+            res.json({ success: true, data: { messages, total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) } });
         } catch (error) { next(error); }
     }
 
@@ -25,53 +30,55 @@ class WhatsAppController {
     async createScheduled(req: Request, res: Response, next: NextFunction) {
         try {
             const tenantId = req.tenantId!;
-            const { to, message, scheduledAt, templateId, variables, recipientType } = req.body;
-            if (!to || !message) {
-                res.status(400).json({ success: false, message: 'to and message are required' });
+            const user = req.user!;
+            const { memberId, memberName, phone, type, message, scheduledFor, notes } = req.body;
+            if (!memberName || !phone || !message) {
+                res.status(400).json({ success: false, message: 'memberName, phone, and message are required' });
                 return;
             }
-            const msg = {
-                _id: new mongoose.Types.ObjectId().toString(),
+            const reminder = await WaReminder.create({
                 tenantId,
-                to,
+                memberId: memberId || undefined,
+                memberName,
+                phone,
+                type: type || 'custom_message',
                 message,
-                scheduledAt: scheduledAt ? new Date(scheduledAt) : new Date(),
-                templateId,
-                variables,
-                recipientType: recipientType || 'individual',
-                status: 'scheduled',
-                createdBy: req.user?._id,
-                createdAt: new Date(),
-            };
-            scheduledMessages.push(msg);
-            res.status(201).json({ success: true, data: msg });
+                scheduledFor: scheduledFor ? new Date(scheduledFor) : new Date(),
+                notes,
+                status: 'pending',
+                createdBy: user._id,
+                createdByName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+            });
+            res.status(201).json({ success: true, data: reminder });
         } catch (error) { next(error); }
     }
 
     // GET /api/whatsapp/scheduled/:id
     async getScheduledById(req: Request, res: Response, next: NextFunction) {
         try {
-            const msg = scheduledMessages.find(m => m._id === req.params.id && m.tenantId?.toString() === req.tenantId?.toString());
-            if (!msg) { res.status(404).json({ success: false, message: 'Scheduled message not found' }); return; }
-            res.json({ success: true, data: msg });
+            const reminder = await WaReminder.findOne({ _id: req.params.id, tenantId: req.tenantId }).lean();
+            if (!reminder) { res.status(404).json({ success: false, message: 'Reminder not found' }); return; }
+            res.json({ success: true, data: reminder });
         } catch (error) { next(error); }
     }
 
-    // PUT /api/whatsapp/scheduled/:id
+    // PATCH /api/whatsapp/scheduled/:id
     async updateScheduled(req: Request, res: Response, next: NextFunction) {
         try {
-            const idx = scheduledMessages.findIndex(m => m._id === req.params.id && m.tenantId?.toString() === req.tenantId?.toString());
-            if (idx === -1) { res.status(404).json({ success: false, message: 'Not found' }); return; }
-            Object.assign(scheduledMessages[idx], req.body, { updatedAt: new Date() });
-            res.json({ success: true, data: scheduledMessages[idx] });
+            const reminder = await WaReminder.findOneAndUpdate(
+                { _id: req.params.id, tenantId: req.tenantId },
+                { $set: req.body },
+                { new: true }
+            ).lean();
+            if (!reminder) { res.status(404).json({ success: false, message: 'Reminder not found' }); return; }
+            res.json({ success: true, data: reminder });
         } catch (error) { next(error); }
     }
 
     // DELETE /api/whatsapp/scheduled/:id
     async deleteScheduled(req: Request, res: Response, next: NextFunction) {
         try {
-            const idx = scheduledMessages.findIndex(m => m._id === req.params.id && m.tenantId?.toString() === req.tenantId?.toString());
-            if (idx !== -1) scheduledMessages.splice(idx, 1);
+            await WaReminder.findOneAndDelete({ _id: req.params.id, tenantId: req.tenantId });
             res.json({ success: true, message: 'Deleted' });
         } catch (error) { next(error); }
     }

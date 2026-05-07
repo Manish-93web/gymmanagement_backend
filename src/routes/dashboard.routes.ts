@@ -2,6 +2,9 @@ import { Router } from 'express';
 import dashboardController from '../controllers/dashboard.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/rbac.middleware';
+import { cacheMiddleware } from '../middleware/cache.middleware';
+
+const DASHBOARD_CACHE_TTL = 5 * 60; // 5 minutes
 
 const router = Router();
 
@@ -10,6 +13,7 @@ router.use(authenticate);
 router.get(
     '/overview',
     requireRole('gym_owner', 'branch_manager'),
+    cacheMiddleware(DASHBOARD_CACHE_TTL),
     dashboardController.getOverview.bind(dashboardController)
 );
 

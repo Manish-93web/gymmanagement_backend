@@ -12,6 +12,7 @@ router.get('/campaigns/stats', requireAnyRole('gym_owner', 'super_admin'), marke
 router.get('/campaigns/:campaignId', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), marketingController.getCampaignById.bind(marketingController));
 router.put('/campaigns/:campaignId', requireAnyRole('gym_owner', 'super_admin'), marketingController.updateCampaign.bind(marketingController));
 router.delete('/campaigns/:campaignId', requireAnyRole('gym_owner', 'super_admin'), marketingController.deleteCampaign.bind(marketingController));
+router.post('/campaigns/:campaignId/send', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), marketingController.sendCampaign.bind(marketingController));
 
 router.get('/coupons', marketingController.getCoupons.bind(marketingController));
 router.post('/coupons', requireAnyRole('gym_owner', 'super_admin'), marketingController.createCoupon.bind(marketingController));

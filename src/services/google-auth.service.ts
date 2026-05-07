@@ -1,5 +1,5 @@
 import { OAuth2Client } from 'google-auth-library';
-import User from '../models/User.model';
+import User, { IUser } from '../models/User.model';
 import { generateTokens } from '../utils/jwt.utils';
 import { config } from '../config/config';
 
@@ -72,18 +72,18 @@ class GoogleAuthService {
             const userInfo = await this.verifyToken(tokens.id_token);
 
             // Find or create user
-            let user = await User.findOne({ email: userInfo.email });
+            let user: any = await User.findOne({ email: userInfo.email });
 
             if (!user) {
                 // Create new user
-                user = await User.create({
+                user = await (User as any).create({
                     email: userInfo.email,
                     firstName: userInfo.firstName,
                     lastName: userInfo.lastName,
                     googleId: userInfo.googleId,
                     profilePicture: userInfo.picture,
                     isEmailVerified: userInfo.emailVerified,
-                    role: 'member', // Default role
+                    role: 'member',
                     isActive: true,
                     authProvider: 'google',
                 });

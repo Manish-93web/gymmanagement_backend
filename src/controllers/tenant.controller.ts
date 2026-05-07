@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+﻿import { Request, Response } from 'express';
 import tenantService from '../services/tenant.service';
 import { z } from 'zod';
 
@@ -77,7 +77,7 @@ export class TenantController {
     // Get tenant by ID
     async getTenant(req: Request, res: Response): Promise<void> {
         try {
-            const { tenantId } = req.params;
+            const { tenantId } = req.params as Record<string, string>;
 
             const tenant = await tenantService.getTenantById(tenantId);
 
@@ -137,7 +137,7 @@ export class TenantController {
     // Update tenant
     async updateTenant(req: Request, res: Response): Promise<void> {
         try {
-            const { tenantId } = req.params;
+            const { tenantId } = req.params as Record<string, string>;
             const validatedData = updateTenantSchema.parse(req.body);
 
             const tenant = await tenantService.updateTenant(tenantId, validatedData);
@@ -194,7 +194,7 @@ export class TenantController {
     // Toggle feature
     async toggleFeature(req: Request, res: Response): Promise<void> {
         try {
-            const { tenantId } = req.params;
+            const { tenantId } = req.params as Record<string, string>;
             const { feature, enabled } = req.body;
 
             if (!feature || typeof enabled !== 'boolean') {
@@ -231,7 +231,7 @@ export class TenantController {
     // Deactivate tenant (Super Admin only)
     async deactivateTenant(req: Request, res: Response): Promise<void> {
         try {
-            const { tenantId } = req.params;
+            const { tenantId } = req.params as Record<string, string>;
 
             const tenant = await tenantService.deactivateTenant(tenantId);
 
@@ -258,3 +258,4 @@ export class TenantController {
 }
 
 export default new TenantController();
+

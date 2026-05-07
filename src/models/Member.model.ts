@@ -275,5 +275,6 @@ const MemberSchema: Schema = new Schema(
 // Indexes
 MemberSchema.index({ tenantId: 1, status: 1 });
 MemberSchema.index({ tenantId: 1, branchId: 1, status: 1 });
+MemberSchema.index({ tenantId: 1, createdAt: -1 });
 
 export default mongoose.model<IMember>('Member', MemberSchema);
