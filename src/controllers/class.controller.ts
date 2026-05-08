@@ -212,6 +212,22 @@ export class ClassController {
             next(error);
         }
     }
+    async deleteClass(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { classId } = req.params as Record<string, string>;
+            const tenantId = req.user!.tenantId!.toString();
+            const ClassModel = (await import('../models/Class.model')).default;
+            const classDoc = await ClassModel.findOneAndUpdate(
+                { _id: classId, tenantId },
+                { isActive: false },
+                { new: true }
+            );
+            if (!classDoc) return res.status(404).json({ success: false, message: 'Class not found' });
+            res.status(200).json({ success: true, message: 'Class deleted successfully' });
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 export default new ClassController();

@@ -145,10 +145,25 @@ export class TrainerController {
         try {
             const { trainerId } = req.params as Record<string, string>;
             const tenantId = req.user!.tenantId!.toString();
-
             const stats = await TrainerService.getTrainerStats(trainerId, tenantId);
-
             res.status(200).json({ success: true, data: stats });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async deleteTrainer(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { trainerId } = req.params as Record<string, string>;
+            const tenantId = req.user!.tenantId!.toString();
+            const Trainer = (await import('../models/Trainer.model')).default;
+            const trainer = await Trainer.findOneAndUpdate(
+                { _id: trainerId, tenantId },
+                { isActive: false },
+                { new: true }
+            );
+            if (!trainer) return res.status(404).json({ success: false, message: 'Trainer not found' });
+            res.status(200).json({ success: true, message: 'Trainer deactivated successfully' });
         } catch (error) {
             next(error);
         }

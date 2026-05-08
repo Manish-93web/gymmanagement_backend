@@ -147,6 +147,50 @@ export class NotificationController {
             next(error);
         }
     }
+
+    async markAsRead(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { notificationId } = req.params as Record<string, string>;
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const Notification = (await import('../models/Notification.model')).default;
+            const notification = await Notification.findOneAndUpdate(
+                { _id: notificationId, tenantId },
+                { $set: { 'delivery.openedAt': new Date() } },
+                { new: true }
+            );
+            if (!notification) return res.status(404).json({ success: false, message: 'Notification not found' });
+            return res.status(200).json({ success: true, data: notification });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async markAllRead(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const { recipientId } = req.body;
+            const Notification = (await import('../models/Notification.model')).default;
+            const filter: any = { tenantId, 'delivery.openedAt': { $exists: false } };
+            if (recipientId) filter.recipientId = recipientId;
+            await Notification.updateMany(filter, { $set: { 'delivery.openedAt': new Date() } });
+            return res.status(200).json({ success: true, message: 'All notifications marked as read' });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async deleteNotification(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { notificationId } = req.params as Record<string, string>;
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const Notification = (await import('../models/Notification.model')).default;
+            const notification = await Notification.findOneAndDelete({ _id: notificationId, tenantId });
+            if (!notification) return res.status(404).json({ success: false, message: 'Notification not found' });
+            return res.status(200).json({ success: true, message: 'Notification deleted' });
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 export default new NotificationController();

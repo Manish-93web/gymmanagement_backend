@@ -256,6 +256,88 @@ export class AIAndCRMController {
         }
     }
 
+    async updateLead(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { leadId } = req.params as Record<string, string>;
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const Lead = (await import('../models/Lead.model')).default;
+            const lead = await Lead.findOneAndUpdate(
+                { _id: leadId, tenantId },
+                { $set: req.body },
+                { new: true }
+            );
+            if (!lead) return res.status(404).json({ success: false, message: 'Lead not found' });
+            return res.status(200).json({ success: true, data: lead });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async deleteLead(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { leadId } = req.params as Record<string, string>;
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const Lead = (await import('../models/Lead.model')).default;
+            const lead = await Lead.findOneAndDelete({ _id: leadId, tenantId });
+            if (!lead) return res.status(404).json({ success: false, message: 'Lead not found' });
+            return res.status(200).json({ success: true, message: 'Lead deleted' });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async addCallLog(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { leadId } = req.params as Record<string, string>;
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const staffId = req.user?._id?.toString();
+            const { duration, outcome, notes, nextFollowUp } = req.body;
+            const Lead = (await import('../models/Lead.model')).default;
+            const CallLog = (await import('../models/CallLog.model')).default;
+            const lead = await Lead.findOne({ _id: leadId, tenantId });
+            if (!lead) return res.status(404).json({ success: false, message: 'Lead not found' });
+            const branchId = req.user?.branchId?.toString() || '';
+            const log = await CallLog.create({
+                tenantId,
+                branchId,
+                memberId: (lead as any).memberId || lead._id,
+                userId: staffId || req.user?._id,
+                direction: 'outbound',
+                startTime: new Date(),
+                duration: duration || 0,
+                status: outcome === 'no_answer' ? 'no-answer' : (outcome || 'completed'),
+                notes,
+                nextFollowUp: nextFollowUp ? new Date(nextFollowUp) : undefined,
+                followUpRequired: !!nextFollowUp,
+            } as any);
+            if (nextFollowUp) {
+                await Lead.findByIdAndUpdate(leadId, { nextFollowUp: new Date(nextFollowUp) });
+            }
+            return res.status(201).json({ success: true, data: log });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async getCallLogs(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { leadId } = req.params as Record<string, string>;
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const Lead = (await import('../models/Lead.model')).default;
+            const CallLog = (await import('../models/CallLog.model')).default;
+            const lead = await Lead.findOne({ _id: leadId, tenantId });
+            const filter: any = { tenantId };
+            if ((lead as any)?.memberId) filter.memberId = (lead as any).memberId;
+            const logs = await CallLog.find(filter)
+                .sort({ startTime: -1 })
+                .limit(50)
+                .lean();
+            return res.status(200).json({ success: true, data: logs });
+        } catch (error) {
+            next(error);
+        }
+    }
+
     async createPublicLead(req: Request, res: Response, next: NextFunction) {
         try {
             const { tenantSlug, firstName, lastName, email, mobile, source = 'website', interestedIn, notes } = req.body;

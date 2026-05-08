@@ -73,6 +73,19 @@ const DEMO_CLASSES = [
     { name: 'Spinning Cycle', instructor: 'Vijay Trainer', capacity: 12, duration: 45, type: 'cardio', daysOfWeek: [2, 4, 6], startTime: '07:00', price: 250 },
 ];
 
+const DEMO_TRAINERS = [
+    { firstName: 'Priya', lastName: 'Sharma', mobile: '9111000001', email: 'priya.trainer@demo.com', specializations: ['yoga', 'pilates'], experience: 5, rating: 4.8 },
+    { firstName: 'Rahul', lastName: 'Singh', mobile: '9111000002', email: 'rahul.trainer@demo.com', specializations: ['hiit', 'strength'], experience: 7, rating: 4.9 },
+    { firstName: 'Sneha', lastName: 'Patel', mobile: '9111000003', email: 'sneha.trainer@demo.com', specializations: ['dance', 'zumba'], experience: 4, rating: 4.7 },
+];
+
+const DEMO_WORKOUTS = [
+    { name: 'Full Body Blast', category: 'strength', difficulty: 'intermediate', durationMinutes: 45, exercises: ['Squats', 'Push-ups', 'Deadlifts', 'Pull-ups'] },
+    { name: 'Morning Cardio', category: 'cardio', difficulty: 'beginner', durationMinutes: 30, exercises: ['Treadmill Run', 'Jumping Jacks', 'High Knees', 'Burpees'] },
+    { name: 'Core Crusher', category: 'core', difficulty: 'intermediate', durationMinutes: 25, exercises: ['Plank', 'Crunches', 'Russian Twists', 'Leg Raises'] },
+    { name: 'Upper Body Power', category: 'strength', difficulty: 'advanced', durationMinutes: 60, exercises: ['Bench Press', 'Shoulder Press', 'Bicep Curls', 'Tricep Dips'] },
+];
+
 export class DemoController {
     async seedDemo(req: Request, res: Response) {
         try {
@@ -259,15 +272,48 @@ export class DemoController {
                 }
             }
 
+            // 10. Seed trainers
+            for (const trainer of DEMO_TRAINERS) {
+                await (Trainer as any).findOneAndUpdate(
+                    { tenantId, mobile: trainer.mobile },
+                    { ...trainer, tenantId, ...(branchId ? { branchId } : {}), isActive: true, status: 'active' },
+                    { upsert: true, new: true }
+                );
+            }
+
+            // 11. Seed workouts
+            for (const workout of DEMO_WORKOUTS) {
+                await (Workout as any).findOneAndUpdate(
+                    { tenantId, name: workout.name },
+                    {
+                        ...workout,
+                        tenantId,
+                        exercises: workout.exercises.map((name, idx) => ({
+                            name,
+                            sets: 3,
+                            reps: 12,
+                            restSeconds: 60,
+                            order: idx + 1,
+                        })),
+                        isActive: true,
+                    },
+                    { upsert: true, new: true }
+                );
+            }
+
             return res.json({
                 success: true,
                 message: 'Demo data seeded successfully',
+                isDemo: true,
+                seeded: true,
                 data: {
                     plans: DEMO_PLANS.length,
                     members: DEMO_MEMBERS.length,
                     leads: DEMO_LEADS.length,
                     classes: DEMO_CLASSES.length,
                     posProducts: DEMO_POS_PRODUCTS.length,
+                    trainers: DEMO_TRAINERS.length,
+                    workouts: DEMO_WORKOUTS.length,
                     attendance: '~450 records',
                     payments: 30,
                 },
@@ -275,6 +321,34 @@ export class DemoController {
         } catch (error: any) {
             console.error('Demo seed error:', error);
             return res.status(500).json({ success: false, message: 'Error seeding demo data', error: error.message });
+        }
+    }
+
+    async getStatus(req: Request, res: Response) {
+        try {
+            const tenantId = req.user!.tenantId;
+            if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant required' });
+
+            const [memberCount, leadCount, planCount] = await Promise.all([
+                Member.countDocuments({ tenantId }),
+                Lead.countDocuments({ tenantId }),
+                MembershipPlan.countDocuments({ tenantId }),
+            ]);
+
+            const seeded = memberCount >= 5;
+            return res.json({
+                success: true,
+                isDemo: true,
+                seeded,
+                data: {
+                    hasData: memberCount > 0 || leadCount > 0,
+                    memberCount,
+                    leadCount,
+                    planCount,
+                },
+            });
+        } catch (error: any) {
+            return res.status(500).json({ success: false, message: 'Error getting demo status', error: error.message });
         }
     }
 

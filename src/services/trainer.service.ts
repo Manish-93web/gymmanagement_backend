@@ -108,10 +108,10 @@ export class TrainerService {
     // Add rating/review
     async addRating(
         trainerId: string,
-        tenantId: string,
         memberId: string,
         rating: number,
-        review?: string
+        review: string | undefined,
+        tenantId: string
     ): Promise<ITrainer | null> {
         const trainer = await Trainer.findOne({ _id: trainerId, tenantId });
         if (!trainer) {
@@ -200,18 +200,32 @@ export class TrainerService {
 
     // Get trainer stats
     async getTrainerStats(trainerId: string, tenantId: string): Promise<any> {
-        const trainer = await Trainer.findOne({ _id: trainerId, tenantId });
+        // Try by _id first, then by userId (for when caller passes user._id)
+        let trainer = await Trainer.findOne({ _id: trainerId, tenantId }).catch(() => null);
+        if (!trainer) {
+            trainer = await Trainer.findOne({ userId: trainerId, tenantId });
+        }
         if (!trainer) {
             throw new Error('Trainer not found');
         }
 
-        // Mock stats for now - would aggregate from Bookings/Classes
+        const Class = (await import('../models/Class.model')).default;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        const [totalClasses, sessionsToday] = await Promise.all([
+            Class.countDocuments({ trainerId: trainer._id, tenantId }),
+            Class.countDocuments({ trainerId: trainer._id, tenantId, 'schedule.startDate': { $gte: today, $lt: tomorrow } }),
+        ]);
+
         return {
-            totalSessions: 120,
-            activeClients: 15,
-            averageRating: trainer.ratings.average,
-            totalReviews: trainer.ratings.totalReviews,
-            revenue: 50000,
+            rating: trainer.ratings.average,
+            reviewCount: trainer.ratings.totalReviews,
+            totalMembers: 0,
+            totalClasses,
+            sessionsToday,
         };
     }
 }

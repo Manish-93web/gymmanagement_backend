@@ -15,5 +15,6 @@ router.post('/:trainerId/certifications', requireAnyRole('gym_owner', 'branch_ma
 router.put('/:trainerId/availability', requireAnyRole('trainer', 'branch_manager', 'super_admin'), trainerController.updateAvailability.bind(trainerController));
 router.post('/:trainerId/ratings', requireAnyRole('member', 'super_admin'), trainerController.addRating.bind(trainerController));
 router.get('/:trainerId/stats', requireAnyRole('gym_owner', 'branch_manager', 'trainer', 'super_admin'), trainerController.getTrainerStats.bind(trainerController));
+router.delete('/:trainerId', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), trainerController.deleteTrainer.bind(trainerController));
 
 export default router;

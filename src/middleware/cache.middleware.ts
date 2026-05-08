@@ -16,6 +16,7 @@ export const cacheMiddleware = (ttlSeconds: number) => {
             const cached = await redisUtils.getJSON<any>(cacheKey);
             if (cached) {
                 res.set('X-Cache', 'HIT');
+                res.set('Cache-Control', `private, max-age=${ttlSeconds}`);
                 res.status(200).json(cached);
                 return;
             }
@@ -27,6 +28,9 @@ export const cacheMiddleware = (ttlSeconds: number) => {
         res.json = function (body: any) {
             if (res.statusCode >= 200 && res.statusCode < 300) {
                 redisUtils.setJSON(cacheKey, body, ttlSeconds).catch(() => {});
+                res.set('Cache-Control', `private, max-age=${ttlSeconds}`);
+            } else {
+                res.set('Cache-Control', 'no-store');
             }
             res.set('X-Cache', 'MISS');
             return originalJson(body);

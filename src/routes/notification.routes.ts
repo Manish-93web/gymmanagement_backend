@@ -43,4 +43,20 @@ router.post(
     notificationController.retryFailedNotification.bind(notificationController)
 );
 
+router.patch(
+    '/:notificationId/read',
+    notificationController.markAsRead.bind(notificationController)
+);
+
+router.post(
+    '/mark-all-read',
+    notificationController.markAllRead.bind(notificationController)
+);
+
+router.delete(
+    '/:notificationId',
+    requireRole('gym_owner', 'branch_manager'),
+    notificationController.deleteNotification.bind(notificationController)
+);
+
 export default router;

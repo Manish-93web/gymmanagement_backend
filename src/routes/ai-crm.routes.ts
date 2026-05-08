@@ -26,5 +26,9 @@ router.post('/crm/leads/:leadId/follow-up', requireAnyRole('gym_owner', 'branch_
 router.get('/crm/stats', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), aiCrmController.getLeadStats.bind(aiCrmController));
 router.get('/crm/funnel', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), aiCrmController.getSalesFunnel.bind(aiCrmController));
 router.post('/crm/leads/:leadId/convert', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), aiCrmController.convertLead.bind(aiCrmController));
+router.patch('/crm/leads/:leadId', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), aiCrmController.updateLead.bind(aiCrmController));
+router.delete('/crm/leads/:leadId', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), aiCrmController.deleteLead.bind(aiCrmController));
+router.post('/crm/leads/:leadId/call-logs', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), aiCrmController.addCallLog.bind(aiCrmController));
+router.get('/crm/leads/:leadId/call-logs', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), aiCrmController.getCallLogs.bind(aiCrmController));
 
 export default router;

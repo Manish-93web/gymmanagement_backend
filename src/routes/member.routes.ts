@@ -49,4 +49,18 @@ router.get('/:memberId/timeline', requirePermission('member:read'), memberContro
 // Change subscription plan
 router.patch('/:memberId/plan', requirePermission('member:update'), memberController.changeMemberPlan.bind(memberController));
 
+// Health info
+router.patch('/:memberId/health', requirePermission('member:update'), memberController.updateHealthInfo.bind(memberController));
+
+// Documents
+router.post('/:memberId/documents', requirePermission('member:update'), memberController.uploadDocument.bind(memberController));
+router.delete('/:memberId/documents/:docId', requirePermission('member:update'), memberController.deleteDocument.bind(memberController));
+
+// Workout logs
+router.post('/:memberId/workout-logs', requirePermission('member:update'), memberController.addWorkoutLog.bind(memberController));
+router.get('/:memberId/workout-logs', requirePermission('member:read'), memberController.getWorkoutLogs.bind(memberController));
+
+// Delete member (soft delete → archived)
+router.delete('/:memberId', requirePermission('member:delete'), invalidateCache, memberController.deleteMember.bind(memberController));
+
 export default router;

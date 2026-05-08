@@ -12,6 +12,7 @@ router.post('/', requireAnyRole('gym_owner', 'branch_manager', 'trainer', 'super
 router.get('/', authenticate, classController.getClasses.bind(classController));
 router.get('/:classId', authenticate, classController.getClassById.bind(classController));
 router.put('/:classId', requireAnyRole('gym_owner', 'branch_manager', 'trainer', 'super_admin'), classController.updateClass.bind(classController));
+router.delete('/:classId', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), classController.deleteClass.bind(classController));
 
 // Occurrence route (before :classId to avoid conflict)
 router.get('/my-bookings', authenticate, classController.getMyBookings.bind(classController));

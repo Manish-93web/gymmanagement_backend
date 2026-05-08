@@ -73,4 +73,47 @@ router.get('/:id', async (req: Request, res: Response) => {
     }
 });
 
+// POST /api/branches — create branch
+router.post('/', requireAnyRole('gym_owner', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+        const tenantId = (req as any).tenantId;
+        const branch = await Branch.create({ ...req.body, tenantId });
+        res.status(201).json({ success: true, data: branch });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// PUT /api/branches/:id — update branch
+router.put('/:id', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+        const tenantId = (req as any).tenantId;
+        const branch = await Branch.findOneAndUpdate(
+            { _id: req.params.id, tenantId },
+            req.body,
+            { new: true, runValidators: true }
+        ).lean();
+        if (!branch) return res.status(404).json({ success: false, message: 'Branch not found' });
+        res.json({ success: true, data: branch });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// DELETE /api/branches/:id — soft-delete (set isActive = false)
+router.delete('/:id', requireAnyRole('gym_owner', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+        const tenantId = (req as any).tenantId;
+        const branch = await Branch.findOneAndUpdate(
+            { _id: req.params.id, tenantId },
+            { isActive: false },
+            { new: true }
+        ).lean();
+        if (!branch) return res.status(404).json({ success: false, message: 'Branch not found' });
+        res.json({ success: true, message: 'Branch deactivated' });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 export default router;

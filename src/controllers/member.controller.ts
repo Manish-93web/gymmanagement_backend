@@ -656,6 +656,98 @@ export class MemberController {
         }
     }
 
+    async updateHealthInfo(req: Request, res: Response): Promise<void> {
+        try {
+            const { memberId } = req.params as Record<string, string>;
+            const tenantId = req.tenantId;
+            const member = await Member.findOneAndUpdate(
+                { _id: memberId, ...(tenantId ? { tenantId } : {}) },
+                { $set: { healthInfo: req.body } },
+                { new: true }
+            );
+            if (!member) { res.status(404).json({ status: 'error', message: 'Member not found' }); return; }
+            res.status(200).json({ status: 'success', data: member.healthInfo });
+        } catch (error: any) {
+            res.status(400).json({ status: 'error', message: error.message || 'Failed to update health info' });
+        }
+    }
+
+    async uploadDocument(req: Request, res: Response): Promise<void> {
+        try {
+            const { memberId } = req.params as Record<string, string>;
+            const { type, name, url } = req.body;
+            if (!url || !name) { res.status(400).json({ status: 'error', message: 'name and url are required' }); return; }
+            const member = await Member.findOneAndUpdate(
+                { _id: memberId, ...(req.tenantId ? { tenantId: req.tenantId } : {}) },
+                { $push: { documents: { type: type || 'other', name, url, uploadedAt: new Date() } } },
+                { new: true }
+            );
+            if (!member) { res.status(404).json({ status: 'error', message: 'Member not found' }); return; }
+            res.status(201).json({ status: 'success', data: member.documents });
+        } catch (error: any) {
+            res.status(400).json({ status: 'error', message: error.message || 'Failed to upload document' });
+        }
+    }
+
+    async deleteDocument(req: Request, res: Response): Promise<void> {
+        try {
+            const { memberId, docId } = req.params as Record<string, string>;
+            const member = await Member.findOneAndUpdate(
+                { _id: memberId, ...(req.tenantId ? { tenantId: req.tenantId } : {}) },
+                { $pull: { documents: { _id: docId } } },
+                { new: true }
+            );
+            if (!member) { res.status(404).json({ status: 'error', message: 'Member not found' }); return; }
+            res.status(200).json({ status: 'success', data: member.documents });
+        } catch (error: any) {
+            res.status(400).json({ status: 'error', message: error.message || 'Failed to delete document' });
+        }
+    }
+
+    async addWorkoutLog(req: Request, res: Response): Promise<void> {
+        try {
+            const { memberId } = req.params as Record<string, string>;
+            const tenantId = req.tenantId || '';
+            const branchId = req.branchId || '';
+            const WorkoutLog = (await import('../models/WorkoutLog.model')).default;
+            const log = await WorkoutLog.create({ ...req.body, memberId, tenantId, branchId });
+            res.status(201).json({ status: 'success', data: log });
+        } catch (error: any) {
+            res.status(400).json({ status: 'error', message: error.message || 'Failed to add workout log' });
+        }
+    }
+
+    async getWorkoutLogs(req: Request, res: Response): Promise<void> {
+        try {
+            const { memberId } = req.params as Record<string, string>;
+            const tenantId = req.tenantId;
+            const WorkoutLog = (await import('../models/WorkoutLog.model')).default;
+            const logs = await WorkoutLog.find({ memberId, ...(tenantId ? { tenantId } : {}) })
+                .sort({ date: -1 })
+                .limit(50)
+                .lean();
+            res.status(200).json({ status: 'success', data: logs });
+        } catch (error: any) {
+            res.status(400).json({ status: 'error', message: error.message || 'Failed to get workout logs' });
+        }
+    }
+
+    async deleteMember(req: Request, res: Response): Promise<void> {
+        try {
+            const { memberId } = req.params as Record<string, string>;
+            if (!req.tenantId) { res.status(400).json({ status: 'error', message: 'Tenant context required' }); return; }
+            const member = await Member.findOneAndUpdate(
+                { _id: memberId, tenantId: req.tenantId },
+                { status: 'archived' },
+                { new: true }
+            );
+            if (!member) { res.status(404).json({ status: 'error', message: 'Member not found' }); return; }
+            res.status(200).json({ status: 'success', message: 'Member archived successfully' });
+        } catch (error: any) {
+            res.status(400).json({ status: 'error', message: error.message || 'Failed to delete member' });
+        }
+    }
+
     // Public signup
     async publicSignup(req: Request, res: Response): Promise<void> {
         try {

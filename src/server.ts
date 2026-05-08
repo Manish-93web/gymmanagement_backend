@@ -17,6 +17,7 @@ import WebSocketService from './services/websocket.service';
 import BullMQAutomationService from './services/bullmq-automation.service';
 
 // Routes
+import { tenantRateLimiter } from './middleware/rateLimit.middleware';
 import authRoutes from './routes/auth.routes';
 import tenantRoutes from './routes/tenant.routes';
 import memberRoutes from './routes/member.routes';
@@ -60,6 +61,7 @@ import whatsappQuickRoutes from './routes/whatsapp-quick.routes';
 import branchesRoutes from './routes/branches.routes';
 import saasAlertsRoutes from './routes/saas-alerts.routes';
 import uploadRoutes from './routes/upload.routes';
+import crmWebhookRoutes from './routes/crm-webhook.routes';
 
 const app: Application = express();
 const httpServer = http.createServer(app);
@@ -88,13 +90,18 @@ app.use(
     })
 );
 
-// Rate limiting
+// Rate limiting — IP-based global limiter
 const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100,
+    max: 300,
     message: 'Too many requests from this IP, please try again later.',
+    standardHeaders: true,
+    legacyHeaders: false,
 });
 app.use('/api/', apiLimiter);
+
+// Per-tenant rate limiter — 500 req/min per gym (prevents one tenant from starving others)
+app.use('/api/', tenantRateLimiter(500, 60));
 
 // Request timeout middleware (30 seconds)
 app.use((_req: Request, res: Response, next: NextFunction) => {
@@ -223,6 +230,7 @@ app.use('/api/whatsapp-quick', whatsappQuickRoutes);
 app.use('/api/branches', branchesRoutes);
 app.use('/api/saas-alerts', saasAlertsRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/crm-webhook', crmWebhookRoutes);
 app.use('/api', aiCrmRoutes); // handles /api/ai/* and /api/crm/* via ai-crm router
 
 // 404 handler
@@ -263,6 +271,14 @@ const startServer = async () => {
         } catch (err) {
             console.warn('⚠️ BullMQ init failed (Redis may not be running):', err);
         }
+
+        // Start cron-based workers (all singletons — imported for side-effects)
+        await import('./workers/attendance.worker');
+        await import('./workers/billing.worker');
+        await import('./workers/biometric-autocheckout.worker');
+        await import('./workers/biometric-healthcheck.worker');
+        await import('./workers/biometric-sync.worker');
+        console.log('✅ Cron workers initialized');
 
         httpServer.listen(PORT, () => {
             console.log(`🚀 Server running on port ${PORT} in ${config.env} mode`);

@@ -8,6 +8,7 @@ const router = Router();
 router.use(authenticate);
 router.use(requireAnyRole('gym_owner', 'super_admin'));
 
+router.get('/status', demoController.getStatus.bind(demoController));
 router.post('/seed', demoController.seedDemo.bind(demoController));
 router.post('/refresh', demoController.refreshDemo.bind(demoController));
 

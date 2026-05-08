@@ -21,5 +21,6 @@ router.post('/records/:attendanceId/correct', requireAnyRole('gym_owner', 'branc
 router.post('/hardware-entry', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), attendanceController.hardwareEntry.bind(attendanceController));
 router.get('/records', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'accountant', 'auditor', 'super_admin'), attendanceController.getAttendanceRecords.bind(attendanceController));
 router.get('/unmatched', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), attendanceController.getUnmatchedAttendance.bind(attendanceController));
+router.get('/today', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), attendanceController.getTodayAttendance.bind(attendanceController));
 
 export default router;

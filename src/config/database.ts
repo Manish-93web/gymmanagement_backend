@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { config } from './config';
+import { createIndexes } from './createIndexes';
 
 export const connectDB = async (): Promise<void> => {
     try {
@@ -16,6 +17,7 @@ export const connectDB = async (): Promise<void> => {
         });
 
         console.log(`✅ MongoDB Connected: ${mongoose.connection.host}`);
+        await createIndexes();
 
         mongoose.connection.on('error', (err) => {
             console.error('❌ MongoDB connection error:', err);

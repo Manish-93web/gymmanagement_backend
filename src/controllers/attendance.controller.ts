@@ -234,6 +234,31 @@ export class AttendanceController {
             return res.status(200).json({ success: true, data: { records, total, page: Number(page) } });
         } catch (error) { return next(error); }
     }
+
+    async getTodayAttendance(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.user!.tenantId!.toString();
+            const { branchId } = req.query;
+            const startOfDay = new Date();
+            startOfDay.setHours(0, 0, 0, 0);
+            const endOfDay = new Date();
+            endOfDay.setHours(23, 59, 59, 999);
+            const query: any = { tenantId, checkInTime: { $gte: startOfDay, $lte: endOfDay } };
+            if (branchId) query.branchId = branchId;
+            const [records, total, checkedOut] = await Promise.all([
+                Attendance.find(query)
+                    .populate('memberId', 'firstName lastName membershipNumber profilePhoto')
+                    .sort({ checkInTime: -1 })
+                    .limit(100),
+                Attendance.countDocuments(query),
+                Attendance.countDocuments({ ...query, checkOutTime: { $ne: null } }),
+            ]);
+            return res.status(200).json({
+                success: true,
+                data: { records, total, checkedIn: total - checkedOut, checkedOut },
+            });
+        } catch (error) { return next(error); }
+    }
 }
 
 export default new AttendanceController();
