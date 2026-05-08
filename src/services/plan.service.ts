@@ -1,5 +1,6 @@
 import MembershipPlan, { IMembershipPlan } from '../models/MembershipPlan.model';
 import Subscription, { ISubscription } from '../models/Subscription.model';
+import Member from '../models/Member.model';
 import { addDays, addMonths } from '../utils/helpers.utils';
 import mongoose from 'mongoose';
 
@@ -64,7 +65,7 @@ export class PlanService {
         planType?: string,
         page: number = 1,
         limit: number = 20
-    ): Promise<{ plans: IMembershipPlan[]; total: number }> {
+    ): Promise<{ plans: any[]; total: number }> {
         const skip = (page - 1) * limit;
 
         const filter: any = { tenantId, isActive: true };
@@ -72,11 +73,29 @@ export class PlanService {
         if (planType) filter.planType = planType;
 
         const [plans, total] = await Promise.all([
-            MembershipPlan.find(filter).skip(skip).limit(limit).sort({ createdAt: -1 }),
+            MembershipPlan.find(filter).skip(skip).limit(limit).sort({ createdAt: -1 }).lean(),
             MembershipPlan.countDocuments(filter),
         ]);
 
-        return { plans, total };
+        // Aggregate live currentMembers count per plan
+        // NOTE: aggregate $match does NOT auto-cast strings to ObjectId — must cast explicitly
+        const planIds = plans.map((p: any) => p._id);
+        const tenantOid = new mongoose.Types.ObjectId(tenantId);
+        const memberCounts = await Member.aggregate([
+            { $match: { tenantId: tenantOid, planId: { $in: planIds }, status: 'active' } },
+            { $group: { _id: '$planId', count: { $sum: 1 } } },
+        ]);
+        const countMap: Record<string, number> = {};
+        for (const row of memberCounts) {
+            countMap[row._id.toString()] = row.count;
+        }
+
+        const plansWithCount = plans.map((p: any) => ({
+            ...p,
+            currentMembers: countMap[p._id.toString()] ?? 0,
+        }));
+
+        return { plans: plansWithCount, total };
     }
 
     // Update plan

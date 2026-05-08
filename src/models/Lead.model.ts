@@ -108,5 +108,10 @@ LeadSchema.index({ tenantId: 1, branchId: 1, status: 1 });
 LeadSchema.index({ assignedTo: 1, status: 1 });
 LeadSchema.index({ email: 1 });
 LeadSchema.index({ mobile: 1 });
+// Additional indexes for 1000+ gym scale (CRM at scale)
+LeadSchema.index({ tenantId: 1, assignedTo: 1, status: 1 });
+LeadSchema.index({ tenantId: 1, status: 1, createdAt: -1 });
+LeadSchema.index({ tenantId: 1, branchId: 1, assignedTo: 1, status: 1 });
+LeadSchema.index({ tenantId: 1, nextFollowUp: 1, status: 1 });
 
 export default mongoose.model<ILead>('Lead', LeadSchema);

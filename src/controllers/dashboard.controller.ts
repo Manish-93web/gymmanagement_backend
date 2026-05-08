@@ -37,6 +37,22 @@ export class DashboardController {
     async getTrainerDashboard(req: Request, res: Response, next: NextFunction) {
         return this.getDashboardData(req, res, next);
     }
+
+    async getBranchStats(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const branchId = req.user?.branchId?.toString() || '';
+
+            if (!branchId) {
+                return res.status(400).json({ success: false, message: 'Branch ID required' });
+            }
+
+            const data = await dashboardService.getBranchStats(tenantId, branchId);
+            return res.status(200).json({ success: true, data });
+        } catch (error) {
+            return next(error);
+        }
+    }
 }
 
 export default new DashboardController();

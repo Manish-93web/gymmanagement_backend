@@ -316,6 +316,7 @@ export class MemberController {
             const limit = parseInt(req.query.limit as string) || 20;
             const status = req.query.status as MemberStatus | undefined;
             const search = req.query.search as string | undefined;
+            const planId = req.query.planId as string | undefined;
 
             const result = await memberService.getMembers(
                 req.tenantId,
@@ -323,7 +324,8 @@ export class MemberController {
                 status,
                 page,
                 limit,
-                search
+                search,
+                planId
             );
 
             res.status(200).json({

@@ -14,39 +14,40 @@ export class AnalyticsService {
         startDate?: Date,
         endDate?: Date
     ): Promise<any> {
-        const filter: any = { tenantId, status: 'completed' };
-        if (branchId) filter.branchId = branchId;
+        const tObjId = new mongoose.Types.ObjectId(tenantId);
+        const aggFilter: any = { tenantId: tObjId, status: 'completed' };
+        if (branchId) aggFilter.branchId = new mongoose.Types.ObjectId(branchId);
         if (startDate || endDate) {
-            filter.paidAt = {};
-            if (startDate) filter.paidAt.$gte = startDate;
-            if (endDate) filter.paidAt.$lte = endDate;
+            aggFilter.paidAt = {};
+            if (startDate) aggFilter.paidAt.$gte = startDate;
+            if (endDate) aggFilter.paidAt.$lte = endDate;
         }
 
         const totalRevenue = await Payment.aggregate([
-            { $match: filter },
-            { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+            { $match: aggFilter },
+            { $group: { _id: null, total: { $sum: '$amount.total' } } },
         ]);
 
         const revenueByType = await Payment.aggregate([
-            { $match: filter },
+            { $match: aggFilter },
             {
                 $group: {
                     _id: '$paymentType',
-                    total: { $sum: '$totalAmount' },
+                    total: { $sum: '$amount.total' },
                     count: { $sum: 1 },
                 },
             },
         ]);
 
         const revenueByMonth = await Payment.aggregate([
-            { $match: filter },
+            { $match: aggFilter },
             {
                 $group: {
                     _id: {
                         year: { $year: '$paidAt' },
                         month: { $month: '$paidAt' },
                     },
-                    total: { $sum: '$totalAmount' },
+                    total: { $sum: '$amount.total' },
                     count: { $sum: 1 },
                 },
             },
@@ -62,8 +63,13 @@ export class AnalyticsService {
 
     // Member retention analytics
     async getRetentionAnalytics(tenantId: string, branchId?: string): Promise<any> {
+        const tObjId = new mongoose.Types.ObjectId(tenantId);
         const filter: any = { tenantId };
-        if (branchId) filter.branchId = branchId;
+        const aggFilter: any = { tenantId: tObjId };
+        if (branchId) {
+            filter.branchId = branchId;
+            aggFilter.branchId = new mongoose.Types.ObjectId(branchId);
+        }
 
         const totalMembers = await Member.countDocuments(filter);
         const activeMembers = await Member.countDocuments({ ...filter, status: 'active' });
@@ -74,9 +80,8 @@ export class AnalyticsService {
         const retentionRate = totalMembers > 0 ? ((activeMembers / totalMembers) * 100).toFixed(2) : '0';
         const churnRate = totalMembers > 0 ? (((cancelledMembers + expiredMembers) / totalMembers) * 100).toFixed(2) : '0';
 
-        // New members by month
         const newMembersByMonth = await Member.aggregate([
-            { $match: filter },
+            { $match: aggFilter },
             {
                 $group: {
                     _id: {
@@ -109,20 +114,26 @@ export class AnalyticsService {
         startDate?: Date,
         endDate?: Date
     ): Promise<any> {
+        const tObjId = new mongoose.Types.ObjectId(tenantId);
         const filter: any = { tenantId };
-        if (branchId) filter.branchId = branchId;
+        const aggFilter: any = { tenantId: tObjId };
+        if (branchId) {
+            filter.branchId = branchId;
+            aggFilter.branchId = new mongoose.Types.ObjectId(branchId);
+        }
         if (startDate || endDate) {
-            filter.checkInTime = {};
-            if (startDate) filter.checkInTime.$gte = startDate;
-            if (endDate) filter.checkInTime.$lte = endDate;
+            const timeFilter: any = {};
+            if (startDate) timeFilter.$gte = startDate;
+            if (endDate) timeFilter.$lte = endDate;
+            filter.checkInTime = timeFilter;
+            aggFilter.checkInTime = timeFilter;
         }
 
         const totalCheckIns = await Attendance.countDocuments(filter);
         const uniqueMembers = await Attendance.distinct('memberId', filter);
 
-        // Peak hours heatmap
         const peakHours = await Attendance.aggregate([
-            { $match: filter },
+            { $match: aggFilter },
             {
                 $group: {
                     _id: {
@@ -135,9 +146,8 @@ export class AnalyticsService {
             { $sort: { count: -1 } },
         ]);
 
-        // Daily attendance trend
         const dailyTrend = await Attendance.aggregate([
-            { $match: filter },
+            { $match: aggFilter },
             {
                 $group: {
                     _id: {
@@ -151,9 +161,8 @@ export class AnalyticsService {
             { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } },
         ]);
 
-        // Average duration
         const avgDuration = await Attendance.aggregate([
-            { $match: { ...filter, duration: { $exists: true } } },
+            { $match: { ...aggFilter, duration: { $exists: true } } },
             { $group: { _id: null, avg: { $avg: '$duration' } } },
         ]);
 
@@ -163,6 +172,7 @@ export class AnalyticsService {
             peakHours,
             dailyTrend,
             averageDuration: avgDuration[0]?.avg || 0,
+            averagePerDay: dailyTrend.length > 0 ? Math.round(totalCheckIns / dailyTrend.length) : 0,
         };
     }
 
@@ -243,51 +253,118 @@ export class AnalyticsService {
         };
     }
 
-    // Dashboard overview
+    // Dashboard overview — returns full nested structure for GymOwnerDashboard
     async getDashboardOverview(tenantId: string, branchId?: string): Promise<any> {
+        const tObjId = new mongoose.Types.ObjectId(tenantId);
         const filter: any = { tenantId };
-        if (branchId) filter.branchId = branchId;
+        const aggFilter: any = { tenantId: tObjId };
+        if (branchId) {
+            filter.branchId = branchId;
+            aggFilter.branchId = new mongoose.Types.ObjectId(branchId);
+        }
 
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+        const prevMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const twelveMonthsAgo = new Date(today.getFullYear(), today.getMonth() - 11, 1);
+
+        const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
         const [
             totalMembers,
             activeMembers,
+            pausedMembers,
+            expiredMembers,
+            archivedMembers,
             todayAttendance,
-            monthlyRevenue,
             activeSubscriptions,
+            newThisMonth,
+            newPrevMonth,
+            monthlyRevResult,
+            prevMonthRevResult,
+            revenueByMonth,
+            subRevenueResult,
+            topTrainerDocs,
+            classesByCategory,
         ] = await Promise.all([
             Member.countDocuments(filter),
             Member.countDocuments({ ...filter, status: 'active' }),
-            Attendance.countDocuments({
-                ...filter,
-                checkInTime: { $gte: today },
-            }),
+            Member.countDocuments({ ...filter, status: 'paused' }),
+            Member.countDocuments({ ...filter, status: 'expired' }),
+            Member.countDocuments({ ...filter, status: 'archived' }),
+            Attendance.countDocuments({ ...aggFilter, checkInTime: { $gte: today } }),
+            Subscription.countDocuments({ ...filter, status: 'active' }),
+            Member.countDocuments({ ...filter, createdAt: { $gte: monthStart } }),
+            Member.countDocuments({ ...filter, createdAt: { $gte: prevMonthStart, $lt: monthStart } }),
+            Payment.aggregate([{ $match: { ...aggFilter, status: 'completed', paidAt: { $gte: monthStart } } }, { $group: { _id: null, total: { $sum: '$amount.total' } } }]),
+            Payment.aggregate([{ $match: { ...aggFilter, status: 'completed', paidAt: { $gte: prevMonthStart, $lt: monthStart } } }, { $group: { _id: null, total: { $sum: '$amount.total' } } }]),
             Payment.aggregate([
-                {
-                    $match: {
-                        ...filter,
-                        status: 'completed',
-                        paidAt: {
-                            $gte: new Date(today.getFullYear(), today.getMonth(), 1),
-                        },
-                    },
-                },
-                { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+                { $match: { ...aggFilter, status: 'completed', paidAt: { $gte: twelveMonthsAgo } } },
+                { $group: { _id: { year: { $year: '$paidAt' }, month: { $month: '$paidAt' } }, total: { $sum: '$amount.total' } } },
+                { $sort: { '_id.year': 1, '_id.month': 1 } },
             ]),
-            Subscription.countDocuments({
-                ...filter,
-                status: 'active',
-            }),
+            Payment.aggregate([{ $match: { ...aggFilter, status: 'completed', paymentType: 'subscription' } }, { $group: { _id: null, total: { $sum: '$amount.total' } } }]),
+            Trainer.find({ ...filter, isActive: true }).populate('userId', 'firstName lastName').lean(),
+            Class.aggregate([{ $match: aggFilter }, { $group: { _id: '$category', count: { $sum: 1 } } }]),
         ]);
 
+        const thisMonthRev = monthlyRevResult[0]?.total || 0;
+        const prevMonthRev = prevMonthRevResult[0]?.total || 0;
+        const revenueGrowth = prevMonthRev > 0 ? parseFloat((((thisMonthRev - prevMonthRev) / prevMonthRev) * 100).toFixed(1)) : 0;
+        const totalRev = revenueByMonth.reduce((s: number, r: any) => s + r.total, 0);
+        const history = revenueByMonth.map((r: any) => ({
+            date: `${MONTH_NAMES[r._id.month - 1]} ${r._id.year}`,
+            amount: r.total,
+        }));
+
+        const retentionRate = totalMembers > 0 ? parseFloat(((activeMembers / totalMembers) * 100).toFixed(1)) : 0;
+        const churnRate = totalMembers > 0 ? parseFloat((((archivedMembers + expiredMembers) / totalMembers) * 100).toFixed(1)) : 0;
+
+        const topTrainers = topTrainerDocs.slice(0, 6).map((t: any) => {
+            const u = t.userId as any;
+            return {
+                trainerId: t._id,
+                trainerName: u ? `${u.firstName} ${u.lastName}` : 'Unknown',
+                specializations: t.specializations || [],
+                rating: t.ratings?.average ?? 0,
+                classesConducted: t.kpis?.totalSessions ?? 0,
+                avgAttendance: t.kpis?.retentionRate ?? 0,
+                revenueGenerated: t.kpis?.totalRevenue ?? 0,
+                activeClients: t.kpis?.activeClients ?? 0,
+            };
+        });
+
         return {
-            totalMembers,
-            activeMembers,
-            todayAttendance,
-            monthlyRevenue: monthlyRevenue[0]?.total || 0,
-            activeSubscriptions,
+            overview: {
+                totalMembers,
+                activeMembers,
+                pausedMembers,
+                expiredMembers,
+                todayAttendance,
+                activeSubscriptions,
+                newThisMonth,
+            },
+            revenue: {
+                totalRevenue: totalRev,
+                thisMonth: thisMonthRev,
+                growth: revenueGrowth,
+                history,
+                subscriptionRevenue: subRevenueResult[0]?.total || 0,
+                posRevenue: 0,
+            },
+            retention: {
+                totalMembers,
+                activeMembers,
+                retentionRate,
+                churnRate,
+                newSignups: newThisMonth,
+                newPrevMonth,
+            },
+            engagement: {
+                appUsageStats: classesByCategory.map((c: any) => ({ feature: c._id || 'general', count: c.count })),
+                activeThisMonth: activeMembers,
+            },
+            topTrainers,
         };
     }
 }

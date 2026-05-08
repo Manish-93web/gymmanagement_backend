@@ -276,5 +276,10 @@ const MemberSchema: Schema = new Schema(
 MemberSchema.index({ tenantId: 1, status: 1 });
 MemberSchema.index({ tenantId: 1, branchId: 1, status: 1 });
 MemberSchema.index({ tenantId: 1, createdAt: -1 });
+// Additional indexes for 1000+ gym scale
+MemberSchema.index({ tenantId: 1, status: 1, createdAt: -1 });
+MemberSchema.index({ tenantId: 1, branchId: 1, createdAt: -1 });
+MemberSchema.index({ tenantId: 1, membershipPlanId: 1, status: 1 });
+MemberSchema.index({ tenantId: 1, membershipExpiry: 1, status: 1 });
 
 export default mongoose.model<IMember>('Member', MemberSchema);

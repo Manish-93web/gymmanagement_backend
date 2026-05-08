@@ -41,4 +41,11 @@ router.get(
     dashboardController.getDashboardData.bind(dashboardController)
 );
 
+router.get(
+    '/branch-stats',
+    requireRole('branch_manager', 'gym_owner'),
+    cacheMiddleware(60),
+    dashboardController.getBranchStats.bind(dashboardController)
+);
+
 export default router;

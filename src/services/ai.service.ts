@@ -9,24 +9,38 @@ export class AIService {
     private openai: OpenAI | null = null;
     private initialized = false;
 
+    private get activeModel(): string {
+        if (config.ai.provider === 'openrouter') return config.openrouter.model;
+        return config.openai.model;
+    }
+
     private ensureInitialized() {
         if (this.initialized) return;
 
-        const apiKey = config.openai.apiKey;
+        const useOpenRouter = config.ai.provider === 'openrouter';
+        const apiKey = useOpenRouter ? config.openrouter.apiKey : config.openai.apiKey;
 
         if (!apiKey) {
-            console.warn('⚠️ OpenAI API key missing. AI features will not work.');
+            console.warn('⚠️ AI API key missing — AI features disabled. Set OPENROUTER_API_KEY or OPENAI_API_KEY in .env');
             this.initialized = true;
             return;
         }
 
         try {
             this.openai = new OpenAI({
-                apiKey: apiKey,
+                apiKey,
+                ...(useOpenRouter ? {
+                    baseURL: config.openrouter.baseUrl,
+                    defaultHeaders: {
+                        'HTTP-Referer': config.frontendUrl,
+                        'X-Title': 'GymManagement AI',
+                    },
+                } : {}),
             });
             this.initialized = true;
+            console.log(`✅ AI initialized via ${useOpenRouter ? 'OpenRouter' : 'OpenAI'} — model: ${this.activeModel}`);
         } catch (error) {
-            console.error('❌ Failed to initialize OpenAI client:', error);
+            console.error('❌ Failed to initialize AI client:', error);
         }
     }
 
@@ -41,7 +55,7 @@ export class AIService {
     ): Promise<any> {
         this.ensureInitialized();
         if (!this.openai) {
-            throw new Error('AI service not configured properly (missing OpenAI API key)');
+            throw new Error('AI service not configured. Set OPENROUTER_API_KEY in .env');
         }
 
         const member = await Member.findById(memberId);
@@ -92,7 +106,7 @@ Format the response as JSON with the following structure:
 
         try {
             const completion = await this.openai.chat.completions.create({
-                model: 'gpt-4',
+                model: this.activeModel,
                 messages: [
                     {
                         role: 'system',
@@ -126,7 +140,7 @@ Format the response as JSON with the following structure:
     ): Promise<any> {
         this.ensureInitialized();
         if (!this.openai) {
-            throw new Error('AI service not configured properly (missing OpenAI API key)');
+            throw new Error('AI service not configured. Set OPENROUTER_API_KEY in .env');
         }
 
         const member = await Member.findById(memberId);
@@ -179,7 +193,7 @@ Format the response as JSON with the following structure:
 
         try {
             const completion = await this.openai.chat.completions.create({
-                model: 'gpt-4',
+                model: this.activeModel,
                 messages: [
                     {
                         role: 'system',
@@ -206,7 +220,7 @@ Format the response as JSON with the following structure:
     async chatbot(memberId: string, message: string, tenantId: string, conversationHistory: any[] = []): Promise<string> {
         this.ensureInitialized();
         if (!this.openai) {
-            throw new Error('AI service not configured properly (missing OpenAI API key)');
+            throw new Error('AI service not configured. Set OPENROUTER_API_KEY in .env');
         }
 
         const member = await Member.findById(memberId).populate('userId');
@@ -225,7 +239,7 @@ Provide helpful, encouraging, and accurate fitness advice. Keep responses concis
 
         try {
             const completion = await this.openai.chat.completions.create({
-                model: 'gpt-4',
+                model: this.activeModel,
                 messages: [
                     { role: 'system', content: systemPrompt },
                     ...conversationHistory,
@@ -289,7 +303,7 @@ Provide helpful, encouraging, and accurate fitness advice. Keep responses concis
 
         try {
             const completion = await this.openai.chat.completions.create({
-                model: 'gpt-4',
+                model: this.activeModel,
                 messages: [
                     { role: 'system', content: 'You are an expert Retention Manager at a premium gym. You analyze behavioral data to predict churn.' },
                     { role: 'user', content: prompt }
@@ -330,7 +344,7 @@ Provide helpful, encouraging, and accurate fitness advice. Keep responses concis
     async getProgressInsights(memberId: string, tenantId: string): Promise<string> {
         this.ensureInitialized();
         if (!this.openai) {
-            throw new Error('AI service not configured properly (missing OpenAI API key)');
+            throw new Error('AI service not configured. Set OPENROUTER_API_KEY in .env');
         }
 
         const member = await Member.findById(memberId).populate('userId');
@@ -370,7 +384,7 @@ Keep it concise and motivating.`;
 
         try {
             const completion = await this.openai.chat.completions.create({
-                model: 'gpt-4',
+                model: this.activeModel,
                 messages: [
                     {
                         role: 'system',
@@ -396,7 +410,7 @@ Keep it concise and motivating.`;
     async matchTrainer(memberId: string, tenantId: string): Promise<any> {
         this.ensureInitialized();
         if (!this.openai) {
-            throw new Error('AI service not configured properly (missing OpenAI API key)');
+            throw new Error('AI service not configured. Set OPENROUTER_API_KEY in .env');
         }
 
         const member = await Member.findById(memberId);
@@ -422,7 +436,7 @@ Format as JSON: { "matches": [{ "trainerId": "...", "trainerName": "...", "match
 
         try {
             const completion = await this.openai.chat.completions.create({
-                model: 'gpt-4',
+                model: this.activeModel,
                 messages: [{ role: 'system', content: 'You are an AI gym coordinator.' }, { role: 'user', content: prompt }],
                 temperature: 0.7,
                 response_format: { type: 'json_object' }
@@ -439,7 +453,7 @@ Format as JSON: { "matches": [{ "trainerId": "...", "trainerName": "...", "match
     async getInjuryRisk(memberId: string): Promise<{ riskLevel: 'low' | 'medium' | 'high'; advice: string; indicators: string[] }> {
         this.ensureInitialized();
         if (!this.openai) {
-            throw new Error('AI service not configured properly (missing OpenAI API key)');
+            throw new Error('AI service not configured. Set OPENROUTER_API_KEY in .env');
         }
 
         const member = await Member.findById(memberId);
@@ -458,7 +472,7 @@ Format as JSON: { "riskLevel": "low|medium|high", "advice": "...", "indicators":
 
         try {
             const completion = await this.openai.chat.completions.create({
-                model: 'gpt-4',
+                model: this.activeModel,
                 messages: [{ role: 'system', content: 'You are an AI Sports Medicine Expert.' }, { role: 'user', content: prompt }],
                 temperature: 0.5,
                 response_format: { type: 'json_object' }
@@ -475,7 +489,7 @@ Format as JSON: { "riskLevel": "low|medium|high", "advice": "...", "indicators":
     async generateHabitNudge(memberId: string): Promise<string> {
         this.ensureInitialized();
         if (!this.openai) {
-            throw new Error('AI service not configured properly (missing OpenAI API key)');
+            throw new Error('AI service not configured. Set OPENROUTER_API_KEY in .env');
         }
 
         const member = await Member.findById(memberId).populate('userId');
@@ -491,7 +505,7 @@ The nudge should be under 150 characters, suitable for a push notification or Wh
 
         try {
             const completion = await this.openai.chat.completions.create({
-                model: 'gpt-4',
+                model: this.activeModel,
                 messages: [{ role: 'system', content: 'You are a world-class habit coach.' }, { role: 'user', content: prompt }],
                 max_tokens: 100
             });

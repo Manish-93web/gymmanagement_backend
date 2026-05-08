@@ -31,4 +31,14 @@ router.delete('/crm/leads/:leadId', requireAnyRole('gym_owner', 'branch_manager'
 router.post('/crm/leads/:leadId/call-logs', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), aiCrmController.addCallLog.bind(aiCrmController));
 router.get('/crm/leads/:leadId/call-logs', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), aiCrmController.getCallLogs.bind(aiCrmController));
 
+// A-01: CRM Performance leaderboard
+router.get('/crm/performance', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), aiCrmController.getPerformance.bind(aiCrmController));
+
+// A-02: CRM Forecast
+router.get('/crm/forecast', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), aiCrmController.getForecast.bind(aiCrmController));
+
+// CRM Settings
+router.get('/crm/settings', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), aiCrmController.getCRMSettings.bind(aiCrmController));
+router.post('/crm/settings', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), aiCrmController.saveCRMSettings.bind(aiCrmController));
+
 export default router;

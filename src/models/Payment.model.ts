@@ -184,5 +184,10 @@ const PaymentSchema: Schema = new Schema(
 PaymentSchema.index({ tenantId: 1, status: 1, createdAt: -1 });
 PaymentSchema.index({ memberId: 1, createdAt: -1 });
 PaymentSchema.index({ 'gateway.transactionId': 1 });
+// Additional indexes for 1000+ gym scale
+PaymentSchema.index({ tenantId: 1, createdAt: -1 });
+PaymentSchema.index({ tenantId: 1, branchId: 1, createdAt: -1 });
+PaymentSchema.index({ tenantId: 1, memberId: 1, status: 1 });
+PaymentSchema.index({ tenantId: 1, paymentDate: -1 });
 
 export default mongoose.model<IPayment>('Payment', PaymentSchema);

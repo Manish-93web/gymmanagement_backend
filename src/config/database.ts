@@ -7,13 +7,15 @@ export const connectDB = async (): Promise<void> => {
         const uri = config.env === 'test' ? config.mongodb.testUri : config.mongodb.uri;
 
         await mongoose.connect(uri, {
-            maxPoolSize: 20,
-            minPoolSize: 5,
-            maxIdleTimeMS: 30000,
-            serverSelectionTimeoutMS: 5000,
-            socketTimeoutMS: 45000,
-            connectTimeoutMS: 10000,
+            maxPoolSize: 50,       // increased for 1000+ gyms concurrent load
+            minPoolSize: 10,
+            maxIdleTimeMS: 60000,
+            serverSelectionTimeoutMS: 10000,
+            socketTimeoutMS: 60000,
+            connectTimeoutMS: 15000,
             heartbeatFrequencyMS: 10000,
+            retryWrites: true,
+            w: 'majority',
         });
 
         console.log(`✅ MongoDB Connected: ${mongoose.connection.host}`);

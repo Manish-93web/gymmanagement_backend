@@ -298,6 +298,83 @@ export class MarketingController {
             return res.json({ success: true, data: referral });
         } catch (error) { return next(error); }
     }
+
+    // A-03: Email/marketing sequences
+    async getSequences(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { tenantId } = req.user!;
+            const campaigns = await Campaign.find({ tenantId, type: 'email' }).sort({ createdAt: -1 }).lean();
+            const sequences = campaigns.map((c: any) => ({
+                id: c._id,
+                name: c.name,
+                status: c.status,
+                leads: c.stats?.sent || 0,
+                conv: c.stats?.conversions || 0,
+                steps: Array.isArray(c.steps) ? c.steps.length : 3,
+                type: 'email',
+            }));
+            return res.json({ success: true, data: sequences });
+        } catch (error) { return next(error); }
+    }
+
+    async createSequence(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { tenantId } = req.user!;
+            const sequence = await Campaign.create({ ...req.body, tenantId, type: 'email' });
+            return res.status(201).json({ success: true, data: sequence });
+        } catch (error) { return next(error); }
+    }
+
+    // A-04: Social / push campaigns
+    async getSocialCampaigns(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { tenantId } = req.user!;
+            const campaigns = await Campaign.find({ tenantId, type: 'push' }).sort({ createdAt: -1 }).lean();
+            const social = campaigns.map((c: any) => ({
+                id: c._id,
+                name: c.name,
+                platform: c.channel || 'push',
+                views: c.stats?.delivered || 0,
+                replies: c.stats?.clicks || 0,
+                status: c.status,
+                date: c.scheduledAt || c.createdAt,
+            }));
+            return res.json({ success: true, data: social });
+        } catch (error) { return next(error); }
+    }
+
+    async createSocialCampaign(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { tenantId } = req.user!;
+            const campaign = await Campaign.create({ ...req.body, tenantId, type: 'push' });
+            return res.status(201).json({ success: true, data: campaign });
+        } catch (error) { return next(error); }
+    }
+
+    // A-05: SMS campaigns
+    async getSmsCampaigns(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { tenantId } = req.user!;
+            const campaigns = await Campaign.find({ tenantId, type: 'sms' }).sort({ createdAt: -1 }).lean();
+            const sms = campaigns.map((c: any) => ({
+                id: c._id,
+                name: c.name,
+                recipients: c.stats?.sent || 0,
+                delivered: c.stats?.delivered || 0,
+                status: c.status,
+                date: c.scheduledAt || c.createdAt,
+            }));
+            return res.json({ success: true, data: sms });
+        } catch (error) { return next(error); }
+    }
+
+    async createSmsCampaign(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { tenantId } = req.user!;
+            const campaign = await Campaign.create({ ...req.body, tenantId, type: 'sms' });
+            return res.status(201).json({ success: true, data: campaign });
+        } catch (error) { return next(error); }
+    }
 }
 
 export default new MarketingController();

@@ -277,7 +277,8 @@ export class MemberService {
         status?: MemberStatus,
         page: number = 1,
         limit: number = 20,
-        search?: string
+        search?: string,
+        planId?: string
     ): Promise<{ members: IMember[]; total: number }> {
         const skip = (page - 1) * limit;
 
@@ -285,6 +286,7 @@ export class MemberService {
         if (tenantId) filter.tenantId = tenantId;
         if (branchId) filter.branchId = branchId;
         if (status) filter.status = status;
+        if (planId) filter.planId = planId;
         if (search) {
             filter.$or = [
                 { firstName: { $regex: search, $options: 'i' } },

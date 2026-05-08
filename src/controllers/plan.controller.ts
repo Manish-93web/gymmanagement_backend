@@ -111,12 +111,14 @@ export class PlanController {
     async getPlans(req: Request, res: Response, next: NextFunction) {
         try {
             const tenantId = req.user!.tenantId!.toString();
-            const { type, branchId } = req.query;
+            const { type, branchId, page, limit } = req.query;
 
             const plans = await PlanService.getPlans(
                 tenantId,
-                type as any,
-                branchId as string
+                branchId as string,
+                type as string,
+                page ? parseInt(page as string, 10) : 1,
+                limit ? parseInt(limit as string, 10) : 50
             );
 
             res.status(200).json({

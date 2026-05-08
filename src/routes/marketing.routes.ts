@@ -26,4 +26,16 @@ router.post('/referrals', requireAnyRole('gym_owner', 'super_admin'), marketingC
 router.get('/referrals/stats', requireAnyRole('gym_owner', 'super_admin'), marketingController.getReferralStats.bind(marketingController));
 router.post('/referrals/convert', marketingController.processReferralConversion.bind(marketingController));
 
+// A-03: Email sequences
+router.get('/sequences', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), marketingController.getSequences.bind(marketingController));
+router.post('/sequences', requireAnyRole('gym_owner', 'super_admin'), marketingController.createSequence.bind(marketingController));
+
+// A-04: Social/push campaigns
+router.get('/social', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), marketingController.getSocialCampaigns.bind(marketingController));
+router.post('/social', requireAnyRole('gym_owner', 'super_admin'), marketingController.createSocialCampaign.bind(marketingController));
+
+// A-05: SMS campaigns
+router.get('/sms-campaigns', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), marketingController.getSmsCampaigns.bind(marketingController));
+router.post('/sms-campaigns', requireAnyRole('gym_owner', 'super_admin'), marketingController.createSmsCampaign.bind(marketingController));
+
 export default router;

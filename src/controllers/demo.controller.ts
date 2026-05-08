@@ -46,23 +46,23 @@ const DEMO_MEMBERS = [
 const DEMO_LEADS = [
     { firstName: 'Kabir', lastName: 'Verma', mobile: '9000000001', source: 'walk_in', status: 'new' },
     { firstName: 'Kavya', lastName: 'Nair', mobile: '9000000002', source: 'referral', status: 'contacted' },
-    { firstName: 'Rohit', lastName: 'Joshi', mobile: '9000000003', source: 'website', status: 'interested' },
-    { firstName: 'Ananya', lastName: 'Reddy', mobile: '9000000004', source: 'instagram', status: 'follow_up' },
-    { firstName: 'Dev', lastName: 'Sharma', mobile: '9000000005', source: 'google_ads', status: 'new' },
-    { firstName: 'Isha', lastName: 'Patel', mobile: '9000000006', source: 'walk_in', status: 'visited' },
-    { firstName: 'Manav', lastName: 'Singh', mobile: '9000000007', source: 'referral', status: 'proposal_sent' },
-    { firstName: 'Zara', lastName: 'Khan', mobile: '9000000008', source: 'facebook', status: 'interested' },
+    { firstName: 'Rohit', lastName: 'Joshi', mobile: '9000000003', source: 'website', status: 'qualified' },
+    { firstName: 'Ananya', lastName: 'Reddy', mobile: '9000000004', source: 'social_media', status: 'contacted' },
+    { firstName: 'Dev', lastName: 'Sharma', mobile: '9000000005', source: 'advertisement', status: 'new' },
+    { firstName: 'Isha', lastName: 'Patel', mobile: '9000000006', source: 'walk_in', status: 'proposal' },
+    { firstName: 'Manav', lastName: 'Singh', mobile: '9000000007', source: 'referral', status: 'negotiation' },
+    { firstName: 'Zara', lastName: 'Khan', mobile: '9000000008', source: 'social_media', status: 'qualified' },
 ];
 
 const DEMO_POS_PRODUCTS = [
-    { name: 'Protein Shake (Chocolate)', category: 'Supplements', price: 150, stock: 50, unit: 'bottle' },
-    { name: 'Protein Shake (Vanilla)', category: 'Supplements', price: 150, stock: 40, unit: 'bottle' },
-    { name: 'Energy Bar', category: 'Snacks', price: 60, stock: 100, unit: 'piece' },
-    { name: 'Water Bottle (1L)', category: 'Accessories', price: 30, stock: 200, unit: 'bottle' },
-    { name: 'Gym Gloves', category: 'Equipment', price: 350, stock: 20, unit: 'pair' },
-    { name: 'Resistance Band', category: 'Equipment', price: 250, stock: 15, unit: 'piece' },
-    { name: 'Towel', category: 'Accessories', price: 120, stock: 30, unit: 'piece' },
-    { name: 'BCAA Powder (500g)', category: 'Supplements', price: 899, stock: 25, unit: 'pack' },
+    { name: 'Protein Shake (Chocolate)', category: 'supplement', sellingPrice: 150, cost: 90, stock: 50, unit: 'bottle' },
+    { name: 'Protein Shake (Vanilla)', category: 'supplement', sellingPrice: 150, cost: 90, stock: 40, unit: 'bottle' },
+    { name: 'Energy Bar', category: 'other', sellingPrice: 60, cost: 30, stock: 100, unit: 'piece' },
+    { name: 'Water Bottle (1L)', category: 'accessory', sellingPrice: 30, cost: 15, stock: 200, unit: 'bottle' },
+    { name: 'Gym Gloves', category: 'equipment', sellingPrice: 350, cost: 200, stock: 20, unit: 'pair' },
+    { name: 'Resistance Band', category: 'equipment', sellingPrice: 250, cost: 120, stock: 15, unit: 'piece' },
+    { name: 'Towel', category: 'accessory', sellingPrice: 120, cost: 60, stock: 30, unit: 'piece' },
+    { name: 'BCAA Powder (500g)', category: 'supplement', sellingPrice: 899, cost: 500, stock: 25, unit: 'pack' },
 ];
 
 const DEMO_CLASSES = [
@@ -105,10 +105,22 @@ export class DemoController {
             }
 
             // 2. Seed POS products
-            for (const product of DEMO_POS_PRODUCTS) {
+            const effectiveBranchId = branchId || (await import('../models/Branch.model')).default.findOne({ tenantId }).then((b: any) => b?._id);
+            for (let pi = 0; pi < DEMO_POS_PRODUCTS.length; pi++) {
+                const product = DEMO_POS_PRODUCTS[pi];
+                const sku = `DEMO-${product.category.toUpperCase().slice(0, 3)}-${String(pi + 1).padStart(3, '0')}`;
                 await (POSProduct as any).findOneAndUpdate(
                     { tenantId, name: product.name },
-                    { ...product, tenantId, ...(branchId ? { branchId } : {}) },
+                    {
+                        name: product.name,
+                        category: product.category,
+                        sku,
+                        tenantId,
+                        branchId: effectiveBranchId,
+                        pricing: { cost: product.cost, sellingPrice: product.sellingPrice, taxRate: 0 },
+                        inventory: { currentStock: product.stock, minStock: 5, maxStock: product.stock * 2, reorderPoint: 10, unit: product.unit },
+                        isActive: true,
+                    },
                     { upsert: true, new: true }
                 );
             }
@@ -135,7 +147,7 @@ export class DemoController {
                         membershipNumber,
                         joinDate: joiningDate,
                         expiryDate,
-                        membershipPlanId: plan._id,
+                        planId: plan._id,
                         personalInfo: {
                             gender: member.gender,
                             dateOfBirth: new Date(1990 + rand(0, 15), rand(0, 11), rand(1, 28)),
@@ -156,6 +168,17 @@ export class DemoController {
                     { upsert: true, new: true }
                 );
                 memberDocs.push(m);
+            }
+
+            // B-1: Update currentMembers on each plan based on active members
+            // aggregate $match does NOT auto-cast string → ObjectId, must cast explicitly
+            const tenantOid = new mongoose.Types.ObjectId(tenantId.toString());
+            const memberCountsPerPlan = await (Member as any).aggregate([
+                { $match: { tenantId: tenantOid, status: 'active', planId: { $in: planDocs.map((p: any) => p._id) } } },
+                { $group: { _id: '$planId', count: { $sum: 1 } } },
+            ]);
+            for (const row of memberCountsPerPlan) {
+                await MembershipPlan.findByIdAndUpdate(row._id, { $set: { currentMembers: row.count } });
             }
 
             // 4. Seed subscriptions
@@ -183,29 +206,28 @@ export class DemoController {
             }
 
             // 5. Seed payments (last 90 days)
-            const paymentMethods = ['cash', 'upi', 'card', 'online'];
+            const paymentMethods: ('cash' | 'upi' | 'card' | 'net_banking')[] = ['cash', 'upi', 'card', 'net_banking'];
             for (let i = 0; i < 30; i++) {
                 const member = randFrom(memberDocs);
                 const plan = planDocs[rand(0, planDocs.length - 1)];
                 const paymentDate = daysAgo(rand(0, 90));
-                await (Payment as any).findOneAndUpdate(
-                    { tenantId, memberId: member._id, createdAt: paymentDate },
-                    {
-                        tenantId,
-                        memberId: member._id,
-                        branchId,
-                        amount: plan.price,
-                        paidAmount: plan.price,
-                        discount: 0,
-                        paymentMethod: randFrom(paymentMethods),
-                        status: 'paid',
-                        type: 'membership',
-                        description: `${plan.name} - ${member.firstName} ${member.lastName}`,
-                        paymentDate,
-                        createdAt: paymentDate,
-                    },
-                    { upsert: true, new: true }
-                );
+                const invoiceNumber = `INV-DEMO-${Date.now().toString(36).toUpperCase()}-${i}`;
+                await (Payment as any).create({
+                    tenantId,
+                    memberId: member._id,
+                    branchId,
+                    invoiceNumber,
+                    amount: { subtotal: plan.price, taxAmount: 0, discountAmount: 0, total: plan.price },
+                    method: randFrom(paymentMethods),
+                    paymentType: 'subscription',
+                    type: 'subscription',
+                    status: 'completed',
+                    paidAt: paymentDate,
+                    taxDetails: { taxType: 'NONE', taxRate: 0 },
+                    invoice: { generated: false, emailSent: false },
+                    metadata: { description: `${plan.name} - ${member.firstName} ${member.lastName}`, items: [{ name: plan.name, quantity: 1, price: plan.price, total: plan.price }] },
+                    notes: '',
+                }).catch(() => {}); // ignore duplicate errors
             }
 
             // 6. Seed attendance (last 60 days for active members)
@@ -260,11 +282,13 @@ export class DemoController {
                     const product = randFrom(products);
                     const qty = rand(1, 3);
                     const saleDate = daysAgo(rand(0, 30));
+                    const unitPrice = product.pricing?.sellingPrice || product.price || 100;
+                    const itemTotal = unitPrice * qty;
                     await (Sale as any).create({
                         tenantId,
                         branchId,
-                        items: [{ productId: product._id, name: product.name, quantity: qty, unitPrice: product.price, total: product.price * qty }],
-                        total: product.price * qty,
+                        items: [{ productId: product._id, name: product.name, quantity: qty, unitPrice, discount: 0, taxAmount: 0, total: itemTotal }],
+                        totals: { subtotal: itemTotal, discount: 0, taxAmount: 0, total: itemTotal },
                         paymentMethod: randFrom(['cash', 'upi', 'card']),
                         status: 'completed',
                         soldAt: saleDate,
@@ -272,11 +296,39 @@ export class DemoController {
                 }
             }
 
-            // 10. Seed trainers
+            // 10. Seed trainers (create User accounts first, then Trainer profiles)
+            const bcrypt = await import('bcryptjs');
+            const trainerPassword = await bcrypt.default.hash('Trainer@123', 10);
             for (const trainer of DEMO_TRAINERS) {
+                const trainerUser = await User.findOneAndUpdate(
+                    { tenantId, email: trainer.email },
+                    {
+                        firstName: trainer.firstName,
+                        lastName: trainer.lastName,
+                        email: trainer.email,
+                        mobile: trainer.mobile,
+                        password: trainerPassword,
+                        role: 'trainer',
+                        tenantId,
+                        ...(branchId ? { branchId } : {}),
+                        isActive: true,
+                    },
+                    { upsert: true, new: true }
+                );
                 await (Trainer as any).findOneAndUpdate(
-                    { tenantId, mobile: trainer.mobile },
-                    { ...trainer, tenantId, ...(branchId ? { branchId } : {}), isActive: true, status: 'active' },
+                    { userId: trainerUser._id },
+                    {
+                        userId: trainerUser._id,
+                        tenantId,
+                        branchId: branchId || new mongoose.Types.ObjectId(),
+                        specializations: trainer.specializations,
+                        experience: { years: trainer.experience },
+                        pricing: { hourlyRate: 500, sessionPackages: [{ sessions: 10, price: 4000, validityDays: 30 }] },
+                        ratings: { average: trainer.rating, totalReviews: rand(5, 30), reviews: [] },
+                        revenueSharing: { enabled: false, percentage: 0 },
+                        kpis: { totalClients: rand(5, 20), activeClients: rand(3, 15), totalSessions: rand(50, 200), totalRevenue: rand(20000, 100000), averageRating: trainer.rating, retentionRate: rand(70, 95) },
+                        isActive: true,
+                    },
                     { upsert: true, new: true }
                 );
             }

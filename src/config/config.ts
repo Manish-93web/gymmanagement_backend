@@ -79,10 +79,27 @@ export const config = {
         apiKey: process.env.WHATSAPP_API_KEY || '',
     },
 
-    // OpenAI
+    // OpenAI (legacy fallback)
     openai: {
         apiKey: process.env.OPENAI_API_KEY || '',
         model: process.env.OPENAI_MODEL || 'gpt-4',
+    },
+
+    // OpenRouter (active AI provider)
+    openrouter: {
+        apiKey: process.env.OPENROUTER_API_KEY || '',
+        model: process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct',
+        baseUrl: 'https://openrouter.ai/api/v1',
+    },
+
+    // AI Provider selection
+    ai: {
+        provider: process.env.AI_PROVIDER || 'openrouter',
+    },
+
+    // Super Admin
+    superAdmin: {
+        mobile: process.env.SUPER_ADMIN_MOBILE || '8860281526',
     },
 
     // Zoom
@@ -92,7 +109,7 @@ export const config = {
     },
 
     // Frontend
-    frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
+    frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3001',
 
     // Session
     sessionSecret: process.env.SESSION_SECRET || 'your-session-secret',
