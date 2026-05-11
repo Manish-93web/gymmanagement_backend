@@ -25,6 +25,8 @@ export interface ILead extends Document {
         nextFollowUp?: Date;
         performedBy: mongoose.Types.ObjectId;
     }[];
+    nextFollowUpDate?: Date;
+    lastContactDate?: Date;
     conversion?: {
         convertedAt: Date;
         convertedBy: mongoose.Types.ObjectId;
@@ -98,6 +100,8 @@ const LeadSchema: Schema = new Schema(
         },
         tags: [{ type: String }],
         notes: { type: String },
+        nextFollowUpDate: { type: Date, index: true },
+        lastContactDate: { type: Date },
     },
     { timestamps: true }
 );
@@ -112,6 +116,6 @@ LeadSchema.index({ mobile: 1 });
 LeadSchema.index({ tenantId: 1, assignedTo: 1, status: 1 });
 LeadSchema.index({ tenantId: 1, status: 1, createdAt: -1 });
 LeadSchema.index({ tenantId: 1, branchId: 1, assignedTo: 1, status: 1 });
-LeadSchema.index({ tenantId: 1, nextFollowUp: 1, status: 1 });
+LeadSchema.index({ tenantId: 1, nextFollowUpDate: 1, status: 1 });
 
 export default mongoose.model<ILead>('Lead', LeadSchema);

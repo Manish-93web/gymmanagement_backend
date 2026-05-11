@@ -9,6 +9,7 @@ import hpp from 'hpp';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
+import mongoSanitize from 'express-mongo-sanitize';
 import { randomUUID } from 'crypto';
 import { config } from './config/config';
 import { connectDB } from './config/database';
@@ -62,6 +63,7 @@ import branchesRoutes from './routes/branches.routes';
 import saasAlertsRoutes from './routes/saas-alerts.routes';
 import uploadRoutes from './routes/upload.routes';
 import crmWebhookRoutes from './routes/crm-webhook.routes';
+import scheduledReportRoutes from './routes/scheduled-report.routes';
 
 const app: Application = express();
 const httpServer = http.createServer(app);
@@ -81,6 +83,7 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
 // Security middleware
 app.use(helmet());
 app.use(hpp());
+app.use(mongoSanitize());
 
 // CORS
 app.use(
@@ -231,6 +234,7 @@ app.use('/api/branches', branchesRoutes);
 app.use('/api/saas-alerts', saasAlertsRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/crm-webhook', crmWebhookRoutes);
+app.use('/api/scheduled-reports', scheduledReportRoutes);
 app.use('/api', aiCrmRoutes); // handles /api/ai/* and /api/crm/* via ai-crm router
 
 // 404 handler
@@ -272,9 +276,19 @@ const startServer = async () => {
             console.warn('⚠️ BullMQ init failed (Redis may not be running):', err);
         }
 
+        // Initialize scheduled reports (restores all active cron jobs from DB)
+        try {
+            const { default: ScheduledReportService } = await import('./services/scheduled-report.service');
+            await ScheduledReportService.initializeScheduledReports();
+            console.log('✅ Scheduled reports initialized');
+        } catch (err) {
+            console.warn('⚠️ Scheduled reports init failed:', err);
+        }
+
         // Start cron-based workers (all singletons — imported for side-effects)
         await import('./workers/attendance.worker');
         await import('./workers/billing.worker');
+        await import('./workers/retention.worker');
         await import('./workers/biometric-autocheckout.worker');
         await import('./workers/biometric-healthcheck.worker');
         await import('./workers/biometric-sync.worker');

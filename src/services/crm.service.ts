@@ -143,7 +143,8 @@ export class CRMService {
         assignedTo?: string,
         page: number = 1,
         limit: number = 20,
-        search?: string
+        search?: string,
+        hasFollowUp?: boolean
     ): Promise<{ leads: ILead[]; total: number }> {
         const skip = (page - 1) * limit;
 
@@ -152,6 +153,7 @@ export class CRMService {
         if (status) filter.status = status;
         if (source) filter.source = source;
         if (assignedTo) filter.assignedTo = assignedTo;
+        if (hasFollowUp) filter.nextFollowUpDate = { $exists: true, $ne: null };
         if (search) {
             filter.$or = [
                 { firstName: { $regex: search, $options: 'i' } },

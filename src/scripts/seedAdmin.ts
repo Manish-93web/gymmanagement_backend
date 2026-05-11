@@ -1,38 +1,42 @@
 import mongoose from 'mongoose';
-import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
 import path from 'path';
 import User from '../models/User.model';
 
-// Load environment variables
+// Load base env, then override with production if DB_ENV=production
 dotenv.config({ path: path.join(__dirname, '../../.env') });
+if (process.env.DB_ENV === 'production' || process.env.NODE_ENV === 'production') {
+    dotenv.config({ path: path.join(__dirname, '../../.env.production'), override: true });
+}
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/gym-management';
+const MONGODB_URI       = process.env.MONGODB_URI || 'mongodb://localhost:27017/gym-management';
+const SUPER_ADMIN_MOBILE = process.env.SUPER_ADMIN_MOBILE || '0000000000';
 
 const seedAdmin = async () => {
     try {
         console.log('🌱 Starting Super Admin seeding...');
-
-        // Connect to MongoDB
         await mongoose.connect(MONGODB_URI);
         console.log('✅ Connected to MongoDB');
 
-        // Check if admin already exists
         const adminEmail = 'admin@platform.com';
         const existingAdmin = await User.findOne({ email: adminEmail });
 
         if (existingAdmin) {
-            console.log('⚠️  Super Admin already exists. Skipping...');
+            if (existingAdmin.mobile === '0000000000' || !existingAdmin.mobile) {
+                await User.updateOne({ email: adminEmail }, { $set: { mobile: SUPER_ADMIN_MOBILE } });
+                console.log(`✅ Super Admin mobile updated to ${SUPER_ADMIN_MOBILE}`);
+            } else {
+                console.log('⚠️  Super Admin already exists. Skipping...');
+            }
             process.exit(0);
         }
 
-        // Create Super Admin
         const adminUser = new User({
             firstName: 'System',
             lastName: 'Administrator',
             email: adminEmail,
-            mobile: '0000000000',
-            password: 'Admin@123', // Will be hashed by pre-save hook
+            mobile: SUPER_ADMIN_MOBILE,
+            password: 'Admin@123',
             role: 'super_admin',
             isActive: true,
             isEmailVerified: true,
@@ -42,7 +46,8 @@ const seedAdmin = async () => {
 
         await adminUser.save();
         console.log('✨ Super Admin created successfully!');
-        console.log('📧 Email: admin@platform.com');
+        console.log('📧 Email:    admin@platform.com');
+        console.log(`📱 Mobile:   ${SUPER_ADMIN_MOBILE}`);
         console.log('🔑 Password: Admin@123');
         console.log('⚠️  PLEASE CHANGE THIS PASSWORD AFTER FIRST LOGIN');
 

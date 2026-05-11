@@ -1,8 +1,9 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import biometricController from '../controllers/biometric.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireAnyRole } from '../middleware/rbac.middleware';
 import { tenantContext } from '../middleware/tenant.middleware';
+import BiometricSyncJob from '../models/BiometricSyncJob.model';
 
 const router = Router();
 
@@ -37,5 +38,23 @@ router.get('/reports', requireAnyRole('gym_owner', 'branch_manager', 'super_admi
 
 // Unmatched logs
 router.get('/unmatched', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), biometricController.getUnmatchedLogs.bind(biometricController));
+
+// Sync jobs history
+router.get('/sync-jobs', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+        const tenantId = (req as any).user?.tenantId;
+        const limit = Math.min(Number(req.query.limit) || 20, 100);
+        const deviceId = req.query.deviceId as string | undefined;
+        const query: any = { tenantId };
+        if (deviceId) query.deviceId = deviceId;
+        const jobs = await BiometricSyncJob.find(query)
+            .populate('deviceId', 'deviceName deviceId')
+            .sort({ startedAt: -1 })
+            .limit(limit);
+        res.json({ success: true, data: { jobs, total: jobs.length } });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
 
 export default router;

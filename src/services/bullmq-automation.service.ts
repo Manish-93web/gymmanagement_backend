@@ -4,6 +4,7 @@ import MembershipLifecycleService from './membership-lifecycle.service';
 import WhatsAppService from './whatsapp.service';
 import { sendEmail } from '../utils/email.util';
 import Member from '../models/Member.model';
+import Tenant from '../models/Tenant.model';
 import logger from '../config/logger';
 
 const isMock = process.env.USE_REDIS_MOCK === 'true';
@@ -64,95 +65,142 @@ class BullMQAutomationService {
     }
 
     /**
-     * Setup job processors
+     * Fetch all active tenant IDs for system-wide scheduled jobs
      */
-    private setupProcessors() {
-        const workerOptions = { connection: connection as any };
-
-        // Membership expiry processor
-        this.workers.push(new Worker('membership-expiry', async (job) => {
-            const { tenantId } = job.data;
-            await this.processExpiringMemberships(tenantId);
-        }, workerOptions));
-
-        // Birthday processor
-        this.workers.push(new Worker('birthday-wishes', async (job) => {
-            const { tenantId } = job.data;
-            await this.processBirthdays(tenantId);
-        }, workerOptions));
-
-        // Report processor
-        this.workers.push(new Worker('scheduled-reports', async (job) => {
-            const { reportId, tenantId } = job.data;
-            await this.processScheduledReport(reportId, tenantId);
-        }, workerOptions));
-
-        // Backup processor
-        this.workers.push(new Worker('database-backup', async (job) => {
-            await this.processBackup();
-        }, workerOptions));
-
-        // Renewal processor
-        this.workers.push(new Worker('subscription-renewal', async (job) => {
-            const { tenantId } = job.data;
-            await this.processAutoRenewals(tenantId);
-        }, workerOptions));
-
-        logger.info('BullMQ workers initialized');
+    private async getAllActiveTenantIds(): Promise<string[]> {
+        const tenants = await Tenant.find({ isActive: true }, { _id: 1 }).lean();
+        return tenants.map((t: any) => t._id.toString());
     }
 
     /**
-     * Setup scheduled jobs
+     * Setup job processors with concurrency, timeouts, and failure handling
+     */
+    private setupProcessors() {
+        const workerOptions = {
+            connection: connection as any,
+            concurrency: 5,
+            lockDuration: 120000, // 2 minutes per job
+        };
+
+        const addFailureHandler = (worker: Worker, name: string) => {
+            worker.on('failed', (job, err) => {
+                logger.error(`[BullMQ] ${name} job failed`, {
+                    jobId: job?.id,
+                    attempt: job?.attemptsMade,
+                    error: err.message,
+                });
+            });
+            worker.on('error', (err) => {
+                logger.error(`[BullMQ] ${name} worker error`, { error: err.message });
+            });
+        };
+
+        // Membership expiry processor — fan out across all tenants when tenantId not set
+        const expiryWorker = new Worker('membership-expiry', async (job) => {
+            const tenantIds: string[] = job.data.tenantId
+                ? [job.data.tenantId]
+                : await this.getAllActiveTenantIds();
+            // Process in batches of 10 for scale
+            for (let i = 0; i < tenantIds.length; i += 10) {
+                await Promise.all(tenantIds.slice(i, i + 10).map(id =>
+                    this.processExpiringMemberships(id).catch(err =>
+                        logger.error(`[BullMQ] expiry failed for tenant ${id}`, { error: err.message })
+                    )
+                ));
+            }
+        }, workerOptions);
+        addFailureHandler(expiryWorker, 'membership-expiry');
+        this.workers.push(expiryWorker);
+
+        // Birthday processor
+        const birthdayWorker = new Worker('birthday-wishes', async (job) => {
+            const tenantIds: string[] = job.data.tenantId
+                ? [job.data.tenantId]
+                : await this.getAllActiveTenantIds();
+            for (let i = 0; i < tenantIds.length; i += 10) {
+                await Promise.all(tenantIds.slice(i, i + 10).map(id =>
+                    this.processBirthdays(id).catch(err =>
+                        logger.error(`[BullMQ] birthday failed for tenant ${id}`, { error: err.message })
+                    )
+                ));
+            }
+        }, workerOptions);
+        addFailureHandler(birthdayWorker, 'birthday-wishes');
+        this.workers.push(birthdayWorker);
+
+        // Report processor (always has specific tenantId)
+        const reportWorker = new Worker('scheduled-reports', async (job) => {
+            const { reportId, tenantId } = job.data;
+            await this.processScheduledReport(reportId, tenantId);
+        }, workerOptions);
+        addFailureHandler(reportWorker, 'scheduled-reports');
+        this.workers.push(reportWorker);
+
+        // Backup processor (system-wide, no tenantId needed)
+        const backupWorker = new Worker('database-backup', async (_job) => {
+            await this.processBackup();
+        }, workerOptions);
+        addFailureHandler(backupWorker, 'database-backup');
+        this.workers.push(backupWorker);
+
+        // Renewal processor — fan out across all tenants
+        const renewalWorker = new Worker('subscription-renewal', async (job) => {
+            const tenantIds: string[] = job.data.tenantId
+                ? [job.data.tenantId]
+                : await this.getAllActiveTenantIds();
+            for (let i = 0; i < tenantIds.length; i += 10) {
+                await Promise.all(tenantIds.slice(i, i + 10).map(id =>
+                    this.processAutoRenewals(id).catch(err =>
+                        logger.error(`[BullMQ] renewal failed for tenant ${id}`, { error: err.message })
+                    )
+                ));
+            }
+        }, workerOptions);
+        addFailureHandler(renewalWorker, 'subscription-renewal');
+        this.workers.push(renewalWorker);
+
+        logger.info('✅ BullMQ workers initialized (concurrency=5, lockDuration=2min)');
+    }
+
+    /**
+     * Setup scheduled jobs with retry policies and job cleanup
      */
     private async setupScheduledJobs() {
         if (!this.membershipExpiryQueue || !this.birthdayQueue || !this.backupQueue || !this.renewalQueue) return;
 
+        const jobDefaults = {
+            attempts: 3,
+            backoff: { type: 'exponential' as const, delay: 5000 },
+            removeOnComplete: { count: 100 },
+            removeOnFail: { count: 50 },
+        };
+
         try {
-            // Check expiring memberships daily at 9 AM
-            await this.membershipExpiryQueue.add(
-                'check-expiring',
-                {},
-                {
-                    repeat: {
-                        pattern: '0 9 * * *',
-                    },
-                }
-            );
+            // Check expiring memberships daily at 9 AM — processes all tenants via worker fan-out
+            await this.membershipExpiryQueue.add('check-expiring', {}, {
+                repeat: { pattern: '0 9 * * *' },
+                ...jobDefaults,
+            });
 
             // Check birthdays daily at 8 AM
-            await this.birthdayQueue.add(
-                'birthday-wishes',
-                {},
-                {
-                    repeat: {
-                        pattern: '0 8 * * *',
-                    },
-                }
-            );
+            await this.birthdayQueue.add('birthday-wishes', {}, {
+                repeat: { pattern: '0 8 * * *' },
+                ...jobDefaults,
+            });
 
             // Database backup daily at 2 AM
-            await this.backupQueue.add(
-                'database-backup',
-                {},
-                {
-                    repeat: {
-                        pattern: '0 2 * * *',
-                    },
-                }
-            );
+            await this.backupQueue.add('database-backup', {}, {
+                repeat: { pattern: '0 2 * * *' },
+                ...jobDefaults,
+            });
 
             // Subscription renewals daily at midnight
-            await this.renewalQueue.add(
-                'subscription-renewals',
-                {},
-                {
-                    repeat: {
-                        pattern: '0 0 * * *',
-                    },
-                }
-            );
+            await this.renewalQueue.add('subscription-renewals', {}, {
+                repeat: { pattern: '0 0 * * *' },
+                ...jobDefaults,
+            });
 
-            logger.info('BullMQ scheduled jobs initialized');
+            logger.info('✅ BullMQ scheduled jobs initialized (retry=3, exponential backoff)');
         } catch (error) {
             logger.warn('Failed to add scheduled jobs to BullMQ:', error);
         }

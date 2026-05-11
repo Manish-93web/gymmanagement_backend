@@ -24,16 +24,18 @@ const createMemberSchema = z.object({
     lastName: z.string().min(1),
     email: z.string().email(),
     mobile: z.string().min(10).max(15),
+    photo: z.string().optional(),           // base64 data URL from webcam or file picker
     personalInfo: z.object({
-        dateOfBirth: z.string().transform(val => new Date(val)),
-        gender: z.enum(['male', 'female', 'other']),
+        dateOfBirth: z.string().transform(val => new Date(val)).optional(),
+        gender: z.enum(['male', 'female', 'other']).optional(),
         bloodGroup: z.string().optional(),
+        profilePicture: z.string().optional(), // stored URL (after upload) or base64 fallback
         emergencyContact: z.object({
             name: z.string().optional(),
             relationship: z.string().optional(),
             phone: z.string().optional(),
         }).optional(),
-    }),
+    }).optional(),
     address: z.object({
         street: z.string(),
         city: z.string(),
@@ -43,6 +45,20 @@ const createMemberSchema = z.object({
     }).optional(),
     goals: z.array(z.string()).optional(),
     referredBy: z.string().optional(),
+    // Payment/plan fields (passed from MemberForm)
+    planId: z.string().optional(),
+    membershipDuration: z.string().optional(),
+    membershipStart: z.string().optional(),
+    membershipExpiry: z.string().optional(),
+    amount: z.number().optional(),
+    discountType: z.string().optional(),
+    discountAmount: z.number().optional(),
+    discountValue: z.number().optional(),
+    gstAmount: z.number().optional(),
+    gstRate: z.number().optional(),
+    paymentMethod: z.string().optional(),
+    dueAmount: z.number().optional(),
+    dueDate: z.string().optional(),
 });
 
 const updateMemberSchema = createMemberSchema.partial();
@@ -86,31 +102,51 @@ export class MemberController {
             const branchId = req.branchId || (req.user?.role === 'super_admin' ? req.body.branchId : undefined);
 
             if (!tenantId || !branchId) {
-                res.status(400).json({
-                    status: 'error',
-                    message: 'Tenant and branch context required',
-                });
+                res.status(400).json({ status: 'error', message: 'Tenant and branch context required' });
                 return;
             }
 
             const validatedData = createMemberSchema.parse(req.body);
 
+            // Resolve profile picture: prefer personalInfo.profilePicture, fall back to photo field
+            const rawPhoto = validatedData.personalInfo?.profilePicture || validatedData.photo;
+            let resolvedPhotoUrl: string | undefined;
+            if (rawPhoto) {
+                if (rawPhoto.startsWith('data:image/')) {
+                    // Upload base64 → get stored URL (Cloudinary or local)
+                    try {
+                        const { storeBase64 } = await import('../utils/upload.util');
+                        resolvedPhotoUrl = await storeBase64(rawPhoto, 'avatars', undefined, tenantId);
+                    } catch {
+                        resolvedPhotoUrl = rawPhoto; // store as-is if upload fails (dev without Cloudinary)
+                    }
+                } else {
+                    resolvedPhotoUrl = rawPhoto; // already a URL
+                }
+            }
+
+            const personalInfo = validatedData.personalInfo
+                ? { ...validatedData.personalInfo, ...(resolvedPhotoUrl ? { profilePicture: resolvedPhotoUrl } : {}) }
+                : resolvedPhotoUrl
+                    ? { profilePicture: resolvedPhotoUrl }
+                    : undefined;
+
             const member = await memberService.createMember({
-                ...validatedData,
+                firstName: validatedData.firstName,
+                lastName: validatedData.lastName,
+                email: validatedData.email,
+                mobile: validatedData.mobile,
                 tenantId,
                 branchId,
+                personalInfo: personalInfo as any,
+                address: validatedData.address,
+                goals: validatedData.goals,
+                referredBy: validatedData.referredBy,
             });
 
-            res.status(201).json({
-                status: 'success',
-                message: 'Member created successfully',
-                data: member,
-            });
+            res.status(201).json({ status: 'success', message: 'Member created successfully', data: member });
         } catch (error: any) {
-            res.status(400).json({
-                status: 'error',
-                message: error.message || 'Failed to create member',
-            });
+            res.status(400).json({ status: 'error', message: error.message || 'Failed to create member' });
         }
     }
 

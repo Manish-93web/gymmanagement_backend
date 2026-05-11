@@ -1,10 +1,10 @@
+import cron from 'node-cron';
 import Member from '../models/Member.model';
 import InactivityAlert from '../models/InactivityAlert.model';
-// Remove direct server import to avoid circularity crashes
-// import { websocketService } from '../server';
+import logger from '../config/logger';
 
 export const checkInactivity = async () => {
-    console.log('🔍 Running Inactivity Check...');
+    logger.info('[Retention] Running Inactivity Check...');
 
     const now = new Date();
     const thresholds = [
@@ -42,10 +42,36 @@ export const checkInactivity = async () => {
 
                 // Find any globally available websocket service or just log for now
                 // We will integrate this via a safer service-based approach later
-                console.log(`🚩 Alert created for ${member.firstName} (${threshold.level})`);
+                logger.info(`[Retention] Alert created for ${member.firstName} (${threshold.level})`);
             }
         }
     }
 
-    console.log('✅ Inactivity Check Complete.');
+    logger.info('✅ Inactivity Check Complete.');
 };
+
+// Singleton cron — run daily at 3 AM
+class RetentionWorker {
+    private static instance: RetentionWorker;
+
+    private constructor() {
+        cron.schedule('0 3 * * *', async () => {
+            logger.info('[Retention] Running inactivity check...');
+            try {
+                await checkInactivity();
+            } catch (err: any) {
+                logger.error('[Retention] Inactivity check failed:', err.message);
+            }
+        });
+        logger.info('✅ RetentionWorker scheduled (daily 3 AM)');
+    }
+
+    public static getInstance(): RetentionWorker {
+        if (!RetentionWorker.instance) {
+            RetentionWorker.instance = new RetentionWorker();
+        }
+        return RetentionWorker.instance;
+    }
+}
+
+RetentionWorker.getInstance();

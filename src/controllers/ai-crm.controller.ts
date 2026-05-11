@@ -155,14 +155,18 @@ export class AIAndCRMController {
     async getLeads(req: Request, res: Response, next: NextFunction) {
         try {
             const tenantId = req.user?.tenantId?.toString() || '';
-            const { branchId, status, source, assignedTo } = req.query;
+            const { branchId, status, source, assignedTo, hasFollowUp, page, limit, search } = req.query;
 
             const leads = await CRMService.getLeads(
                 tenantId,
                 branchId as string,
                 status as any,
                 source as any,
-                assignedTo as string
+                assignedTo as string,
+                page ? parseInt(page as string, 10) : 1,
+                limit ? parseInt(limit as string, 10) : 20,
+                search as string,
+                hasFollowUp === 'true'
             );
 
             res.status(200).json({ success: true, data: leads });

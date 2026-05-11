@@ -1,7 +1,8 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import classController from '../controllers/class.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireAnyRole } from '../middleware/rbac.middleware';
+import ZoomService from '../services/zoom.service';
 
 const router = Router();
 
@@ -23,5 +24,29 @@ router.post('/bookings/:bookingId/cancel', requireAnyRole('gym_owner', 'branch_m
 router.post('/bookings/:bookingId/attendance', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'trainer', 'super_admin'), classController.markAttendance.bind(classController));
 router.get('/bookings/member/:memberId', authenticate, classController.getMemberBookings.bind(classController));
 router.get('/:classId/occurrences', authenticate, classController.getClassOccurrences.bind(classController));
+
+// Zoom meeting for a class
+router.post('/:classId/zoom', requireAnyRole('gym_owner', 'branch_manager', 'trainer', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+        const { topic, startTime, duration } = req.body;
+        const meeting = await ZoomService.createMeeting(
+            topic || `Class ${String(req.params.classId)}`,
+            new Date(startTime || Date.now()),
+            Number(duration) || 60
+        );
+        res.json({ success: true, data: meeting });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+router.delete('/:classId/zoom/:meetingId', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+        await ZoomService.deleteMeeting(String(req.params.meetingId));
+        res.json({ success: true, message: 'Meeting deleted' });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
 
 export default router;
