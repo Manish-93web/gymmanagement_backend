@@ -155,7 +155,10 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // eSSL ADMS device push — mounted before JSON body parser so express.text() captures raw body
+// /essl/iclock/cdata  → explicit prefix (keep for backward compat)
+// /iclock/cdata       → standard eSSL firmware hardcoded path (device cannot change this)
 app.use('/essl', esslAdmsRoutes);
+app.use('/', esslAdmsRoutes);
 
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
