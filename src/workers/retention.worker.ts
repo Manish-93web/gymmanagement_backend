@@ -40,8 +40,16 @@ export const checkInactivity = async () => {
                     status: 'pending'
                 } as any);
 
-                // Find any globally available websocket service or just log for now
-                // We will integrate this via a safer service-based approach later
+                const ws = (global as any).websocketService;
+                if (ws?.broadcastToTenant) {
+                    ws.broadcastToTenant(member.tenantId.toString(), 'retention:newRisk', {
+                        memberId:    member._id.toString(),
+                        memberName:  `${member.firstName} ${member.lastName}`,
+                        level:       threshold.level,
+                        daysInactive: threshold.days,
+                        alertId:     alert._id.toString(),
+                    });
+                }
                 logger.info(`[Retention] Alert created for ${member.firstName} (${threshold.level})`);
             }
         }

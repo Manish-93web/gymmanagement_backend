@@ -5,6 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon --ignore logs",
+    "dev:prod-db": "nodemon --config nodemon.prod.json --ignore logs",
     "build": "tsc",
     "start": "node dist/server.js",
     "start:cluster": "node dist/cluster.js",
@@ -18,7 +19,8 @@
     "seed:admin": "ts-node src/scripts/seedAdmin.ts",
     "seed:gym-owner": "ts-node src/scripts/seedGymOwner.ts",
     "seed:demo": "ts-node src/scripts/seedDemoData.ts",
-    "seed:demo-gym-owner": "ts-node src/scripts/seedDemoGymOwner.ts"
+    "seed:demo-gym-owner": "ts-node src/scripts/seedDemoGymOwner.ts",
+    "seed:essl-device": "ts-node src/scripts/seedEsslDevice.ts"
   },
   "keywords": ["gym", "management", "saas"],
   "author": "",

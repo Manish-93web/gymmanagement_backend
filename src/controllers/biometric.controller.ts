@@ -212,6 +212,33 @@ class BiometricController {
         } catch (error) { next(error); }
     }
 
+    // PUT /biometric/members/:memberId — upsert biometricUserId mapping for a member
+    async updateMemberBiometric(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.tenantId!;
+            const { memberId } = req.params as any;
+            const { biometricUserId, deviceId, assignedDeviceIds } = req.body;
+
+            const member = await Member.findOne({ _id: memberId, tenantId });
+            if (!member) { res.status(404).json({ success: false, message: 'Member not found' }); return; }
+
+            // Resolve device: use deviceId directly, or first from assignedDeviceIds array
+            const resolvedDeviceId = deviceId || (Array.isArray(assignedDeviceIds) && assignedDeviceIds[0]) || undefined;
+
+            const filter: any = { tenantId, memberId };
+            if (resolvedDeviceId) filter.deviceId = resolvedDeviceId;
+
+            const update: any = { isActive: true };
+            if (biometricUserId !== undefined) update.biometricUserId = biometricUserId;
+
+            const enrollment = await BiometricMember.findOneAndUpdate(filter, { $set: update }, {
+                new: true, upsert: true, setDefaultsOnInsert: true,
+            });
+
+            res.json({ success: true, message: 'Biometric mapping updated', data: enrollment });
+        } catch (error) { next(error); }
+    }
+
     // ─── SETTINGS ────────────────────────────────────────────────
 
     async getSettings(req: Request, res: Response, next: NextFunction) {

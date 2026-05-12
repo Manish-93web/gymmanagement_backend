@@ -64,12 +64,15 @@ import saasAlertsRoutes from './routes/saas-alerts.routes';
 import uploadRoutes from './routes/upload.routes';
 import crmWebhookRoutes from './routes/crm-webhook.routes';
 import scheduledReportRoutes from './routes/scheduled-report.routes';
+import esslAdmsRoutes from './routes/essl-adms.routes';
 
 const app: Application = express();
 const httpServer = http.createServer(app);
 
 // Initialize WebSocket
 export const websocketService = new WebSocketService(httpServer);
+// Make available globally so workers (which lack access to the module graph) can emit events
+(global as any).websocketService = websocketService;
 
 // Gzip compression
 app.use(compression());
@@ -134,6 +137,9 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     }
     next();
 });
+
+// eSSL ADMS device push — mounted before JSON body parser so express.text() captures raw body
+app.use('/essl', esslAdmsRoutes);
 
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
@@ -236,6 +242,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/crm-webhook', crmWebhookRoutes);
 app.use('/api/scheduled-reports', scheduledReportRoutes);
 app.use('/api', aiCrmRoutes); // handles /api/ai/* and /api/crm/* via ai-crm router
+// Note: eSSL ADMS device endpoint is at /essl/iclock/* (public, before /api rate limiter)
 
 // 404 handler
 app.use((_req: Request, res: Response) => {

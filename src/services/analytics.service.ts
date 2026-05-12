@@ -5,8 +5,22 @@ import Attendance from '../models/Attendance.model';
 import Class from '../models/Class.model';
 import Trainer from '../models/Trainer.model';
 import mongoose from 'mongoose';
+import { redisUtils } from '../config/redis';
 
 export class AnalyticsService {
+    // Cache wrapper — run fn, cache result for ttl seconds; falls through on Redis errors
+    private async withCache<T>(key: string, ttl: number, fn: () => Promise<T>): Promise<T> {
+        try {
+            const cached = await redisUtils.getJSON<T>(key);
+            if (cached !== null) return cached;
+            const result = await fn();
+            await redisUtils.setJSON(key, result, ttl).catch(() => {});
+            return result;
+        } catch {
+            return fn(); // Redis unavailable — fall through to DB
+        }
+    }
+
     // Revenue analytics
     async getRevenueAnalytics(
         tenantId: string,
@@ -61,50 +75,45 @@ export class AnalyticsService {
         };
     }
 
-    // Member retention analytics
+    // Member retention analytics (cached 2 min)
     async getRetentionAnalytics(tenantId: string, branchId?: string): Promise<any> {
-        const tObjId = new mongoose.Types.ObjectId(tenantId);
-        const filter: any = { tenantId };
-        const aggFilter: any = { tenantId: tObjId };
-        if (branchId) {
-            filter.branchId = branchId;
-            aggFilter.branchId = new mongoose.Types.ObjectId(branchId);
-        }
+        const cacheKey = `analytics:retention:${tenantId}:${branchId || 'all'}`;
+        return this.withCache(cacheKey, 120, async () => {
+            const tObjId = new mongoose.Types.ObjectId(tenantId);
+            const filter: any = { tenantId };
+            const aggFilter: any = { tenantId: tObjId };
+            if (branchId) {
+                filter.branchId = branchId;
+                aggFilter.branchId = new mongoose.Types.ObjectId(branchId);
+            }
 
-        const totalMembers = await Member.countDocuments(filter);
-        const activeMembers = await Member.countDocuments({ ...filter, status: 'active' });
-        const pausedMembers = await Member.countDocuments({ ...filter, status: 'paused' });
-        const expiredMembers = await Member.countDocuments({ ...filter, status: 'expired' });
-        const cancelledMembers = await Member.countDocuments({ ...filter, status: 'cancelled' });
+            const totalMembers    = await Member.countDocuments(filter);
+            const activeMembers   = await Member.countDocuments({ ...filter, status: 'active' });
+            const pausedMembers   = await Member.countDocuments({ ...filter, status: 'paused' });
+            const expiredMembers  = await Member.countDocuments({ ...filter, status: 'expired' });
+            const cancelledMembers = await Member.countDocuments({ ...filter, status: 'cancelled' });
 
-        const retentionRate = totalMembers > 0 ? ((activeMembers / totalMembers) * 100).toFixed(2) : '0';
-        const churnRate = totalMembers > 0 ? (((cancelledMembers + expiredMembers) / totalMembers) * 100).toFixed(2) : '0';
+            const retentionRate = totalMembers > 0 ? ((activeMembers / totalMembers) * 100).toFixed(2) : '0';
+            const churnRate     = totalMembers > 0 ? (((cancelledMembers + expiredMembers) / totalMembers) * 100).toFixed(2) : '0';
 
-        const newMembersByMonth = await Member.aggregate([
-            { $match: aggFilter },
-            {
-                $group: {
-                    _id: {
-                        year: { $year: '$createdAt' },
-                        month: { $month: '$createdAt' },
-                    },
-                    count: { $sum: 1 },
-                },
-            },
-            { $sort: { '_id.year': 1, '_id.month': 1 } },
-            { $limit: 12 },
-        ]);
+            const newMembersByMonth = await Member.aggregate([
+                { $match: aggFilter },
+                { $group: { _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } }, count: { $sum: 1 } } },
+                { $sort: { '_id.year': 1, '_id.month': 1 } },
+                { $limit: 12 },
+            ]);
 
-        return {
-            totalMembers,
-            activeMembers,
-            pausedMembers,
-            expiredMembers,
-            cancelledMembers,
-            retentionRate: parseFloat(retentionRate),
-            churnRate: parseFloat(churnRate),
-            newMembersByMonth,
-        };
+            return {
+                totalMembers,
+                activeMembers,
+                pausedMembers,
+                expiredMembers,
+                cancelledMembers,
+                retentionRate: parseFloat(retentionRate),
+                churnRate: parseFloat(churnRate),
+                newMembersByMonth,
+            };
+        });
     }
 
     // Attendance analytics
@@ -255,6 +264,11 @@ export class AnalyticsService {
 
     // Dashboard overview — returns full nested structure for GymOwnerDashboard
     async getDashboardOverview(tenantId: string, branchId?: string): Promise<any> {
+        const cacheKey = `analytics:dashboard:${tenantId}:${branchId || 'all'}`;
+        return this.withCache(cacheKey, 60, () => this._getDashboardOverview(tenantId, branchId));
+    }
+
+    private async _getDashboardOverview(tenantId: string, branchId?: string): Promise<any> {
         const tObjId = new mongoose.Types.ObjectId(tenantId);
         const filter: any = { tenantId };
         const aggFilter: any = { tenantId: tObjId };

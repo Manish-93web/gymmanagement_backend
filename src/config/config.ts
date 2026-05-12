@@ -1,6 +1,12 @@
 import dotenv from 'dotenv';
+import path from 'path';
 
-dotenv.config();
+// Load environment-specific file first (.env.production, .env.test, etc.), then .env as base
+const nodeEnv = process.env.NODE_ENV || 'development';
+if (nodeEnv !== 'development') {
+    dotenv.config({ path: path.resolve(process.cwd(), `.env.${nodeEnv}`) });
+}
+dotenv.config(); // base .env fills any gaps
 
 export const config = {
     env: process.env.NODE_ENV || 'development',

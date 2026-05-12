@@ -402,6 +402,75 @@ export const updatePlatformBranding = async (req: Request, res: Response) => {
     }
 };
 
+/** Platform infrastructure health — consumed by OverviewModule every 30 s */
+export const getPlatformHealth = async (_req: Request, res: Response) => {
+    try {
+        const mongoose = (await import('mongoose')).default;
+
+        // DB ping latency
+        let dbStatus = 'disconnected';
+        let latencyMs = 0;
+        try {
+            const t0 = Date.now();
+            await mongoose.connection.db?.command({ ping: 1 });
+            latencyMs = Date.now() - t0;
+            dbStatus = 'connected';
+        } catch {
+            dbStatus = 'disconnected';
+        }
+
+        // Memory stats
+        const mem = process.memoryUsage();
+        const heapUsedMB   = Math.round(mem.heapUsed  / 1024 / 1024);
+        const heapTotalMB  = Math.round(mem.heapTotal / 1024 / 1024);
+        const heapUsagePercent = heapTotalMB > 0 ? Math.round((heapUsedMB / heapTotalMB) * 100) : 0;
+
+        // Uptime formatting
+        const uptimeSec  = Math.floor(process.uptime());
+        const days  = Math.floor(uptimeSec / 86400);
+        const hours = Math.floor((uptimeSec % 86400) / 3600);
+        const mins  = Math.floor((uptimeSec % 3600)  / 60);
+        const formattedUptime = days > 0
+            ? `${days}d ${hours}h ${mins}m`
+            : hours > 0
+                ? `${hours}h ${mins}m`
+                : `${mins}m`;
+
+        const isHealthy = dbStatus === 'connected' && heapUsagePercent < 90;
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                status:      isHealthy ? 'healthy' : 'degraded',
+                environment: process.env.NODE_ENV || 'production',
+                database: {
+                    status:    dbStatus,
+                    latencyMs,
+                },
+                memory: {
+                    heapUsedMB,
+                    heapTotalMB,
+                    heapUsagePercent,
+                },
+                uptime: {
+                    seconds:   uptimeSec,
+                    formatted: formattedUptime,
+                },
+                services: {
+                    api: 'operational',
+                },
+            },
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            data: { status: 'degraded', environment: process.env.NODE_ENV || 'production' },
+            message: 'Health check failed',
+            error: (error as Error).message,
+        });
+    }
+};
+
 /** Get platform analytics */
 export const getPlatformAnalytics = async (req: Request, res: Response) => {
     try {

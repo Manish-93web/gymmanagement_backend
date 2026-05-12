@@ -136,7 +136,9 @@ const SubscriptionSchema: Schema = new Schema(
 // Indexes
 SubscriptionSchema.index({ tenantId: 1, status: 1, endDate: 1 });
 SubscriptionSchema.index({ memberId: 1, status: 1 });
+SubscriptionSchema.index({ tenantId: 1, memberId: 1, status: 1 }); // tenant-scoped member subscription lookup
 SubscriptionSchema.index({ endDate: 1, autoRenew: 1 });
+SubscriptionSchema.index({ tenantId: 1, endDate: 1, autoRenew: 1 }); // tenant-scoped renewal batch jobs
 SubscriptionSchema.index({ tenantId: 1, createdAt: -1 });
 
 export default mongoose.model<ISubscription>('Subscription', SubscriptionSchema);

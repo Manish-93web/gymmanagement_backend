@@ -5,6 +5,7 @@ export interface IBiometricMember extends Document {
     memberId: mongoose.Types.ObjectId;
     userId: mongoose.Types.ObjectId;
     deviceId: mongoose.Types.ObjectId;
+    biometricUserId?: string; // device's internal ENROLLID (from ADMS/ZKLib)
     enrollmentData: {
         type: 'fingerprint' | 'face' | 'card' | 'pin';
         template?: string; // encrypted biometric template
@@ -35,6 +36,7 @@ const BiometricMemberSchema = new Schema(
                 enrolledBy: { type: Schema.Types.ObjectId, ref: 'User' },
             },
         ],
+        biometricUserId: { type: String, index: true },
         isActive: { type: Boolean, default: true },
         lastUsed: Date,
     },
@@ -42,5 +44,6 @@ const BiometricMemberSchema = new Schema(
 );
 
 BiometricMemberSchema.index({ tenantId: 1, memberId: 1, deviceId: 1 }, { unique: true });
+BiometricMemberSchema.index({ deviceId: 1, biometricUserId: 1 });
 
 export default mongoose.model<IBiometricMember>('BiometricMember', BiometricMemberSchema);

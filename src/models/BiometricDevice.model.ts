@@ -56,5 +56,7 @@ const BiometricDeviceSchema = new Schema(
 );
 
 BiometricDeviceSchema.index({ tenantId: 1, deviceId: 1 }, { unique: true });
+BiometricDeviceSchema.index({ tenantId: 1, branchId: 1 }); // branch device listing
+BiometricDeviceSchema.index({ tenantId: 1, status: 1 }); // online/offline device filter
 
 export default mongoose.model<IBiometricDevice>('BiometricDevice', BiometricDeviceSchema);

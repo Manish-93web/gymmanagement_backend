@@ -21,6 +21,7 @@ import {
     getPlatformBranding,
     updatePlatformBranding,
     getPlatformAnalytics,
+    getPlatformHealth,
 } from '../controllers/platform.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/role.middleware';
@@ -59,5 +60,8 @@ router.delete('/tenants/:tenantId/view-session', endViewSession);
 router.get('/branding', getPlatformBranding);
 router.patch('/branding', updatePlatformBranding);
 router.get('/analytics', getPlatformAnalytics);
+
+// Infrastructure health — polled every 30 s by OverviewModule
+router.get('/health', getPlatformHealth);
 
 export default router;

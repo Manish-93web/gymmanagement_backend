@@ -62,24 +62,28 @@ export class BiometricHealthCheckWorker {
 
         if (offlineMinutes >= thresholdMinutes && device.status !== 'offline') {
             await BiometricDevice.findByIdAndUpdate(device._id, { status: 'offline' });
-            this.emitToTenant(device.tenantId.toString(), 'biometric:device_offline', {
+            const payload = {
                 deviceId:      device._id.toString(),
                 deviceName:    device.deviceName,
                 offlineMinutes: Math.round(offlineMinutes),
                 message:       `Device "${device.deviceName}" has been offline for ${Math.round(offlineMinutes)} minutes`,
-            });
+            };
+            this.emitToTenant(device.tenantId.toString(), 'biometric:device_offline', payload);
+            this.emitToTenant(device.tenantId.toString(), 'biometric:alert', { type: 'device_offline', ...payload });
         }
 
         // Alert on consecutive sync failures
         const failThreshold = (settings as any)?.alertOnSyncFailureCount ?? 3;
         if ((device.consecutiveFailures ?? 0) >= failThreshold) {
-            this.emitToTenant(device.tenantId.toString(), 'biometric:sync_failure', {
+            const payload = {
                 deviceId:     device._id.toString(),
                 deviceName:   device.deviceName,
                 failureCount: device.consecutiveFailures,
                 lastError:    device.lastErrorMessage,
                 message:      `Device "${device.deviceName}" has failed to sync ${device.consecutiveFailures} times in a row`,
-            });
+            };
+            this.emitToTenant(device.tenantId.toString(), 'biometric:sync_failure', payload);
+            this.emitToTenant(device.tenantId.toString(), 'biometric:alert', { type: 'sync_failure', ...payload });
         }
 
         // Alert on unmatched-fingerprint spike

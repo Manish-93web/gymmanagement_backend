@@ -161,6 +161,44 @@ export class AttendanceController {
         } catch (error) { return next(error); }
     }
 
+    async getPeakAnalysis(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.user!.tenantId!.toString();
+            const days = parseInt(req.query.days as string) || 30;
+            const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+            const tenantOid = new mongoose.Types.ObjectId(tenantId);
+
+            const [hourlyAgg, dailyAgg] = await Promise.all([
+                Attendance.aggregate([
+                    { $match: { tenantId: tenantOid, checkInTime: { $gte: since } } },
+                    { $group: { _id: { $hour: '$checkInTime' }, count: { $sum: 1 } } },
+                    { $sort: { _id: 1 } },
+                ]),
+                Attendance.aggregate([
+                    { $match: { tenantId: tenantOid, checkInTime: { $gte: since } } },
+                    { $group: { _id: { $dayOfWeek: '$checkInTime' }, count: { $sum: 1 } } },
+                    { $sort: { _id: 1 } },
+                ]),
+            ]);
+
+            const DAY_LABELS = ['', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const hourly = Array.from({ length: 24 }, (_, h) => ({
+                hour: h,
+                label: `${h}:00`,
+                count: (hourlyAgg.find((p: any) => p._id === h) as any)?.count || 0,
+            }));
+            const daily = Array.from({ length: 7 }, (_, i) => {
+                const day = i + 1;
+                return { day, label: DAY_LABELS[day], count: (dailyAgg.find((d: any) => d._id === day) as any)?.count || 0 };
+            });
+
+            const topHour = hourly.reduce((best, h, i) => h.count > hourly[best].count ? i : best, 0);
+            const topDay = daily.reduce((best, d) => d.count > (daily.find(x => x.day === best)?.count || 0) ? d.day : best, 1);
+
+            return res.status(200).json({ success: true, data: { hourly, daily, topHour, topDay } });
+        } catch (error) { return next(error); }
+    }
+
     async manualCorrection(req: Request, res: Response, next: NextFunction) {
         try {
             const { attendanceId } = req.params as Record<string, string>;

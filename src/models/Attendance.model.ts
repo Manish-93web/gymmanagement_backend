@@ -60,6 +60,7 @@ const AttendanceSchema: Schema = new Schema(
 // Indexes
 AttendanceSchema.index({ tenantId: 1, branchId: 1, checkInTime: -1 });
 AttendanceSchema.index({ memberId: 1, checkInTime: -1 });
+AttendanceSchema.index({ tenantId: 1, memberId: 1, checkInTime: -1 }); // tenant-scoped member history
 AttendanceSchema.index({ checkInTime: 1, checkOutTime: 1 });
 AttendanceSchema.index({ tenantId: 1, createdAt: -1 });
 // For active session lookups (auto-checkout queries)

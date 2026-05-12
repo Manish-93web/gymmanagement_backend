@@ -38,7 +38,9 @@ const BiometricRawLogSchema = new Schema<IBiometricRawLog>(
 
 BiometricRawLogSchema.index({ tenantId: 1, processed: 1, punchTime: -1 });
 BiometricRawLogSchema.index({ deviceId: 1, punchTime: -1 });
-BiometricRawLogSchema.index({ deviceId: 1, biometricUserId: 1, punchTime: 1 }, { unique: true });
+BiometricRawLogSchema.index({ tenantId: 1, deviceId: 1, punchTime: -1 }); // tenant-scoped device log listing
+BiometricRawLogSchema.index({ deviceId: 1, biometricUserId: 1, punchTime: 1 }, { unique: true }); // dedup punches
+BiometricRawLogSchema.index({ tenantId: 1, skippedReason: 1, createdAt: -1 }); // unmatched punch queries
 
 export default (mongoose.models.BiometricRawLog as mongoose.Model<IBiometricRawLog>) ||
     mongoose.model<IBiometricRawLog>('BiometricRawLog', BiometricRawLogSchema);
