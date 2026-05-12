@@ -25,7 +25,7 @@ export const CLASS_DEFS = [
     { name: 'Cardio Burn',       category: 'cardio',       level: 'beginner',     duration: 45, capacity: 20, time: '08:00', days: ['monday','wednesday','friday','saturday'] },
 ];
 
-export const LEAD_SOURCES = ['instagram','walk_in','referral','facebook','website','event','other'];
+export const LEAD_SOURCES = ['social_media','walk_in','referral','advertisement','website','event','other'];
 export const LEAD_STAGES  = ['new','contacted','qualified','proposal','converted','lost'];
 
 export const PRODUCT_DEFS = [

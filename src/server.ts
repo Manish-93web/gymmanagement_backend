@@ -9,7 +9,6 @@ import hpp from 'hpp';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import morgan from 'morgan';
-import mongoSanitize from 'express-mongo-sanitize';
 import { randomUUID } from 'crypto';
 import { config } from './config/config';
 import { connectDB } from './config/database';
@@ -86,7 +85,24 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
 // Security middleware
 app.use(helmet());
 app.use(hpp());
-app.use(mongoSanitize());
+
+// express-mongo-sanitize is incompatible with Express 5 (req.query is a read-only getter).
+// Inline sanitizer: mutates existing query/body/params properties in-place.
+app.use((req: Request, _res: Response, next: NextFunction) => {
+    const sanitize = (obj: Record<string, unknown>): void => {
+        for (const key of Object.keys(obj)) {
+            if (key.startsWith('$') || key.includes('.')) {
+                delete obj[key];
+            } else if (obj[key] !== null && typeof obj[key] === 'object') {
+                sanitize(obj[key] as Record<string, unknown>);
+            }
+        }
+    };
+    if (req.body && typeof req.body === 'object') sanitize(req.body as Record<string, unknown>);
+    if (req.params) sanitize(req.params as unknown as Record<string, unknown>);
+    if (req.query && typeof req.query === 'object') sanitize(req.query as Record<string, unknown>);
+    next();
+});
 
 // CORS
 app.use(
