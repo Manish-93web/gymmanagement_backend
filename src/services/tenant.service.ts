@@ -175,9 +175,21 @@ export class TenantService {
 
     // Update tenant
     async updateTenant(tenantId: string, data: UpdateTenantDTO): Promise<ITenant | null> {
+        // Flatten branding into dot-notation so individual fields are merged, not the whole object replaced.
+        // This prevents clearing branding.logo when only colors are saved, and vice versa.
+        const setPayload: Record<string, unknown> = {};
+        for (const [key, value] of Object.entries(data)) {
+            if (key === 'branding' && value && typeof value === 'object') {
+                for (const [bKey, bVal] of Object.entries(value as object)) {
+                    if (bVal !== undefined) setPayload[`branding.${bKey}`] = bVal;
+                }
+            } else if (value !== undefined) {
+                setPayload[key] = value;
+            }
+        }
         return await Tenant.findByIdAndUpdate(
             tenantId,
-            { $set: data },
+            { $set: setPayload },
             { new: true, runValidators: true }
         );
     }

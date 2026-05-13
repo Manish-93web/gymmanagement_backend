@@ -3,7 +3,7 @@ import multer from 'multer';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireAnyRole } from '../middleware/rbac.middleware';
 import { tenantContext } from '../middleware/tenant.middleware';
-import { storeImage, storeBase64 } from '../utils/upload.util';
+import { storeImage, storeBase64, isCloudinaryConfigured } from '../utils/upload.util';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -12,6 +12,9 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 // Mount this in server.ts: app.use('/uploads', express.static('public/uploads'))
 
 router.use(authenticate, tenantContext);
+
+const BRANDING_VALID_TYPES = ['image/png', 'image/svg+xml', 'image/jpeg', 'image/jpg', 'image/webp'];
+const BRANDING_MAX_SIZE = 500 * 1024; // 500 KB — keeps base64 payload manageable in MongoDB
 
 // POST /api/upload/branding — upload logo/favicon
 router.post(
@@ -23,15 +26,32 @@ router.post(
             if (!req.file) {
                 return res.status(400).json({ success: false, message: 'No file uploaded' });
             }
-            const tenantId = (req as any).tenantId?.toString() || 'global';
-            const { type = 'logo' } = req.body;
-            const publicId = `${tenantId}/${type}`;
 
-            const result = await storeImage(req.file.buffer, 'branding', publicId, req.file.mimetype);
-            return res.json({
-                success: true,
-                data: { url: result.url, publicId: result.publicId, type, storage: result.storage },
-            });
+            if (!BRANDING_VALID_TYPES.includes(req.file.mimetype)) {
+                return res.status(400).json({ success: false, message: 'Invalid file type. Use PNG, SVG, JPG, or WebP.' });
+            }
+
+            if (req.file.size > BRANDING_MAX_SIZE) {
+                return res.status(400).json({ success: false, message: 'File too large. Max size is 500 KB.' });
+            }
+
+            let url: string;
+            let storage: string;
+
+            if (isCloudinaryConfigured()) {
+                const tenantId = (req as any).tenantId?.toString() || 'global';
+                const { type = 'logo' } = req.body;
+                const result = await storeImage(req.file.buffer, 'branding', `${tenantId}/${type}`, req.file.mimetype);
+                url = result.url;
+                storage = result.storage;
+            } else {
+                // Vercel serverless has no persistent filesystem — store as base64 data URL in MongoDB
+                url = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+                storage = 'dataurl';
+            }
+
+            // Return url at top level so clients can read res.data.url directly
+            return res.json({ success: true, url, data: { url, storage } });
         } catch (err: any) {
             return res.status(500).json({ success: false, message: err.message || 'Upload failed' });
         }
