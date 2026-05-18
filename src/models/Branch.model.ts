@@ -28,6 +28,7 @@ export interface IBranch extends Document {
     };
     amenities: string[];
     managerId?: mongoose.Types.ObjectId;
+    hardwareKey?: string;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -67,6 +68,7 @@ const BranchSchema: Schema = new Schema(
         },
         amenities: [{ type: String }],
         managerId: { type: Schema.Types.ObjectId, ref: 'User' },
+        hardwareKey: { type: String, sparse: true },
     },
     { timestamps: true }
 );

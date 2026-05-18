@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import crypto from 'crypto';
 import Branch from '../models/Branch.model';
 import Tenant from '../models/Tenant.model';
 import { authenticate } from '../middleware/auth.middleware';
@@ -8,6 +9,29 @@ import { requireAnyRole } from '../middleware/rbac.middleware';
 const router = Router();
 
 router.use(authenticate, tenantContext);
+
+// POST /api/branches/current/hardware-key — generate or regenerate hardware pairing key
+router.post('/current/hardware-key',
+    requireAnyRole('gym_owner', 'branch_manager', 'super_admin'),
+    async (req: Request, res: Response) => {
+        try {
+            const user     = (req as any).user;
+            const tenantId = (req as any).tenantId;
+            const branchId = user.branchId;
+
+            if (!branchId) {
+                return res.status(400).json({ success: false, message: 'No branch context for this user' });
+            }
+
+            const newKey = `hw_${crypto.randomBytes(16).toString('hex')}`;
+            await Branch.findOneAndUpdate({ _id: branchId, tenantId }, { $set: { hardwareKey: newKey } });
+
+            return res.json({ success: true, data: { hardwareKey: newKey } });
+        } catch (err: any) {
+            res.status(500).json({ success: false, message: err.message });
+        }
+    }
+);
 
 // GET /api/branches/current — returns the branch of the authenticated user
 router.get('/current', async (req: Request, res: Response) => {

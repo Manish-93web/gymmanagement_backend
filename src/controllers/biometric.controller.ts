@@ -1,4 +1,5 @@
 ﻿import { Request, Response, NextFunction } from 'express';
+import mongoose from 'mongoose';
 import BiometricDevice from '../models/BiometricDevice.model';
 import BiometricMember from '../models/BiometricMember.model';
 import BiometricRawLog from '../models/BiometricRawLog.model';
@@ -37,7 +38,12 @@ class BiometricController {
             const branchId = req.branchId || req.body.branchId;
             if (!branchId) { res.status(400).json({ success: false, message: 'branchId required' }); return; }
 
-            const device = await BiometricDevice.create({ ...req.body, tenantId, branchId });
+            const device = await BiometricDevice.create({
+                ...req.body,
+                deviceId: req.body.deviceId || new mongoose.Types.ObjectId().toString(),
+                tenantId,
+                branchId,
+            });
             res.status(201).json({ success: true, data: device });
         } catch (error) { next(error); }
     }
