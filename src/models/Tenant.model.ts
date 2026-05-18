@@ -29,7 +29,7 @@ export interface ITenant extends Document {
         ipWhitelist: string[];
     };
     subscription: {
-        plan: 'trial' | 'basic' | 'pro' | 'enterprise';
+        plan: 'trial' | 'basic' | 'pro' | 'pro_6m' | 'pro_annual' | 'enterprise';
         status: 'active' | 'inactive' | 'suspended' | 'cancelled';
         startDate: Date;
         endDate?: Date;
@@ -136,7 +136,7 @@ const TenantSchema: Schema = new Schema(
         subscription: {
             plan: {
                 type: String,
-                enum: ['trial', 'basic', 'pro', 'enterprise'],
+                enum: ['trial', 'basic', 'pro', 'pro_6m', 'pro_annual', 'enterprise'],
                 default: 'trial',
             },
             status: {

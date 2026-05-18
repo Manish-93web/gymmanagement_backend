@@ -24,6 +24,7 @@ const createMemberSchema = z.object({
     lastName: z.string().min(1),
     email: z.string().email(),
     mobile: z.string().min(10).max(15),
+    aadharNumber: z.string().optional().refine(val => !val || /^[0-9]{12}$/.test(val), 'Aadhar number must be exactly 12 digits'),
     photo: z.string().optional(),           // base64 data URL from webcam or file picker
     personalInfo: z.object({
         dateOfBirth: z.string().transform(val => new Date(val)).optional(),
@@ -45,6 +46,11 @@ const createMemberSchema = z.object({
     }).optional(),
     goals: z.array(z.string()).optional(),
     referredBy: z.string().optional(),
+    document: z.object({
+        type: z.enum(['id_proof', 'medical_certificate', 'photo', 'other']),
+        name: z.string().min(1),
+        url:  z.string().min(1),
+    }).optional(),
     // Payment/plan fields (passed from MemberForm)
     planId: z.string().optional(),
     membershipDuration: z.string().optional(),
@@ -136,12 +142,20 @@ export class MemberController {
                 lastName: validatedData.lastName,
                 email: validatedData.email,
                 mobile: validatedData.mobile,
+                ...(validatedData.aadharNumber ? { aadharNumber: validatedData.aadharNumber } : {}),
                 tenantId,
                 branchId,
                 personalInfo: personalInfo as any,
                 address: validatedData.address,
                 goals: validatedData.goals,
                 referredBy: validatedData.referredBy,
+                documents: validatedData.document ? [{ ...validatedData.document, uploadedAt: new Date() }] : [],
+                amount: validatedData.amount,
+                dueAmount: typeof validatedData.dueAmount === 'number' ? validatedData.dueAmount : 0,
+                membershipDuration: validatedData.membershipDuration,
+                membershipStart: validatedData.membershipStart,
+                membershipExpiry: validatedData.membershipExpiry,
+                planId: validatedData.planId,
             });
 
             res.status(201).json({ status: 'success', message: 'Member created successfully', data: member });

@@ -18,6 +18,7 @@ export interface IMember extends Document {
     email: string;
     mobile: string;
     membershipNumber: string;
+    aadharNumber?: string;
     planId?: mongoose.Types.ObjectId;
     membershipStart?: Date;
     membershipExpiry?: Date;
@@ -121,6 +122,9 @@ export interface IMember extends Document {
         level: number;
         badges: string[];
     };
+    membershipFee?: number;
+    dueAmount?: number;
+    paymentStatus?: 'paid' | 'unpaid';
     walletBalance: number;
     lastCheckIn?: Date;
     createdAt: Date;
@@ -137,6 +141,7 @@ const MemberSchema: Schema = new Schema(
         email: { type: String, required: true, lowercase: true, trim: true },
         mobile: { type: String, required: true, trim: true },
         membershipNumber: { type: String, required: true, unique: true },
+        aadharNumber: { type: String, trim: true, sparse: true },
         planId: { type: Schema.Types.ObjectId, ref: 'MembershipPlan', index: true },
         membershipStart: { type: Date },
         membershipExpiry: { type: Date, index: true },
@@ -266,6 +271,9 @@ const MemberSchema: Schema = new Schema(
             level: { type: Number, default: 1 },
             badges: [{ type: String }],
         },
+        membershipFee: { type: Number, default: 0 },
+        dueAmount: { type: Number, default: 0 },
+        paymentStatus: { type: String, enum: ['paid', 'unpaid'], default: 'paid' },
         walletBalance: { type: Number, default: 0 },
         lastCheckIn: { type: Date },
     },

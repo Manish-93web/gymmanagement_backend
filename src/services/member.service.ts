@@ -11,6 +11,7 @@ export interface CreateMemberDTO {
     lastName: string;
     email: string;
     mobile: string;
+    aadharNumber?: string;
     personalInfo?: {
         dateOfBirth: Date;
         gender: 'male' | 'female' | 'other';
@@ -31,6 +32,14 @@ export interface CreateMemberDTO {
     goals?: string[];
     referredBy?: string;
     status?: MemberStatus;
+    documents?: { type: string; name: string; url: string; uploadedAt: Date }[];
+    amount?: number;
+    dueAmount?: number;
+    membershipFee?: number;
+    membershipDuration?: string;
+    membershipStart?: Date | string;
+    membershipExpiry?: Date | string;
+    planId?: string;
 }
 
 export interface UpdateMemberDTO {
@@ -116,6 +125,7 @@ export class MemberService {
             lastName: data.lastName,
             email: data.email.toLowerCase(),
             mobile: data.mobile,
+            ...(data.aadharNumber ? { aadharNumber: data.aadharNumber } : {}),
             membershipNumber,
             status: 'active', // Default to active for new registrations
             personalInfo: data.personalInfo,
@@ -123,6 +133,14 @@ export class MemberService {
             goals: data.goals,
             referralCode,
             referredBy: data.referredBy ? new mongoose.Types.ObjectId(data.referredBy) : undefined,
+            documents: data.documents ?? [],
+            membershipFee: data.amount ?? 0,
+            dueAmount: data.dueAmount ?? 0,
+            paymentStatus: (data.amount && data.amount > 0 && (data.dueAmount ?? 0) === 0) ? 'paid' : 'unpaid',
+            ...(data.membershipDuration ? { membershipDuration: data.membershipDuration } : {}),
+            ...(data.membershipStart ? { membershipStart: new Date(data.membershipStart as string) } : {}),
+            ...(data.membershipExpiry ? { membershipExpiry: new Date(data.membershipExpiry as string) } : {}),
+            ...(data.planId ? { planId: new mongoose.Types.ObjectId(data.planId) } : {}),
             statusHistory: [{
                 status: 'active',
                 changedAt: new Date(),
