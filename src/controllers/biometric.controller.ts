@@ -313,7 +313,7 @@ class BiometricController {
             ]);
 
             const dailyStats = await Attendance.aggregate([
-                { $match: { tenantId: { $exists: true }, checkInTime: { $gte: start, $lte: end } } },
+                { $match: { tenantId: new mongoose.Types.ObjectId(tenantId as string), checkInTime: { $gte: start, $lte: end } } },
                 { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$checkInTime' } }, count: { $sum: 1 } } },
                 { $sort: { _id: 1 } },
             ]);

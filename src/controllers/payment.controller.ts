@@ -139,6 +139,9 @@ export class PaymentController {
             const validatedData = refundSchema.parse(req.body);
             const tenantId = req.user!.tenantId!.toString();
 
+            const existingPayment = await PaymentService.getPaymentById(paymentId, tenantId);
+            if (!existingPayment) return res.status(404).json({ success: false, message: 'Payment not found' });
+
             const payment = await PaymentService.processRefund(
                 paymentId,
                 validatedData.amount || 0,

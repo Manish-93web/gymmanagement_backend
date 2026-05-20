@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import NutritionLog from '../models/NutritionLog.model';
+import DietPlan from '../models/DietPlan.model';
 import Member from '../models/Member.model';
 
 // Common foods database for search
@@ -379,6 +380,184 @@ class NutritionController {
             ]);
 
             res.json({ success: true, data: stats });
+        } catch (error) {
+            next(error);
+        }
+    }
+    // Dashboard — returns today's summary + active diet plan for frontend dietService
+    async getDashboard(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.tenantId;
+            const userId = req.user?._id;
+            if (!tenantId || !userId) {
+                res.status(401).json({ success: false, message: 'Authentication required' });
+                return;
+            }
+
+            const member = await Member.findOne({ userId, tenantId });
+            const memberId = member?._id;
+
+            const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+            const dayEnd = new Date(); dayEnd.setHours(23, 59, 59, 999);
+
+            const [todayLogs, activePlan] = await Promise.all([
+                memberId ? NutritionLog.find({ tenantId, memberId, date: { $gte: dayStart, $lte: dayEnd } }) : Promise.resolve([]),
+                memberId ? DietPlan.findOne({ tenantId, memberId, isActive: true }).sort({ createdAt: -1 }) : Promise.resolve(null),
+            ]);
+
+            const summary = (todayLogs as any[]).reduce(
+                (acc: any, log: any) => ({
+                    calories: acc.calories + (log.totalCalories || 0),
+                    protein: acc.protein + (log.totalProtein || 0),
+                    carbs: acc.carbs + (log.totalCarbs || 0),
+                    fats: acc.fats + (log.totalFats || 0),
+                }),
+                { calories: 0, protein: 0, carbs: 0, fats: 0 }
+            );
+
+            res.json({
+                success: true,
+                plan: activePlan,
+                stats: {
+                    today: summary,
+                    logsCount: todayLogs.length,
+                    hasActivePlan: !!activePlan,
+                },
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // Create or update diet plan via nutrition route (delegates to DietPlan model)
+    async createPlan(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.tenantId;
+            const userId = req.user?._id;
+            if (!tenantId || !userId) {
+                res.status(401).json({ success: false, message: 'Authentication required' });
+                return;
+            }
+
+            const member = await Member.findOne({ userId, tenantId });
+            if (!member) {
+                res.status(404).json({ success: false, message: 'Member profile not found' });
+                return;
+            }
+
+            // Deactivate existing active plan
+            await DietPlan.updateMany({ tenantId, memberId: member._id, isActive: true }, { isActive: false });
+
+            const plan = await DietPlan.create({
+                tenantId,
+                branchId: req.user?.branchId,
+                memberId: member._id,
+                isActive: true,
+                goal: req.body.goal || 'maintenance',
+                name: req.body.name || 'My Diet Plan',
+                description: req.body.description || '',
+                macros: {
+                    calories: req.body.calorieTarget || req.body.calories || 2000,
+                    protein: req.body.macros?.protein || req.body.protein || 150,
+                    carbs: req.body.macros?.carbs || req.body.carbs || 200,
+                    fats: req.body.macros?.fat || req.body.fats || 65,
+                },
+                meals: req.body.meals || [],
+                schedule: req.body.schedule || { daysPerWeek: 7, duration: 4 },
+                restrictions: req.body.restrictions || [],
+            } as any);
+
+            res.status(201).json({ success: true, data: plan });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async updatePlan(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) {
+                res.status(401).json({ success: false, message: 'Authentication required' });
+                return;
+            }
+
+            const plan = await DietPlan.findOneAndUpdate(
+                { _id: req.params.planId, tenantId },
+                { $set: req.body },
+                { new: true }
+            );
+
+            if (!plan) {
+                res.status(404).json({ success: false, message: 'Plan not found' });
+                return;
+            }
+
+            res.json({ success: true, data: plan });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // Simple consumption log (flat format from frontend dietService.logConsumption)
+    async logConsumption(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.tenantId;
+            const userId = req.user?._id;
+            if (!tenantId || !userId) {
+                res.status(401).json({ success: false, message: 'Authentication required' });
+                return;
+            }
+
+            const { date, calories, protein, carbs, fats } = req.body;
+
+            const member = await Member.findOne({ userId, tenantId });
+            if (!member) {
+                res.status(404).json({ success: false, message: 'Member profile not found' });
+                return;
+            }
+
+            const log = await NutritionLog.create({
+                tenantId,
+                memberId: member._id,
+                userId,
+                date: date ? new Date(date) : new Date(),
+                mealType: 'snack',
+                foods: [{ foodName: 'Daily Log', quantity: 1, unit: 'serving', calories: calories || 0, protein: protein || 0, carbs: carbs || 0, fats: fats || 0 }],
+                totalCalories: calories || 0,
+                totalProtein: protein || 0,
+                totalCarbs: carbs || 0,
+                totalFats: fats || 0,
+                totalFiber: 0,
+            });
+
+            res.status(201).json({ success: true, data: log });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async createCustomFood(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { name, unit, calories, protein, carbs, fats, fiber } = req.body;
+            if (!name) {
+                res.status(400).json({ success: false, message: 'Food name is required' });
+                return;
+            }
+            // Return the custom food data (ephemeral — no persistent food DB yet)
+            res.status(201).json({
+                success: true,
+                data: {
+                    id: `custom_${Date.now()}`,
+                    name,
+                    unit: unit || '100g',
+                    calories: calories || 0,
+                    protein: protein || 0,
+                    carbs: carbs || 0,
+                    fats: fats || 0,
+                    fiber: fiber || 0,
+                    isCustom: true,
+                },
+            });
         } catch (error) {
             next(error);
         }

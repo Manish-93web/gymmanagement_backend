@@ -11,7 +11,11 @@ import {
     triggerBackup,
     getAdmins,
     getAllSupportTickets,
+    getSupportTicketById,
+    replyToTicket,
     getPlatformPlans,
+    createSaaSPlan,
+    updateSaaSPlan,
     getPlatformPayments,
     viewTenantMembers,
     viewTenantAttendance,
@@ -22,6 +26,7 @@ import {
     updatePlatformBranding,
     getPlatformAnalytics,
     getPlatformHealth,
+    promoteToAdmin,
 } from '../controllers/platform.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/role.middleware';
@@ -43,11 +48,28 @@ router.get('/audit-logs', getPlatformAuditLogs);
 router.get('/backups', listBackups);
 router.post('/backups/trigger', triggerBackup);
 
-// New platform routes
+// Admins
 router.get('/admins', getAdmins);
+router.post('/admins/promote', promoteToAdmin);
+
+// Support tickets — /support/tickets matches frontend calls
 router.get('/support', getAllSupportTickets);
+router.get('/support/tickets', getAllSupportTickets);
+router.get('/support/tickets/:id', getSupportTicketById);
+router.post('/support/tickets/:id/reply', replyToTicket);
+
+// SaaS Plans — /saas-plans matches frontend calls
 router.get('/plans', getPlatformPlans);
+router.get('/saas-plans', getPlatformPlans);
+router.post('/saas-plans', createSaaSPlan);
+router.patch('/saas-plans/:id', updateSaaSPlan);
+
+// Payments — /saas-payments matches frontend calls
 router.get('/payments', getPlatformPayments);
+router.get('/saas-payments', getPlatformPayments);
+
+// Backup alias — frontend calls POST /platform/backup
+router.post('/backup', triggerBackup);
 
 // Tenant view routes (impersonation/inspection)
 router.get('/tenants/:tenantId/view/members', viewTenantMembers);

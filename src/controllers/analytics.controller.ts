@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import AnalyticsService from '../services/analytics.service';
+import Member from '../models/Member.model';
+import User from '../models/User.model';
+import Branch from '../models/Branch.model';
 
 export class AnalyticsController {
     async getRevenueAnalytics(req: Request, res: Response, next: NextFunction) {
@@ -126,6 +129,20 @@ export class AnalyticsController {
                     },
                 },
             });
+        } catch (error) {
+            return next(error);
+        }
+    }
+
+    async getUsageSummary(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.user!.tenantId!.toString();
+            const [membersCount, trainersCount, branchesCount] = await Promise.all([
+                Member.countDocuments({ tenantId, status: { $ne: 'deleted' } } as any),
+                User.countDocuments({ tenantId, role: 'trainer' } as any),
+                Branch.countDocuments({ tenantId, isActive: true }),
+            ]);
+            return res.status(200).json({ success: true, data: { membersCount, trainersCount, branchesCount } });
         } catch (error) {
             return next(error);
         }

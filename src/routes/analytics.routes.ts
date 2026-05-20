@@ -18,6 +18,7 @@ router.get('/class-utilization', cacheMiddleware(ANALYTICS_CACHE_TTL), analytics
 router.get('/trainer-productivity', cacheMiddleware(ANALYTICS_CACHE_TTL), analyticsController.getTrainerProductivity.bind(analyticsController));
 router.get('/dashboard', cacheMiddleware(ANALYTICS_CACHE_TTL), analyticsController.getDashboardOverview.bind(analyticsController));
 router.get('/engagement', cacheMiddleware(ANALYTICS_CACHE_TTL), analyticsController.getEngagementAnalytics.bind(analyticsController));
+router.get('/usage-summary', cacheMiddleware(ANALYTICS_CACHE_TTL), analyticsController.getUsageSummary.bind(analyticsController));
 router.get('/export/:name', analyticsController.exportAnalytics.bind(analyticsController));
 
 export default router;

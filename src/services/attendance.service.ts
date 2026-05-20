@@ -19,7 +19,7 @@ export class AttendanceService {
     // Check-in member
     async checkIn(data: CheckInDTO): Promise<IAttendance> {
         // Verify member has active subscription
-        const member = await Member.findById(data.memberId);
+        const member = await Member.findOne({ _id: data.memberId, tenantId: data.tenantId });
         if (!member) {
             throw new Error('Member not found');
         }
@@ -30,6 +30,7 @@ export class AttendanceService {
 
         const activeSubscription = await Subscription.findOne({
             memberId: data.memberId,
+            tenantId: data.tenantId,
             status: 'active',
             startDate: { $lte: new Date() },
             endDate: { $gte: new Date() },
@@ -42,6 +43,7 @@ export class AttendanceService {
         // Check if already checked in
         const existingCheckIn = await Attendance.findOne({
             memberId: data.memberId,
+            tenantId: data.tenantId,
             checkInTime: {
                 $gte: new Date(new Date().setHours(0, 0, 0, 0)),
             },

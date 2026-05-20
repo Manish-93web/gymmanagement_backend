@@ -21,4 +21,17 @@ router.delete('/logs/:logId', nutritionController.deleteNutritionLog.bind(nutrit
 router.get('/summary', nutritionController.getNutritionSummary.bind(nutritionController));
 router.get('/stats/weekly', nutritionController.getWeeklyNutritionStats.bind(nutritionController));
 
+// Dashboard — used by frontend dietService.getActiveDietPlan + getCompliance
+router.get('/dashboard', nutritionController.getDashboard.bind(nutritionController));
+
+// Diet plan management (simple consumption log + plan CRUD)
+router.post('/plan', nutritionController.createPlan.bind(nutritionController));
+router.patch('/plan/:planId', nutritionController.updatePlan.bind(nutritionController));
+
+// Simple flat consumption log (frontend dietService.logConsumption format)
+router.post('/consumption', nutritionController.logConsumption.bind(nutritionController));
+
+// Custom food creation
+router.post('/foods', nutritionController.createCustomFood.bind(nutritionController));
+
 export default router;
