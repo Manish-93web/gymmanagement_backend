@@ -619,6 +619,48 @@ export class MemberController {
         }
     }
 
+    // GET /expiry-alerts — three buckets: expired (last 7d), expiringToday, expiringSoon (next 7d)
+    async getExpiryAlertsBucketed(req: Request, res: Response): Promise<void> {
+        try {
+            if (!req.tenantId) {
+                res.status(400).json({ success: false, message: 'Tenant context required' });
+                return;
+            }
+
+            const now = new Date();
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const endOfToday   = new Date(startOfToday.getTime() + 86_400_000 - 1);
+            const sevenDaysAgo = new Date(startOfToday.getTime() - 7 * 86_400_000);
+            const sevenDaysOut = new Date(startOfToday.getTime() + 7 * 86_400_000);
+
+            const select = 'firstName lastName mobile membershipExpiry membershipNumber status';
+
+            const [expired, expiringToday, expiringSoon] = await Promise.all([
+                Member.find({
+                    tenantId: req.tenantId,
+                    membershipExpiry: { $gte: sevenDaysAgo, $lt: startOfToday },
+                    status: { $in: ['active', 'expired'] },
+                }).select(select).sort({ membershipExpiry: -1 }).limit(50).lean(),
+
+                Member.find({
+                    tenantId: req.tenantId,
+                    membershipExpiry: { $gte: startOfToday, $lte: endOfToday },
+                    status: { $in: ['active', 'expired'] },
+                }).select(select).sort({ membershipExpiry: 1 }).limit(50).lean(),
+
+                Member.find({
+                    tenantId: req.tenantId,
+                    membershipExpiry: { $gt: endOfToday, $lte: sevenDaysOut },
+                    status: 'active',
+                }).select(select).sort({ membershipExpiry: 1 }).limit(50).lean(),
+            ]);
+
+            res.status(200).json({ success: true, data: { expired, expiringToday, expiringSoon } });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to get expiry alerts' });
+        }
+    }
+
     // Get member timeline (activity history: status changes + attendance)
     async getMemberTimeline(req: Request, res: Response): Promise<void> {
         try {

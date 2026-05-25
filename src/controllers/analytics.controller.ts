@@ -1,14 +1,17 @@
 import { Request, Response, NextFunction } from 'express';
-import { z } from 'zod';
 import AnalyticsService from '../services/analytics.service';
 import Member from '../models/Member.model';
 import User from '../models/User.model';
 import Branch from '../models/Branch.model';
 
+const NO_TENANT = (res: Response) =>
+    res.status(400).json({ success: false, message: 'Tenant context required' });
+
 export class AnalyticsController {
     async getRevenueAnalytics(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId!.toString();
+            const tenantId = req.tenantId;
+            if (!tenantId) return NO_TENANT(res);
             const { branchId, startDate, endDate } = req.query;
 
             const analytics = await AnalyticsService.getRevenueAnalytics(
@@ -26,7 +29,8 @@ export class AnalyticsController {
 
     async getRetentionAnalytics(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId!.toString();
+            const tenantId = req.tenantId;
+            if (!tenantId) return NO_TENANT(res);
             const { branchId } = req.query;
 
             const analytics = await AnalyticsService.getRetentionAnalytics(tenantId, branchId as string);
@@ -39,7 +43,8 @@ export class AnalyticsController {
 
     async getAttendanceAnalytics(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId!.toString();
+            const tenantId = req.tenantId;
+            if (!tenantId) return NO_TENANT(res);
             const { branchId, startDate, endDate } = req.query;
 
             const analytics = await AnalyticsService.getAttendanceAnalytics(
@@ -57,7 +62,8 @@ export class AnalyticsController {
 
     async getClassUtilization(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId!.toString();
+            const tenantId = req.tenantId;
+            if (!tenantId) return NO_TENANT(res);
             const { branchId, startDate, endDate } = req.query;
 
             const analytics = await AnalyticsService.getClassUtilization(
@@ -75,7 +81,8 @@ export class AnalyticsController {
 
     async getTrainerProductivity(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId!.toString();
+            const tenantId = req.tenantId;
+            if (!tenantId) return NO_TENANT(res);
             const { branchId, startDate, endDate } = req.query;
 
             const analytics = await AnalyticsService.getTrainerProductivity(
@@ -93,7 +100,8 @@ export class AnalyticsController {
 
     async getDashboardOverview(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId!.toString();
+            const tenantId = req.tenantId;
+            if (!tenantId) return NO_TENANT(res);
             const { branchId } = req.query;
 
             const overview = await AnalyticsService.getDashboardOverview(tenantId, branchId as string);
@@ -106,7 +114,8 @@ export class AnalyticsController {
 
     async getEngagementAnalytics(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId!.toString();
+            const tenantId = req.tenantId;
+            if (!tenantId) return NO_TENANT(res);
             const { branchId, startDate, endDate } = req.query;
 
             const retention = await AnalyticsService.getRetentionAnalytics(tenantId, branchId as string);
@@ -136,7 +145,8 @@ export class AnalyticsController {
 
     async getUsageSummary(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId!.toString();
+            const tenantId = req.tenantId;
+            if (!tenantId) return NO_TENANT(res);
             const [membersCount, trainersCount, branchesCount] = await Promise.all([
                 Member.countDocuments({ tenantId, status: { $ne: 'deleted' } } as any),
                 User.countDocuments({ tenantId, role: 'trainer' } as any),
@@ -150,7 +160,8 @@ export class AnalyticsController {
 
     async exportAnalytics(req: Request, res: Response, next: NextFunction) {
         try {
-            const tenantId = req.user!.tenantId!.toString();
+            const tenantId = req.tenantId;
+            if (!tenantId) return NO_TENANT(res);
             const { name } = req.params;
             const { branchId, startDate, endDate, format = 'json' } = req.query;
 

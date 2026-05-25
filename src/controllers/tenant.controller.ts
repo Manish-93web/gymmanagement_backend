@@ -1,6 +1,11 @@
 ﻿import { Request, Response } from 'express';
 import tenantService from '../services/tenant.service';
 import { z } from 'zod';
+import Member from '../models/Member.model';
+import User from '../models/User.model';
+import MembershipPlan from '../models/MembershipPlan.model';
+import GymClass from '../models/Class.model';
+import Tenant from '../models/Tenant.model';
 
 // Validation schemas
 const createTenantSchema = z.object({
@@ -253,6 +258,45 @@ export class TenantController {
                 status: 'error',
                 message: error.message || 'Failed to deactivate tenant',
             });
+        }
+    }
+
+    async getOnboarding(req: Request, res: Response): Promise<void> {
+        try {
+            const tenantId = req.user?.tenantId?.toString();
+            if (!tenantId) {
+                res.status(400).json({ success: false, message: 'Tenant context required' });
+                return;
+            }
+
+            const [membersCount, plansCount, staffCount, classesCount, tenant] = await Promise.all([
+                Member.countDocuments({ tenantId }),
+                MembershipPlan.countDocuments({ tenantId }),
+                User.countDocuments({ tenantId, role: { $in: ['trainer', 'staff'] } }),
+                GymClass.countDocuments({ tenantId }),
+                Tenant.findById(tenantId).select('branding').lean(),
+            ]);
+
+            const hasBranding = !!(tenant as any)?.branding?.logo || !!(tenant as any)?.branding?.primaryColor;
+
+            const steps = [
+                { key: 'members',  label: 'Add your first member',       done: membersCount > 0,  href: '/members',           count: membersCount },
+                { key: 'plans',    label: 'Create membership plans',      done: plansCount > 0,    href: '/finance/plans',     count: plansCount },
+                { key: 'staff',    label: 'Add staff or trainers',        done: staffCount > 0,    href: '/staff',             count: staffCount },
+                { key: 'classes',  label: 'Schedule your first class',    done: classesCount > 0,  href: '/classes',           count: classesCount },
+                { key: 'branding', label: 'Set up your gym branding',     done: hasBranding,       href: '/settings/branding', count: hasBranding ? 1 : 0 },
+            ];
+
+            const completedCount = steps.filter(s => s.done).length;
+            const total = steps.length;
+            const percent = Math.round((completedCount / total) * 100);
+
+            res.status(200).json({
+                success: true,
+                data: { steps, completedCount, total, percent, isComplete: completedCount === total },
+            });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to fetch onboarding status' });
         }
     }
 }

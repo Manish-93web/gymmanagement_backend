@@ -44,6 +44,7 @@ router.post('/:memberId/transformation', requirePermission('member:update'), mem
 
 // Expiry alerts & timeline
 router.get('/alerts/expiry', requirePermission('member:read'), memberController.getExpiryAlerts.bind(memberController));
+router.get('/expiry-alerts', requirePermission('member:read'), memberController.getExpiryAlertsBucketed.bind(memberController));
 router.get('/:memberId/timeline', requirePermission('member:read'), memberController.getMemberTimeline.bind(memberController));
 
 // Change subscription plan

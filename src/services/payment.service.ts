@@ -284,7 +284,11 @@ export class PaymentService {
         if (status) filter.status = status;
 
         const [payments, total] = await Promise.all([
-            Payment.find(filter).skip(skip).limit(limit).sort({ createdAt: -1 }),
+            Payment.find(filter)
+                .populate('memberId', 'firstName lastName email mobile membershipNumber')
+                .skip(skip)
+                .limit(limit)
+                .sort({ createdAt: -1 }),
             Payment.countDocuments(filter),
         ]);
 

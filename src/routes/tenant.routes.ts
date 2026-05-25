@@ -16,6 +16,9 @@ router.post('/register', tenantController.createTenant.bind(tenantController));
 // Tenant-specific routes (Gym Owner + Super Admin)
 router.get('/current', authenticate, tenantController.getCurrentTenant.bind(tenantController));
 
+// Must be before /:tenantId to avoid 'onboarding' being matched as a tenantId param
+router.get('/onboarding', authenticate, tenantController.getOnboarding.bind(tenantController));
+
 router.get('/:tenantId', authenticate, requireTenantAccess, tenantController.getTenant.bind(tenantController));
 router.put('/:tenantId', authenticate, requireTenantAccess, requireRole('gym_owner', 'super_admin'), tenantController.updateTenant.bind(tenantController));
 router.patch('/:tenantId/features', authenticate, requireTenantAccess, requireRole('gym_owner', 'super_admin'), tenantController.toggleFeature.bind(tenantController));

@@ -37,8 +37,33 @@ export class AuthService {
             throw new Error('User already exists with this email or mobile');
         }
 
-        // Create user
-        const user = await (User as any).create(data);
+        let tenantId = data.tenantId;
+
+        // Auto-create a tenant for gym_owner who doesn't provide one
+        let tenant: any = null;
+        if (data.role === 'gym_owner' && !tenantId) {
+            const gymName = `${data.firstName} ${data.lastName}'s Gym`;
+            const baseSlug = gymName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+            // Ensure slug uniqueness by appending a short random suffix
+            const slug = `${baseSlug}-${Math.random().toString(36).slice(2, 7)}`;
+            const trialEnd = new Date();
+            trialEnd.setDate(trialEnd.getDate() + 30);
+            tenant = await Tenant.create({
+                name: gymName,
+                slug,
+                isActive: true,
+                subscription: {
+                    plan: 'trial',
+                    status: 'active',
+                    startDate: new Date(),
+                    endDate: trialEnd,
+                },
+            });
+            tenantId = tenant._id.toString();
+        }
+
+        // Create user (with resolved tenantId)
+        const user = await (User as any).create({ ...data, tenantId });
 
         // Generate tokens
         const accessToken = generateAccessToken({
@@ -59,7 +84,9 @@ export class AuthService {
         user.refreshTokens.push(refreshToken);
         await user.save();
 
-        const tenant = await Tenant.findById(user.tenantId);
+        if (!tenant && user.tenantId) {
+            tenant = await Tenant.findById(user.tenantId);
+        }
         return { user, tenant, accessToken, refreshToken };
     }
 
@@ -125,7 +152,23 @@ export class AuthService {
         // Update last login and refresh tokens locally
         user.lastLogin = now;
 
-        // Generate tokens
+        // Auto-create a tenant for gym_owner who somehow has none (data migration on next login)
+        if (user.role === 'gym_owner' && !user.tenantId) {
+            const gymName = `${user.firstName} ${user.lastName}'s Gym`;
+            const baseSlug = gymName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+            const slug = `${baseSlug}-${Math.random().toString(36).slice(2, 7)}`;
+            const trialEnd = new Date();
+            trialEnd.setDate(trialEnd.getDate() + 30);
+            const newTenant = await Tenant.create({
+                name: gymName,
+                slug,
+                isActive: true,
+                subscription: { plan: 'trial', status: 'active', startDate: new Date(), endDate: trialEnd },
+            });
+            user.tenantId = newTenant._id as any;
+        }
+
+        // Generate tokens (after tenant resolution so tenantId is present)
         const accessToken = generateAccessToken({
             userId: user._id.toString(),
             role: user.role,
@@ -153,7 +196,8 @@ export class AuthService {
                 $set: {
                     lastLogin: user.lastLogin,
                     devices: user.devices,
-                    refreshTokens: user.refreshTokens
+                    refreshTokens: user.refreshTokens,
+                    tenantId: user.tenantId,
                 }
             }
         );

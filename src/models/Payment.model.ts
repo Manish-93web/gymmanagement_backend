@@ -188,6 +188,6 @@ PaymentSchema.index({ 'gateway.transactionId': 1 });
 PaymentSchema.index({ tenantId: 1, createdAt: -1 });
 PaymentSchema.index({ tenantId: 1, branchId: 1, createdAt: -1 });
 PaymentSchema.index({ tenantId: 1, memberId: 1, status: 1 });
-PaymentSchema.index({ tenantId: 1, paymentDate: -1 });
+PaymentSchema.index({ tenantId: 1, memberId: 1, createdAt: -1 });
 
 export default mongoose.model<IPayment>('Payment', PaymentSchema);

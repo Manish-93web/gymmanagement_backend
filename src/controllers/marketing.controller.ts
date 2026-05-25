@@ -257,7 +257,7 @@ export class MarketingController {
                             await NotificationService.sendNotification({
                                 recipientId: (member as any)._id.toString(),
                                 recipientType: 'member',
-                                tenantId: tenantId!.toString(),
+                                tenantId: tenantId as unknown as string,
                                 branchId: '',
                                 channel,
                                 subject,

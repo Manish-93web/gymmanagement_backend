@@ -3,12 +3,13 @@ import esslAdmsController from '../controllers/essl-adms.controller';
 
 const router = Router();
 
-// Use text body parser for this router — eSSL device pushes plain-text ATTLOG
-router.use(express.text({ type: '*/*', limit: '1mb' }));
+// Scoped text parser — only applied per-route so it does NOT corrupt JSON bodies
+// for other API routes that share the '/' mount prefix.
+const esslText = express.text({ type: '*/*', limit: '1mb' });
 
-router.get('/iclock/cdata', esslAdmsController.heartbeat.bind(esslAdmsController));
-router.post('/iclock/cdata', esslAdmsController.receiveData.bind(esslAdmsController));
-router.get('/iclock/getrequest', esslAdmsController.getRequest.bind(esslAdmsController));
-router.post('/iclock/devicecmd', esslAdmsController.deviceCmd.bind(esslAdmsController));
+router.get('/iclock/cdata', esslText, esslAdmsController.heartbeat.bind(esslAdmsController));
+router.post('/iclock/cdata', esslText, esslAdmsController.receiveData.bind(esslAdmsController));
+router.get('/iclock/getrequest', esslText, esslAdmsController.getRequest.bind(esslAdmsController));
+router.post('/iclock/devicecmd', esslText, esslAdmsController.deviceCmd.bind(esslAdmsController));
 
 export default router;

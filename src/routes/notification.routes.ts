@@ -21,19 +21,17 @@ router.post(
 
 router.get(
     '/',
-    requireRole('gym_owner', 'branch_manager', 'staff'),
     notificationController.getNotifications.bind(notificationController)
 );
 
 router.get(
     '/stats',
-    requireRole('gym_owner', 'branch_manager'),
+    requireRole('gym_owner', 'branch_manager', 'accountant'),
     notificationController.getNotificationStats.bind(notificationController)
 );
 
 router.get(
     '/:notificationId',
-    requireRole('gym_owner', 'branch_manager', 'staff'),
     notificationController.getNotificationById.bind(notificationController)
 );
 

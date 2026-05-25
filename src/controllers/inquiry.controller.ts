@@ -1,174 +1,243 @@
-import { Request, Response, NextFunction } from 'express';
-import Lead from '../models/Lead.model';
-import Member from '../models/Member.model';
-import User from '../models/User.model';
+import { Request, Response } from 'express';
 import mongoose from 'mongoose';
+import Inquiry from '../models/Inquiry.model';
+import Member from '../models/Member.model';
 
-// Map inquiry sources to valid Lead source enum values
-const mapSource = (source?: string): string => {
-    const validSources = ['website', 'walk_in', 'referral', 'social_media', 'advertisement', 'event', 'other'];
-    if (source && validSources.includes(source)) return source;
-    // Map kiosk/inquiry/reception to walk_in as nearest equivalent
-    if (source === 'kiosk' || source === 'reception') return 'walk_in';
-    if (source === 'inquiry') return 'other';
-    return 'walk_in';
-};
-
-// Generate a unique membership number
-const generateMembershipNumber = (): string => {
-    const timestamp = Date.now().toString(36).toUpperCase();
-    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
-    return `MEM-${timestamp}-${random}`;
-};
+const NO_TENANT = (res: Response) =>
+    res.status(400).json({ success: false, message: 'Tenant context required' });
 
 export class InquiryController {
-    async getInquiries(req: Request, res: Response, next: NextFunction) {
+    // GET / — paginated list with optional status filter
+    async getInquiries(req: Request, res: Response): Promise<void> {
         try {
-            const tenantId = req.user!.tenantId;
-            const { status, page = 1, limit = 20 } = req.query;
-            // Filter for walk-in / reception type inquiries (non-digital sources)
-            const query: any = {
-                tenantId,
-                source: { $in: ['walk_in', 'other', 'event'] }
-            };
-            if (status) query.status = status;
-            const skip = (Number(page) - 1) * Number(limit);
+            const tenantId = req.tenantId;
+            if (!tenantId) { NO_TENANT(res); return; }
+
+            const page   = parseInt((req.query.page   as string) || '1',  10);
+            const limit  = parseInt((req.query.limit  as string) || '20', 10);
+            const skip   = (page - 1) * limit;
+            const status = req.query.status as string | undefined;
+
+            const filter: Record<string, any> = { tenantId };
+            if (status) filter.status = status;
+
             const [inquiries, total] = await Promise.all([
-                Lead.find(query).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
-                Lead.countDocuments(query)
+                Inquiry.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+                Inquiry.countDocuments(filter),
             ]);
-            return res.json({ success: true, data: { inquiries, total } });
-        } catch (error) { return next(error); }
+
+            res.status(200).json({
+                success: true,
+                data: inquiries,
+                pagination: { total, page, limit, pages: Math.ceil(total / limit) },
+            });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to fetch inquiries' });
+        }
     }
 
-    async createInquiry(req: Request, res: Response, next: NextFunction) {
+    // POST / — create inquiry (optionalAuth — public form supported)
+    async createInquiry(req: Request, res: Response): Promise<void> {
         try {
-            const tenantId = req.user?.tenantId || req.body.tenantId;
-            const branchId = req.user?.branchId || req.body.branchId;
-            const { firstName, lastName, name, email, mobile, interestedIn, visitDate, notes, source } = req.body;
+            // Resolve tenantId: from auth middleware → query param → request body
+            const tenantId =
+                req.tenantId ||
+                (req.query.tenantId as string | undefined) ||
+                (req.body.tenantId as string | undefined);
 
-            // Support both firstName/lastName and a single name field
-            const resolvedFirstName = firstName || (name ? name.split(' ')[0] : undefined);
-            const resolvedLastName = lastName || (name ? name.split(' ').slice(1).join(' ') : '');
+            const { name, phone, notes, branchId } = req.body;
 
-            if (!resolvedFirstName || !mobile) {
-                return res.status(400).json({ success: false, message: 'name (or firstName) and mobile are required' });
+            if (!name || !phone) {
+                res.status(400).json({ success: false, message: 'Name and phone are required' });
+                return;
             }
+
             if (!tenantId) {
-                return res.status(400).json({ success: false, message: 'tenantId is required' });
-            }
-            if (!branchId) {
-                return res.status(400).json({ success: false, message: 'branchId is required' });
+                // Still persist with whatever is available — caller may pass tenantId in body
+                if (!req.body.tenantId) {
+                    res.status(400).json({ success: false, message: 'Tenant context required' });
+                    return;
+                }
             }
 
-            const inquiry = await (Lead as any).create({
-                firstName: resolvedFirstName,
-                lastName: resolvedLastName,
-                email: email || `inquiry_${Date.now()}@noemail.local`,
-                mobile,
-                source: mapSource(source),
-                status: 'new',
-                interests: interestedIn ? [interestedIn] : [],
-                notes: notes || '',
+            const inquiry = await Inquiry.create({
                 tenantId,
-                branchId
+                branchId: branchId || undefined,
+                name:     name.trim(),
+                phone:    phone.trim(),
+                notes:    notes || '',
+                status:   'new',
             });
-            return res.status(201).json({ success: true, data: inquiry });
-        } catch (error) { return next(error); }
+
+            res.status(201).json({
+                success: true,
+                message: 'Inquiry submitted successfully',
+                data: inquiry,
+            });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to create inquiry' });
+        }
     }
 
-    async updateInquiry(req: Request, res: Response, next: NextFunction) {
+    // GET /stats — count by status
+    async getInquiryStats(req: Request, res: Response): Promise<void> {
         try {
-            const inquiry = await Lead.findOneAndUpdate(
-                { _id: req.params.id, tenantId: req.user!.tenantId },
-                req.body, { new: true }
-            );
-            if (!inquiry) return res.status(404).json({ success: false, message: 'Inquiry not found' });
-            return res.json({ success: true, data: inquiry });
-        } catch (error) { return next(error); }
-    }
+            const tenantId = req.tenantId;
+            if (!tenantId) { NO_TENANT(res); return; }
 
-    async convertToMember(req: Request, res: Response, next: NextFunction) {
-        try {
-            const lead = await Lead.findOne({ _id: req.params.id, tenantId: req.user!.tenantId });
-            if (!lead) return res.status(404).json({ success: false, message: 'Inquiry not found' });
-            if (lead.status === 'converted') {
-                return res.status(400).json({ success: false, message: 'Inquiry already converted' });
+            const stats = await Inquiry.aggregate([
+                { $match: { tenantId: new mongoose.Types.ObjectId(tenantId) } },
+                { $group: { _id: '$status', count: { $sum: 1 } } },
+            ]);
+
+            const formatted: Record<string, number> = {
+                new: 0,
+                contacted: 0,
+                converted: 0,
+                not_interested: 0,
+            };
+
+            for (const s of stats) {
+                formatted[s._id] = s.count;
             }
 
-            // Create a placeholder User account for the member
-            const tempPassword = Math.random().toString(36).substring(2, 12);
-            const user = await User.create({
-                firstName: lead.firstName,
-                lastName: lead.lastName,
-                email: lead.email,
-                mobile: lead.mobile,
-                password: tempPassword,
-                role: 'member',
-                tenantId: lead.tenantId,
-                branchId: lead.branchId,
-                isActive: true,
-                isEmailVerified: false,
-                isMobileVerified: false
+            const total = Object.values(formatted).reduce((a, b) => a + b, 0);
+
+            res.status(200).json({ success: true, data: { ...formatted, total } });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to fetch inquiry stats' });
+        }
+    }
+
+    // PUT /:id — update status / notes
+    async updateInquiry(req: Request, res: Response): Promise<void> {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) { NO_TENANT(res); return; }
+
+            const id = req.params.id as string;
+
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                res.status(400).json({ success: false, message: 'Invalid inquiry ID' });
+                return;
+            }
+
+            const { status, notes } = req.body;
+            const update: Record<string, any> = {};
+            if (status) update.status = status;
+            if (notes  !== undefined) update.notes  = notes;
+
+            const inquiry = await Inquiry.findOneAndUpdate(
+                { _id: id, tenantId },
+                { $set: update },
+                { new: true, runValidators: true }
+            );
+
+            if (!inquiry) {
+                res.status(404).json({ success: false, message: 'Inquiry not found' });
+                return;
+            }
+
+            res.status(200).json({
+                success: true,
+                message: 'Inquiry updated successfully',
+                data: inquiry,
             });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to update inquiry' });
+        }
+    }
+
+    // POST /:id/convert — convert inquiry to member
+    async convertToMember(req: Request, res: Response): Promise<void> {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) { NO_TENANT(res); return; }
+
+            if (!req.user) {
+                res.status(401).json({ success: false, message: 'Authentication required' });
+                return;
+            }
+
+            const id = req.params.id as string;
+
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                res.status(400).json({ success: false, message: 'Invalid inquiry ID' });
+                return;
+            }
+
+            const inquiry = await Inquiry.findOne({ _id: id, tenantId });
+
+            if (!inquiry) {
+                res.status(404).json({ success: false, message: 'Inquiry not found' });
+                return;
+            }
+
+            if (inquiry.status === 'converted') {
+                res.status(400).json({ success: false, message: 'Inquiry has already been converted' });
+                return;
+            }
+
+            // Split name into first/last (best effort)
+            const nameParts  = inquiry.name.trim().split(/\s+/);
+            const firstName  = nameParts[0] || inquiry.name;
+            const lastName   = nameParts.slice(1).join(' ') || '';
+
+            // Build a unique membership number
+            const membershipNumber = `MBR-${Date.now()}`;
+
+            // Additional fields from request body (optional overrides)
+            const {
+                email,
+                branchId,
+                planId,
+                membershipStart,
+                membershipExpiry,
+            } = req.body;
+
+            const effectiveBranchId = branchId || inquiry.branchId || req.branchId;
+
+            if (!effectiveBranchId) {
+                res.status(400).json({ success: false, message: 'Branch ID is required to create a member' });
+                return;
+            }
 
             const member = await Member.create({
-                firstName: lead.firstName,
-                lastName: lead.lastName,
-                email: lead.email,
-                mobile: lead.mobile,
-                status: 'lead',
-                tenantId: lead.tenantId,
-                branchId: lead.branchId,
-                userId: user._id,
-                membershipNumber: generateMembershipNumber(),
-                personalInfo: {
-                    dateOfBirth: req.body.dateOfBirth || new Date('2000-01-01'),
-                    gender: req.body.gender || 'other'
-                },
-                healthInfo: {
-                    medicalConditions: [],
-                    allergies: [],
-                    medications: [],
-                    injuries: [],
-                    doctorClearance: false
-                }
-            });
-
-            await Lead.findByIdAndUpdate(req.params.id, {
-                status: 'converted',
-                conversion: {
-                    convertedAt: new Date(),
-                    convertedBy: req.user!._id,
-                    memberId: member._id
-                }
-            });
-            return res.status(201).json({ success: true, data: member });
-        } catch (error) { return next(error); }
-    }
-
-    async getInquiryStats(req: Request, res: Response, next: NextFunction) {
-        try {
-            const tenantId = req.user!.tenantId;
-            const query: any = {
                 tenantId,
-                source: { $in: ['walk_in', 'other', 'event'] }
-            };
-            const [total, converted, newCount] = await Promise.all([
-                Lead.countDocuments(query),
-                Lead.countDocuments({ ...query, status: 'converted' }),
-                Lead.countDocuments({ ...query, status: 'new' })
-            ]);
-            return res.json({
-                success: true,
-                data: {
-                    total,
-                    converted,
-                    new: newCount,
-                    conversionRate: total > 0 ? Math.round((converted / total) * 100) : 0
-                }
+                branchId: effectiveBranchId,
+                firstName,
+                lastName,
+                email:            email     || `${membershipNumber.toLowerCase()}@placeholder.local`,
+                mobile:           inquiry.phone,
+                membershipNumber,
+                status:           'lead',
+                planId:           planId           || undefined,
+                membershipStart:  membershipStart  ? new Date(membershipStart)  : undefined,
+                membershipExpiry: membershipExpiry ? new Date(membershipExpiry) : undefined,
+                goals:            [],
+                tags:             ['converted-inquiry'],
+                notes:            inquiry.notes || '',
+                walletBalance:    0,
+                statusHistory: [{
+                    status:    'lead',
+                    changedAt: new Date(),
+                    changedBy: req.user._id,
+                    reason:    'Converted from inquiry',
+                }],
             });
-        } catch (error) { return next(error); }
+
+            // Mark inquiry as converted
+            inquiry.status = 'converted';
+            await inquiry.save();
+
+            res.status(201).json({
+                success: true,
+                message: 'Inquiry converted to member successfully',
+                data: { member, inquiry },
+            });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to convert inquiry' });
+        }
     }
 }
 

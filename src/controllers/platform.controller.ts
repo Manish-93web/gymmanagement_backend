@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import Tenant from '../models/Tenant.model';
 import User from '../models/User.model';
 import Member from '../models/Member.model';
+import Payment from '../models/Payment.model';
 import Subscription from '../models/Subscription.model';
 import systemConfigService from '../services/system-config.service';
 import auditService from '../services/audit.service';
@@ -13,22 +14,43 @@ import backupService from '../services/backup.service';
  */
 export const getAllTenants = async (req: Request, res: Response) => {
     try {
-        const tenants = await Tenant.find()
-            .select('name slug isActive subscription createdAt contactInfo')
-            .sort({ createdAt: -1 });
+        const page   = parseInt((req.query.page   as string) || '1',  10);
+        const limit  = parseInt((req.query.limit  as string) || '20', 10);
+        const skip   = (page - 1) * limit;
+        const search = (req.query.search as string) || '';
+        const status = (req.query.status as string) || '';
 
+        const filter: Record<string, any> = {};
+        if (search) {
+            filter.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { slug: { $regex: search, $options: 'i' } },
+                { 'contactInfo.email': { $regex: search, $options: 'i' } },
+            ];
+        }
+        if (status) filter['subscription.status'] = status;
+
+        const [tenants, total] = await Promise.all([
+            Tenant.find(filter)
+                .select('name slug isActive subscription createdAt contactInfo saasPlanId customPrice billingCycle discountType discountValue ownerName ownerEmail ownerMobile')
+                .populate('saasPlanId', 'name slug pricing')
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit),
+            Tenant.countDocuments(filter),
+        ]);
+
+        // Attach owner + member count in parallel batches
         const tenantStats = await Promise.all(
             tenants.map(async (tenant) => {
-                const memberCount = await Member.countDocuments({ tenantId: tenant._id });
-                const owner = await User.findOne({ tenantId: tenant._id, role: 'gym_owner' }).select(
-                    'firstName lastName email mobile'
-                );
-
+                const [memberCount, owner] = await Promise.all([
+                    Member.countDocuments({ tenantId: tenant._id }),
+                    User.findOne({ tenantId: tenant._id, role: 'gym_owner' }).select('firstName lastName email mobile').lean(),
+                ]);
+                const t = tenant.toObject() as any;
                 return {
-                    ...tenant.toObject(),
-                    stats: {
-                        totalMembers: memberCount,
-                    },
+                    ...t,
+                    stats: { totalMembers: memberCount },
                     owner,
                 };
             })
@@ -37,6 +59,7 @@ export const getAllTenants = async (req: Request, res: Response) => {
         return res.status(200).json({
             success: true,
             data: tenantStats,
+            pagination: { total, page, limit, pages: Math.ceil(total / limit) },
         });
     } catch (error) {
         return res.status(500).json({
@@ -359,13 +382,25 @@ export const viewTenantFinance = async (req: Request, res: Response) => {
 export const getTenantById = async (req: Request, res: Response) => {
     try {
         const { tenantId } = req.params;
-        const tenant = await Tenant.findById(tenantId).select('name slug isActive subscription contactInfo createdAt');
+        const tenant = await Tenant.findById(tenantId).select('-integrations.razorpayKeySecret -integrations.stripeKeySecret');
         if (!tenant) return res.status(404).json({ success: false, message: 'Tenant not found' });
-        const [memberCount, owner] = await Promise.all([
+        const [memberCount, owner, totalRevenue] = await Promise.all([
             Member.countDocuments({ tenantId }),
-            User.findOne({ tenantId, role: 'gym_owner' }).select('firstName lastName email mobile')
+            User.findOne({ tenantId, role: 'gym_owner' }).select('firstName lastName email mobile'),
+            Payment.aggregate([
+                { $match: { tenantId: tenant._id, status: 'completed' } },
+                { $group: { _id: null, total: { $sum: '$amount.total' } } },
+            ]).then((r: any[]) => r[0]?.total ?? 0),
         ]);
-        return res.status(200).json({ success: true, data: { ...tenant.toObject(), stats: { totalMembers: memberCount }, owner } });
+        return res.status(200).json({
+            success: true,
+            data: {
+                ...tenant.toObject(),
+                owner,
+                stats:   { totalMembers: memberCount },
+                metrics: { memberCount, totalRevenue },
+            },
+        });
     } catch (error) {
         return res.status(500).json({ success: false, message: 'Error fetching tenant', error: (error as Error).message });
     }
@@ -527,6 +562,7 @@ export const getPlatformAnalytics = async (req: Request, res: Response) => {
         const mongoose = (await import('mongoose')).default;
         const Payment = (await import('../models/Payment.model')).default;
         const Subscription = (await import('../models/Subscription.model')).default;
+        const SupportTicket = (await import('../models/SupportTicket.model')).default;
 
         const now = new Date();
 
@@ -595,21 +631,37 @@ export const getPlatformAnalytics = async (req: Request, res: Response) => {
             { stage: 'Active (30d)', count: activeTenants, pct: totalTenants > 0 ? Math.round((activeTenants / totalTenants) * 100) : 0 },
         ];
 
+        const openTickets = await SupportTicket.countDocuments({ status: { $in: ['open', 'in_progress'] } }).catch(() => 0);
+
         return res.status(200).json({
             success: true,
             data: {
+                // nested shape consumed by OverviewModule
+                revenue: {
+                    totalCollected,
+                    total: totalCollected,
+                    mrr,
+                    churnRate,
+                },
+                tenants: {
+                    total: totalTenants,
+                    active: activeTenants,
+                    trial: trialTenants,
+                },
+                support: {
+                    openTickets,
+                },
+                // flat fields consumed by AnalyticsModule
                 mrr,
                 totalCollected,
                 trialToPaidConversion,
                 churnRate,
+                activeTenants,
                 planDistribution,
                 monthlyTrend,
                 signupsTrend,
                 churnTrend,
                 conversionFunnel,
-                // legacy fields
-                revenue: { total: totalCollected, mrr },
-                activeTenants,
             },
         });
     } catch (error) {

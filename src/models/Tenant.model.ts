@@ -1,9 +1,32 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
+export interface ITenantNote {
+    text: string;
+    addedBy: string;
+    addedAt: Date;
+}
+
 export interface ITenant extends Document {
     name: string;
     slug: string;
     // domain?: string;
+    // Admin-managed billing fields
+    ownerName?: string;
+    ownerEmail?: string;
+    ownerMobile?: string;
+    customPrice?: number;
+    originalPrice?: number;
+    billingCycle?: 'monthly' | 'quarterly' | 'semi_annual' | 'yearly' | 'lifetime';
+    discountType?: 'none' | 'percent' | 'flat';
+    discountValue?: number;
+    billingStartDate?: Date;
+    nextRenewalDate?: Date;
+    gracePeriodEndsAt?: Date;
+    trialEndsAt?: Date;
+    suspensionReason?: string;
+    notes?: ITenantNote[];
+    tags?: string[];
+    lastLoginAt?: Date;
     branding: {
         logo?: string;
         favicon?: string;
@@ -110,6 +133,27 @@ const TenantSchema: Schema = new Schema(
     {
         name: { type: String, required: true },
         slug: { type: String, required: true, unique: true, lowercase: true },
+        // Admin-managed billing & owner snapshot fields
+        ownerName:       { type: String },
+        ownerEmail:      { type: String },
+        ownerMobile:     { type: String },
+        customPrice:     { type: Number },
+        originalPrice:   { type: Number },
+        billingCycle:    { type: String, enum: ['monthly', 'quarterly', 'semi_annual', 'yearly', 'lifetime'], default: 'monthly' },
+        discountType:    { type: String, enum: ['none', 'percent', 'flat'], default: 'none' },
+        discountValue:   { type: Number, default: 0 },
+        billingStartDate: { type: Date },
+        nextRenewalDate: { type: Date },
+        gracePeriodEndsAt: { type: Date },
+        trialEndsAt:     { type: Date },
+        suspensionReason: { type: String },
+        notes: [{
+            text:    { type: String, required: true },
+            addedBy: { type: String, default: 'admin' },
+            addedAt: { type: Date, default: Date.now },
+        }],
+        tags:           [{ type: String }],
+        lastLoginAt:    { type: Date },
         // domain: { type: String, unique: true, sparse: true }, // Removed to avoid conflict with customDomain.domain
         branding: {
             logo: { type: String },

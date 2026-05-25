@@ -28,6 +28,7 @@ router.get('/members', requireAnyRole('gym_owner', 'branch_manager', 'staff', 's
 router.post('/members', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), biometricController.enrollMember.bind(biometricController));
 router.get('/members/:id', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), biometricController.getMemberEnrollment.bind(biometricController));
 router.put('/members/:memberId', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), biometricController.updateMemberBiometric.bind(biometricController));
+router.patch('/members/:memberId', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), biometricController.updateMemberBiometric.bind(biometricController));
 router.delete('/members/:id', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.removeEnrollment.bind(biometricController));
 
 // Settings

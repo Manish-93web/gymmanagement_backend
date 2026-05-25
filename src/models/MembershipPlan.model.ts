@@ -125,5 +125,6 @@ const MembershipPlanSchema: Schema = new Schema(
 // Indexes
 MembershipPlanSchema.index({ tenantId: 1, isActive: 1 });
 MembershipPlanSchema.index({ tenantId: 1, branchId: 1, isActive: 1 });
+MembershipPlanSchema.index({ tenantId: 1, createdAt: -1 });
 
 export default mongoose.model<IMembershipPlan>('MembershipPlan', MembershipPlanSchema);

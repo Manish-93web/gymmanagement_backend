@@ -1,68 +1,206 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import Announcement from '../models/Announcement.model';
 
+const NO_TENANT = (res: Response) =>
+    res.status(400).json({ success: false, message: 'Tenant context required' });
+
 export class AnnouncementController {
-    async getAnnouncements(req: Request, res: Response, next: NextFunction) {
+    // GET / — list announcements for this tenant
+    async getAnnouncements(req: Request, res: Response): Promise<void> {
         try {
-            const tenantId = req.user!.tenantId;
-            const { targetAudience, page = 1, limit = 20 } = req.query;
-            const query: any = { tenantId, isActive: true };
-            if (targetAudience) query.targetAudience = { $in: [targetAudience, 'all'] };
-            const skip = (Number(page) - 1) * Number(limit);
+            const tenantId = req.tenantId;
+            if (!tenantId) { NO_TENANT(res); return; }
+
+            const status  = (req.query.status as string) || 'published';
+            const limit   = parseInt((req.query.limit as string) || '10', 10);
+            const page    = parseInt((req.query.page  as string) || '1',  10);
+            const skip    = (page - 1) * limit;
+
+            const filter: Record<string, any> = { tenantId, isActive: true };
+            if (status !== 'all') filter.status = status;
+
             const [announcements, total] = await Promise.all([
-                Announcement.find(query).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
-                Announcement.countDocuments(query)
+                Announcement.find(filter)
+                    .sort({ createdAt: -1 })
+                    .skip(skip)
+                    .limit(limit)
+                    .populate('createdBy', 'firstName lastName'),
+                Announcement.countDocuments(filter),
             ]);
-            return res.json({ success: true, data: { announcements, total } });
-        } catch (error) { return next(error); }
+
+            res.status(200).json({
+                success: true,
+                data: announcements,
+                pagination: { total, page, limit, pages: Math.ceil(total / limit) },
+            });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to fetch announcements' });
+        }
     }
 
-    async createAnnouncement(req: Request, res: Response, next: NextFunction) {
+    // POST / — create announcement
+    async createAnnouncement(req: Request, res: Response): Promise<void> {
         try {
-            const { title, content, targetAudience, priority, publishedAt, expiresAt } = req.body;
-            if (!title || !content) return res.status(400).json({ success: false, message: 'title and content are required' });
-            const announcement = await Announcement.create({
+            const tenantId = req.tenantId;
+            if (!tenantId) { NO_TENANT(res); return; }
+
+            if (!req.user) {
+                res.status(401).json({ success: false, message: 'Authentication required' });
+                return;
+            }
+
+            const {
                 title,
                 content,
+                targetRoles,
+                priority,
+                expiresAt,
+                channels,
+                targetAudience,
+                scheduledFor,
+                status,
+                branchId,
+            } = req.body;
+
+            if (!title || !content) {
+                res.status(400).json({ success: false, message: 'Title and content are required' });
+                return;
+            }
+
+            const announcementStatus = status || 'draft';
+
+            const announcement = await Announcement.create({
+                tenantId,
+                branchId: branchId || undefined,
+                title,
+                content,
+                targetRoles:    targetRoles    || [],
+                priority:       priority       || 'medium',
+                expiresAt:      expiresAt      ? new Date(expiresAt)      : undefined,
+                channels:       channels       || [],
                 targetAudience: targetAudience || 'all',
-                priority: priority || 'medium',
-                publishedAt: publishedAt ? new Date(publishedAt) : new Date(),
-                expiresAt: expiresAt ? new Date(expiresAt) : undefined,
-                isActive: true,
-                tenantId: req.user!.tenantId,
-                createdBy: req.user!._id
+                scheduledFor:   scheduledFor   ? new Date(scheduledFor)   : undefined,
+                status:         announcementStatus,
+                publishedAt:    announcementStatus === 'published' ? new Date() : undefined,
+                createdBy:      req.user._id,
+                isActive:       true,
             });
-            return res.status(201).json({ success: true, data: announcement });
-        } catch (error) { return next(error); }
+
+            res.status(201).json({
+                success: true,
+                message: 'Announcement created successfully',
+                data: announcement,
+            });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to create announcement' });
+        }
     }
 
-    async getAnnouncementById(req: Request, res: Response, next: NextFunction) {
+    // GET /:id — get single announcement
+    async getAnnouncementById(req: Request, res: Response): Promise<void> {
         try {
-            const announcement = await Announcement.findOne({ _id: req.params.id, tenantId: req.user!.tenantId });
-            if (!announcement) return res.status(404).json({ success: false, message: 'Announcement not found' });
-            return res.json({ success: true, data: announcement });
-        } catch (error) { return next(error); }
+            const tenantId = req.tenantId;
+            if (!tenantId) { NO_TENANT(res); return; }
+
+            const id = req.params.id as string;
+
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                res.status(400).json({ success: false, message: 'Invalid announcement ID' });
+                return;
+            }
+
+            const announcement = await Announcement.findOne({ _id: id, tenantId, isActive: true })
+                .populate('createdBy', 'firstName lastName');
+
+            if (!announcement) {
+                res.status(404).json({ success: false, message: 'Announcement not found' });
+                return;
+            }
+
+            res.status(200).json({ success: true, data: announcement });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to fetch announcement' });
+        }
     }
 
-    async updateAnnouncement(req: Request, res: Response, next: NextFunction) {
+    // PUT /:id — update announcement
+    async updateAnnouncement(req: Request, res: Response): Promise<void> {
         try {
+            const tenantId = req.tenantId;
+            if (!tenantId) { NO_TENANT(res); return; }
+
+            const id = req.params.id as string;
+
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                res.status(400).json({ success: false, message: 'Invalid announcement ID' });
+                return;
+            }
+
+            const updateData: Record<string, any> = { ...req.body };
+
+            // If publishing now, stamp the publishedAt date
+            if (updateData.status === 'published') {
+                updateData.publishedAt = updateData.publishedAt || new Date();
+            }
+
+            // Convert date strings to Date objects
+            if (updateData.expiresAt)   updateData.expiresAt   = new Date(updateData.expiresAt);
+            if (updateData.scheduledFor) updateData.scheduledFor = new Date(updateData.scheduledFor);
+
+            // Guard against overwriting tenantId or createdBy via body
+            delete updateData.tenantId;
+            delete updateData.createdBy;
+
             const announcement = await Announcement.findOneAndUpdate(
-                { _id: req.params.id, tenantId: req.user!.tenantId },
-                req.body, { new: true }
-            );
-            if (!announcement) return res.status(404).json({ success: false, message: 'Announcement not found' });
-            return res.json({ success: true, data: announcement });
-        } catch (error) { return next(error); }
+                { _id: id, tenantId, isActive: true },
+                { $set: updateData },
+                { new: true, runValidators: true }
+            ).populate('createdBy', 'firstName lastName');
+
+            if (!announcement) {
+                res.status(404).json({ success: false, message: 'Announcement not found' });
+                return;
+            }
+
+            res.status(200).json({
+                success: true,
+                message: 'Announcement updated successfully',
+                data: announcement,
+            });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to update announcement' });
+        }
     }
 
-    async deleteAnnouncement(req: Request, res: Response, next: NextFunction) {
+    // DELETE /:id — soft delete (isActive=false)
+    async deleteAnnouncement(req: Request, res: Response): Promise<void> {
         try {
-            await Announcement.findOneAndUpdate(
-                { _id: req.params.id, tenantId: req.user!.tenantId },
-                { isActive: false }
+            const tenantId = req.tenantId;
+            if (!tenantId) { NO_TENANT(res); return; }
+
+            const id = req.params.id as string;
+
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                res.status(400).json({ success: false, message: 'Invalid announcement ID' });
+                return;
+            }
+
+            const announcement = await Announcement.findOneAndUpdate(
+                { _id: id, tenantId, isActive: true },
+                { $set: { isActive: false, status: 'archived' } },
+                { new: true }
             );
-            return res.json({ success: true, message: 'Announcement deleted' });
-        } catch (error) { return next(error); }
+
+            if (!announcement) {
+                res.status(404).json({ success: false, message: 'Announcement not found' });
+                return;
+            }
+
+            res.status(200).json({ success: true, message: 'Announcement deleted successfully' });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to delete announcement' });
+        }
     }
 }
 
