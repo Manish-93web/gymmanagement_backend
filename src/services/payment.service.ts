@@ -300,33 +300,51 @@ export class PaymentService {
         const filter: any = { tenantId };
         if (branchId) filter.branchId = branchId;
 
-        const stats = await Payment.aggregate([
-            { $match: filter },
-            {
-                $group: {
-                    _id: '$status',
-                    count: { $sum: 1 },
-                    totalAmount: { $sum: '$amount.total' },
-                },
-            },
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+
+        const [stats, totalRevResult, monthlyRevResult, prevMonthRevResult] = await Promise.all([
+            Payment.aggregate([
+                { $match: filter },
+                { $group: { _id: '$status', count: { $sum: 1 }, totalAmount: { $sum: '$amount.total' } } },
+            ]),
+            Payment.aggregate([
+                { $match: { ...filter, status: 'completed' } },
+                { $group: { _id: null, total: { $sum: '$amount.total' } } },
+            ]),
+            Payment.aggregate([
+                { $match: { ...filter, status: 'completed', createdAt: { $gte: monthStart } } },
+                { $group: { _id: null, total: { $sum: '$amount.total' } } },
+            ]),
+            Payment.aggregate([
+                { $match: { ...filter, status: 'completed', createdAt: { $gte: prevMonthStart, $lte: prevMonthEnd } } },
+                { $group: { _id: null, total: { $sum: '$amount.total' } } },
+            ]),
         ]);
 
         const total = await Payment.countDocuments(filter);
-        const totalRevenue = await Payment.aggregate([
-            { $match: { ...filter, status: 'completed' } },
-            { $group: { _id: null, total: { $sum: '$amount.total' } } },
-        ]);
+        const byStatus = stats.reduce((acc: any, curr: any) => {
+            acc[curr._id] = { count: curr.count, amount: curr.totalAmount };
+            return acc;
+        }, {} as Record<string, { count: number; amount: number }>);
+
+        const totalRevenue = totalRevResult[0]?.total || 0;
+        const monthlyRevenue = monthlyRevResult[0]?.total || 0;
+        const prevMonthRevenue = prevMonthRevResult[0]?.total || 0;
+        const growth = prevMonthRevenue > 0
+            ? Math.round(((monthlyRevenue - prevMonthRevenue) / prevMonthRevenue) * 100)
+            : (monthlyRevenue > 0 ? 100 : 0);
 
         return {
             total,
-            totalRevenue: totalRevenue[0]?.total || 0,
-            byStatus: stats.reduce((acc: any, curr: any) => {
-                acc[curr._id] = {
-                    count: curr.count,
-                    amount: curr.totalAmount,
-                };
-                return acc;
-            }, {}),
+            totalRevenue,
+            monthlyRevenue,
+            pendingPayments: byStatus['pending']?.count || 0,
+            failedPayments:  byStatus['failed']?.count  || 0,
+            growth,
+            byStatus,
         };
     }
 }

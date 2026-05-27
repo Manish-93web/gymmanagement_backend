@@ -55,9 +55,13 @@ function deviceLocalToUTC(timeStr: string, tz: string): Date {
     }
 }
 
+// SNs from browser tests — not real device serial numbers
+const PLACEHOLDER_SN = /^(TEST|PING|test|ping|0+)$/i;
+
 /**
- * Resolve device by SN. On first heartbeat, auto-associates the SN with any
- * device that has no serialNumber set yet.
+ * Resolve device by SN. On first real heartbeat, auto-associates the SN with any
+ * eSSL device that has no SN yet — or one that holds a browser-test placeholder (TEST/PING).
+ * This lets the real device "reclaim" a document after a browser test set a fake SN on it.
  */
 async function resolveDevice(sn: string) {
     if (!sn) return null;
@@ -65,30 +69,36 @@ async function resolveDevice(sn: string) {
     const now = new Date();
     const onlineUpdate = { lastPing: now, lastSeenAt: now, status: 'active', consecutiveFailures: 0 };
 
-    // Fast path: already linked with this SN
-    let device = await BiometricDevice.findOneAndUpdate(
-        { serialNumber: sn, isActive: true },
-        onlineUpdate,
-        { new: true }
-    ).catch(() => null);
-    if (device) return device;
+    // Fast path: already linked with this exact SN (skip for placeholders so real device can overwrite)
+    if (!PLACEHOLDER_SN.test(sn)) {
+        let device = await BiometricDevice.findOneAndUpdate(
+            { serialNumber: sn, isDeleted: false },
+            onlineUpdate,
+            { new: true }
+        ).catch(() => null);
+        if (device) return device;
 
-    // Fallback: deviceId matches SN
-    device = await BiometricDevice.findOneAndUpdate(
-        { deviceId: sn, isActive: true },
-        onlineUpdate,
-        { new: true }
-    ).catch(() => null);
-    if (device) return device;
+        // Fallback: deviceId matches SN
+        device = await BiometricDevice.findOneAndUpdate(
+            { deviceId: sn, isDeleted: false },
+            onlineUpdate,
+            { new: true }
+        ).catch(() => null);
+        if (device) return device;
+    }
 
-    // Auto-associate: first active device with no SN yet
-    device = await BiometricDevice.findOneAndUpdate(
+    // Auto-associate: first eSSL device with no SN yet OR a placeholder SN from a browser test.
+    // Including placeholder devices here is what allows the real device to "take over"
+    // after a browser test temporarily set serialNumber=PING on the device doc.
+    const device = await BiometricDevice.findOneAndUpdate(
         {
-            isActive: true,
+            deviceBrand: 'essl',
+            isDeleted: false,
             $or: [
                 { serialNumber: { $exists: false } },
                 { serialNumber: null },
                 { serialNumber: '' },
+                { serialNumber: { $regex: PLACEHOLDER_SN } },
             ],
         },
         { serialNumber: sn, ...onlineUpdate },
@@ -175,7 +185,7 @@ class EsslAdmsController {
         const rawBody: string = typeof req.body === 'string' ? req.body
             : (req.body ? JSON.stringify(req.body) : '');
 
-        console.log(`[eSSL ADMS] POST SN="${sn}" device="${device.name}" content-type="${req.headers['content-type']}" body-preview="${rawBody.slice(0, 200)}"`);
+        console.log(`[eSSL ADMS] POST SN="${sn}" device="${(device as any).deviceName || (device as any).name}" content-type="${req.headers['content-type']}" body-preview="${rawBody.slice(0, 200)}"`);
 
         // eSSL ADMS delivers ATTLOG in two formats:
         //   1. URL-encoded: table=ATTLOG&Stamp=N&ATTLOG=line1%0Aline2

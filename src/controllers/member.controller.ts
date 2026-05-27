@@ -887,6 +887,35 @@ export class MemberController {
             res.status(400).json({ status: 'error', message: error.message || 'Signup failed' });
         }
     }
+
+    async backfillSNo(req: Request, res: Response): Promise<void> {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) { res.status(400).json({ success: false, message: 'Tenant context required' }); return; }
+
+            const membersWithoutSNo = await Member.find({ tenantId, sNo: { $exists: false } })
+                .sort({ createdAt: 1 }).select('_id').lean();
+
+            if (membersWithoutSNo.length === 0) {
+                res.json({ success: true, message: 'All members already have S.No assigned', data: { updated: 0 } });
+                return;
+            }
+
+            const maxDoc = await Member.findOne({ tenantId, sNo: { $exists: true } })
+                .sort({ sNo: -1 }).select('sNo').lean();
+            let nextSNo = ((maxDoc as any)?.sNo ?? 0) + 1;
+
+            let updated = 0;
+            for (const m of membersWithoutSNo) {
+                await Member.updateOne({ _id: m._id, tenantId }, { $set: { sNo: nextSNo++ } });
+                updated++;
+            }
+
+            res.json({ success: true, message: `Assigned S.No to ${updated} member${updated !== 1 ? 's' : ''}`, data: { updated } });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Backfill failed' });
+        }
+    }
 }
 
 export default new MemberController();

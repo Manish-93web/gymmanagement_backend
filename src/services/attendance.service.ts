@@ -7,6 +7,8 @@ export interface CheckInDTO {
     branchId: string;
     memberId: string;
     checkInMethod: 'manual' | 'qr_code' | 'rfid' | 'biometric' | 'mobile_app';
+    checkInTime?: Date;
+    checkOutTime?: Date;
     classId?: string;
     trainerId?: string;
     location?: {
@@ -16,41 +18,39 @@ export interface CheckInDTO {
 }
 
 export class AttendanceService {
+    private emitAttendanceUpdate(tenantId: string, branchId: string, payload: any) {
+        try {
+            const ws = (global as any).websocketService;
+            if (ws?.broadcastToTenant) ws.broadcastToTenant(tenantId, 'attendance:update', payload);
+            if (branchId && ws?.broadcastToBranch) ws.broadcastToBranch(branchId, 'attendance:update', payload);
+        } catch { /* non-critical */ }
+    }
+
     // Check-in member
     async checkIn(data: CheckInDTO): Promise<IAttendance> {
-        // Verify member has active subscription
         const member = await Member.findOne({ _id: data.memberId, tenantId: data.tenantId });
         if (!member) {
             throw new Error('Member not found');
         }
 
-        if (member.status !== 'active') {
+        // Allow active and trial members; manual check-in bypasses status check
+        if (data.checkInMethod !== 'manual' && !['active', 'trial'].includes(member.status)) {
             throw new Error('Member is not active');
         }
 
-        const activeSubscription = await Subscription.findOne({
-            memberId: data.memberId,
-            tenantId: data.tenantId,
-            status: 'active',
-            startDate: { $lte: new Date() },
-            endDate: { $gte: new Date() },
-        });
+        const resolvedCheckInTime = data.checkInTime ? new Date(data.checkInTime) : new Date();
+        const dayStart = new Date(resolvedCheckInTime);
+        dayStart.setHours(0, 0, 0, 0);
 
-        if (!activeSubscription) {
-            throw new Error('No active subscription found');
-        }
-
-        // Check if already checked in
+        // Check if already checked in on the same calendar day
         const existingCheckIn = await Attendance.findOne({
             memberId: data.memberId,
             tenantId: data.tenantId,
-            checkInTime: {
-                $gte: new Date(new Date().setHours(0, 0, 0, 0)),
-            },
+            checkInTime: { $gte: dayStart },
             checkOutTime: null,
         });
 
-        if (existingCheckIn) {
+        if (existingCheckIn && data.checkInMethod !== 'manual') {
             throw new Error('Member is already checked in');
         }
 
@@ -58,8 +58,7 @@ export class AttendanceService {
         const methodMap: Record<string, string> = { qr_code: 'qr' };
         const method = (methodMap[data.checkInMethod] ?? data.checkInMethod) as any;
 
-        // Create attendance record
-        const attendance = await Attendance.create({
+        const createData: any = {
             tenantId: data.tenantId,
             branchId: data.branchId,
             memberId: data.memberId,
@@ -67,18 +66,34 @@ export class AttendanceService {
             trainerId: data.trainerId,
             location: data.location,
             method,
-            checkInTime: new Date(),
-        });
+            checkInTime: resolvedCheckInTime,
+        };
+        if (data.checkOutTime) {
+            const resolvedCheckOut = new Date(data.checkOutTime);
+            createData.checkOutTime = resolvedCheckOut;
+            const diffMs = resolvedCheckOut.getTime() - resolvedCheckInTime.getTime();
+            createData.duration = Math.max(0, Math.floor(diffMs / 60000));
+        }
 
-        // Update subscription session count if session-based
-        if (activeSubscription.sessions) {
-            await Subscription.findByIdAndUpdate(activeSubscription._id, {
-                $inc: {
-                    'sessions.used': 1,
-                    'sessions.remaining': -1,
-                },
+        const attendance = await Attendance.create(createData);
+
+        // Update session count for session-based subscriptions
+        const activeSub = await Subscription.findOne({
+            memberId: data.memberId,
+            tenantId: data.tenantId,
+            status: 'active',
+        });
+        if (activeSub?.sessions) {
+            await Subscription.findByIdAndUpdate(activeSub._id, {
+                $inc: { 'sessions.used': 1, 'sessions.remaining': -1 },
             });
         }
+
+        this.emitAttendanceUpdate(data.tenantId, data.branchId, {
+            type: 'checkin',
+            memberId: data.memberId,
+            attendanceId: attendance._id.toString(),
+        });
 
         return attendance;
     }
@@ -96,18 +111,21 @@ export class AttendanceService {
         }
 
         const checkOutTime = new Date();
-        const duration = Math.floor((checkOutTime.getTime() - attendance.checkInTime.getTime()) / 60000); // minutes
+        const duration = Math.floor((checkOutTime.getTime() - attendance.checkInTime.getTime()) / 60000);
 
-        return await Attendance.findByIdAndUpdate(
+        const updated = await Attendance.findByIdAndUpdate(
             attendanceId,
-            {
-                $set: {
-                    checkOutTime,
-                    duration,
-                },
-            },
+            { $set: { checkOutTime, duration } },
             { new: true }
         );
+
+        this.emitAttendanceUpdate(tenantId, attendance.branchId?.toString() ?? '', {
+            type: 'checkout',
+            memberId: attendance.memberId?.toString(),
+            attendanceId,
+        });
+
+        return updated;
     }
 
     // Auto check-out (for scheduled jobs)

@@ -19,7 +19,7 @@ class BiometricController {
         try {
             const tenantId = req.tenantId;
             const branchId = req.branchId;
-            const filter: any = { tenantId, isActive: true };
+            const filter: any = { tenantId, isDeleted: { $ne: true } };
             if (branchId) filter.branchId = branchId;
 
             const devices = await BiometricDevice.find(filter).sort({ createdAt: -1 });
@@ -128,17 +128,33 @@ class BiometricController {
     async updateDevice(req: Request, res: Response, next: NextFunction) {
         try {
             const body = req.body;
-            const updates: any = { ...body };
-            // Normalize field names for backward compat
-            if (body.deviceName)  { updates.name   = body.deviceName;  }
-            if (body.deviceBrand) { updates.vendor  = body.deviceBrand; }
-            if (body.deviceType)  { updates.type    = body.deviceType;  }
-            if (body.timezone)    { if (!updates.settings) updates.settings = {}; updates['settings.timezone'] = body.timezone; }
-            if (body.syncMode !== undefined) {
-                updates.settings = updates.settings || {};
-                updates['settings.autoSync'] = body.syncMode !== 'manual';
+            const updates: any = {};
+
+            // Scalar top-level fields
+            if (body.name        !== undefined) updates.name        = body.name;
+            if (body.deviceName  !== undefined) updates.name        = body.deviceName;
+            if (body.location    !== undefined) updates.location    = body.location;
+            if (body.isActive    !== undefined) updates.isActive    = body.isActive;
+            if (body.vendor      !== undefined) updates.vendor      = body.vendor;
+            if (body.deviceBrand !== undefined) updates.vendor      = body.deviceBrand;
+            if (body.type        !== undefined) updates.type        = body.type;
+            if (body.deviceType  !== undefined) updates.type        = body.deviceType;
+            if (body.ipAddress   !== undefined) updates.ipAddress   = body.ipAddress;
+            if (body.port        !== undefined) updates.port        = body.port;
+            if (body.password    !== undefined) updates.password    = body.password;
+            if (body.serialNumber !== undefined) updates.serialNumber = body.serialNumber;
+
+            // settings.* — always use dot-notation to avoid parent/child conflict in $set
+            if (body.timezone            !== undefined) updates['settings.timezone']        = body.timezone;
+            if (body.syncMode            !== undefined) updates['settings.autoSync']        = body.syncMode !== 'manual';
+            if (body.syncIntervalMinutes !== undefined) updates['settings.syncInterval']    = body.syncIntervalMinutes;
+
+            // If frontend sends a nested settings object, flatten it
+            if (body.settings && typeof body.settings === 'object') {
+                for (const [k, v] of Object.entries(body.settings)) {
+                    updates[`settings.${k}`] = v;
+                }
             }
-            if (body.syncIntervalMinutes) { updates['settings.syncInterval'] = body.syncIntervalMinutes; }
 
             const device = await BiometricDevice.findOneAndUpdate(
                 { _id: req.params.id as string, tenantId: req.tenantId },
@@ -154,7 +170,7 @@ class BiometricController {
         try {
             await BiometricDevice.findOneAndUpdate(
                 { _id: req.params.id as string, tenantId: req.tenantId },
-                { isActive: false }
+                { isActive: false, isDeleted: true }
             );
             res.json({ success: true, message: 'Device removed' });
         } catch (error) { next(error); }
@@ -401,7 +417,7 @@ class BiometricController {
             // Resolve device: use provided, first from array, or auto-pick first active device (optional)
             let resolvedDeviceId = deviceId || (Array.isArray(assignedDeviceIds) && assignedDeviceIds[0]) || undefined;
             if (!resolvedDeviceId) {
-                const firstDevice = await BiometricDevice.findOne({ tenantId, isActive: true }).select('_id');
+                const firstDevice = await BiometricDevice.findOne({ tenantId, isDeleted: { $ne: true } }).select('_id');
                 resolvedDeviceId = firstDevice?._id;
             }
 
@@ -453,7 +469,7 @@ class BiometricController {
 
             const [settings, devices] = await Promise.all([
                 BiometricSettings.findOne(filter),
-                BiometricDevice.find({ tenantId, isActive: true }).select('settings name deviceName branchId'),
+                BiometricDevice.find({ tenantId, isDeleted: { $ne: true } }).select('settings name deviceName branchId'),
             ]);
 
             res.json({
@@ -505,7 +521,7 @@ class BiometricController {
 
             const [totalAttendance, devices, enrollments] = await Promise.all([
                 Attendance.countDocuments({ tenantId, checkInTime: { $gte: start, $lte: end } }),
-                BiometricDevice.countDocuments({ tenantId, isActive: true }),
+                BiometricDevice.countDocuments({ tenantId, isDeleted: { $ne: true } }),
                 BiometricMember.countDocuments({ tenantId }),
             ]);
 
@@ -692,7 +708,7 @@ class BiometricController {
             const member = await Member.findOne({ _id: memberId, tenantId }).lean();
             if (!member) { res.status(404).json({ success: false, message: 'Member not found' }); return; }
 
-            const device = await BiometricDevice.findOne({ tenantId, isActive: true }).lean();
+            const device = await BiometricDevice.findOne({ tenantId, isDeleted: { $ne: true } }).lean();
             if (!device) { res.status(400).json({ success: false, message: 'No active device found' }); return; }
 
             const branchId = (device as any).branchId?.toString() ?? (member as any).branchId?.toString();

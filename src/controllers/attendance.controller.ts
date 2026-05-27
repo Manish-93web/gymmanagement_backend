@@ -12,14 +12,19 @@ class AttendanceController {
             if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant context required' });
 
             // Accept both field names for convenience
-            const { memberId, checkInMethod: bodyMethod, method: bodyMethodAlt, classId, trainerId, location } = req.body;
-            const checkInMethod = bodyMethod || bodyMethodAlt;
+            const {
+                memberId,
+                checkInMethod: bodyMethod, method: bodyMethodAlt, source: bodySource,
+                checkInTime: bodyCheckInTime, checkIn: bodyCheckIn,
+                checkOutTime: bodyCheckOutTime, checkOut: bodyCheckOut,
+                classId, trainerId, location,
+            } = req.body;
+            const checkInMethod = bodyMethod || bodyMethodAlt || bodySource || 'manual';
+            const checkInTime = bodyCheckInTime || bodyCheckIn;
+            const checkOutTime = bodyCheckOutTime || bodyCheckOut;
 
             if (!memberId) {
                 return res.status(400).json({ success: false, message: 'memberId is required' });
-            }
-            if (!checkInMethod) {
-                return res.status(400).json({ success: false, message: 'checkInMethod is required' });
             }
 
             // gym_owner has no branchId in JWT — auto-pick first branch for tenant
@@ -38,6 +43,8 @@ class AttendanceController {
                 branchId,
                 memberId,
                 checkInMethod,
+                checkInTime: checkInTime ? new Date(checkInTime) : undefined,
+                checkOutTime: checkOutTime ? new Date(checkOutTime) : undefined,
                 classId,
                 trainerId,
                 location,
@@ -118,9 +125,14 @@ class AttendanceController {
             const tenantId = req.tenantId;
             if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant context required' });
 
-            const branchId = (req.query.branchId as string) || req.branchId;
+            let branchId = (req.query.branchId as string) || req.branchId;
             if (!branchId) {
-                return res.status(400).json({ success: false, message: 'Branch context required' });
+                const Branch = (await import('../models/Branch.model')).default;
+                const first = await Branch.findOne({ tenantId }).select('_id').lean();
+                branchId = (first as any)?._id?.toString();
+            }
+            if (!branchId) {
+                return res.status(400).json({ success: false, message: 'Branch context required — add a branch first' });
             }
 
             const attendance = await AttendanceService.getCurrentBranchAttendance(tenantId, branchId);
@@ -299,28 +311,48 @@ class AttendanceController {
                 ]),
             ]);
 
-            const peakHourData = hourly.map(h => ({
-                hour: h._id.hour,
-                dayOfWeek: h._id.dayOfWeek,
-                count: h.count,
+            // Build hourly array: 24 slots (0-23), each with label + count
+            const hourlyMap = new Map<number, number>();
+            for (const h of hourly) {
+                const hr: number = h._id.hour;
+                hourlyMap.set(hr, (hourlyMap.get(hr) || 0) + h.count);
+            }
+            const hourlyArr = Array.from({ length: 24 }, (_, h) => ({
+                hour: h,
+                label: h === 0 ? '12am' : h < 12 ? `${h}am` : h === 12 ? '12pm' : `${h - 12}pm`,
+                count: hourlyMap.get(h) || 0,
             }));
+            const topHour = hourlyArr.reduce((max, h) => (h.count > max.count ? h : max), hourlyArr[0]).hour;
 
-            const dailyData = daily.map(d => ({
-                date: d._id,
-                count: d.count,
+            // Build daily array: 7 slots (index 0=Sun … 6=Sat, dayOfWeek 1-7 in $dayOfWeek)
+            const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const dailyMap = new Map<number, number>(); // dayOfWeek 1-7
+            for (const h of hourly) {
+                const dow: number = h._id.dayOfWeek; // 1=Sun, 7=Sat
+                dailyMap.set(dow, (dailyMap.get(dow) || 0) + h.count);
+            }
+            const dailyArr = Array.from({ length: 7 }, (_, i) => ({
+                day: i + 1,
+                label: DAY_LABELS[i],
+                count: dailyMap.get(i + 1) || 0,
             }));
+            const topDay = dailyArr.reduce((max, d) => (d.count > max.count ? d : max), dailyArr[0]).day;
 
-            const busiestHour = peakHourData.reduce(
-                (max, h) => (h.count > max.count ? h : max),
-                { hour: 0, dayOfWeek: 0, count: 0 }
-            );
+            // Build 7×24 matrix: matrix[dow1-7][hour0-23] = count
+            // dow 1=Sun, 2=Mon ... 7=Sat  (MongoDB $dayOfWeek convention)
+            const matrix: number[][] = Array.from({ length: 8 }, () => new Array(24).fill(0));
+            for (const h of hourly) {
+                matrix[h._id.dayOfWeek][h._id.hour] = h.count;
+            }
 
             return res.status(200).json({
                 success: true,
                 data: {
-                    hourlyBreakdown: peakHourData,
-                    dailyTrend: dailyData,
-                    busiestHour,
+                    hourly: hourlyArr,
+                    daily: dailyArr,
+                    matrix,       // matrix[dow][hour]: 8×24 (index 1-7 for days)
+                    topHour,
+                    topDay,
                     period: { days: parseInt(days as string, 10), from: daysAgo },
                 },
             });

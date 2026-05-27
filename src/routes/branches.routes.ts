@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
 import Branch from '../models/Branch.model';
 import Tenant from '../models/Tenant.model';
+import Member from '../models/Member.model';
+import Attendance from '../models/Attendance.model';
 import { authenticate } from '../middleware/auth.middleware';
 import { tenantContext } from '../middleware/tenant.middleware';
 import { requireAnyRole } from '../middleware/rbac.middleware';
@@ -17,10 +19,15 @@ router.post('/current/hardware-key',
         try {
             const user     = (req as any).user;
             const tenantId = (req as any).tenantId;
-            const branchId = user.branchId;
 
+            // Use explicit branchId from JWT, or fall back to first branch for gym_owners
+            let branchId = user.branchId;
             if (!branchId) {
-                return res.status(400).json({ success: false, message: 'No branch context for this user' });
+                const first = await Branch.findOne({ tenantId, isActive: true }).select('_id').lean();
+                branchId = (first as any)?._id?.toString();
+            }
+            if (!branchId) {
+                return res.status(400).json({ success: false, message: 'No branch found — add a branch first' });
             }
 
             const newKey = `hw_${crypto.randomBytes(16).toString('hex')}`;
@@ -74,12 +81,27 @@ router.get('/current', async (req: Request, res: Response) => {
     }
 });
 
-// GET /api/branches — list all branches for tenant
+// GET /api/branches — list all branches for tenant (with computed memberCount, todayAttendance, utilization)
 router.get('/', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), async (req: Request, res: Response) => {
     try {
         const tenantId = (req as any).tenantId;
         const branches = await Branch.find({ tenantId }).lean();
-        res.json({ success: true, data: branches });
+
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+
+        const enriched = await Promise.all(branches.map(async (b: any) => {
+            const branchId = b._id.toString();
+            const [memberCount, todayAttendance] = await Promise.all([
+                Member.countDocuments({ tenantId, branchId, status: { $in: ['active', 'trial'] } }),
+                Attendance.countDocuments({ tenantId, branchId, checkInTime: { $gte: todayStart } }),
+            ]);
+            const capacity: number = b.capacity?.total ?? 0;
+            const utilization = capacity > 0 ? Math.min(100, Math.round((memberCount / capacity) * 100)) : 0;
+            return { ...b, memberCount, todayAttendance, utilization };
+        }));
+
+        res.json({ success: true, data: enriched });
     } catch (err: any) {
         res.status(500).json({ success: false, message: err.message });
     }

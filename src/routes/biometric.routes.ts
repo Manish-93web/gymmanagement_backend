@@ -18,6 +18,7 @@ router.get('/devices', requireAnyRole('gym_owner', 'branch_manager', 'staff', 's
 router.post('/devices', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.addDevice.bind(biometricController));
 router.get('/devices/:id', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), biometricController.getDevice.bind(biometricController));
 router.put('/devices/:id', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.updateDevice.bind(biometricController));
+router.patch('/devices/:id', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.updateDevice.bind(biometricController));
 router.delete('/devices/:id', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.deleteDevice.bind(biometricController));
 router.post('/devices/:id/test', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), biometricController.testDevice.bind(biometricController));
 router.post('/devices/:id/sync', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.syncDevice.bind(biometricController));

@@ -324,6 +324,7 @@ export class MemberService {
         const [members, total] = await Promise.all([
             Member.find(filter)
                 .populate('userId')
+                .populate('planId', 'name price duration')
                 .skip(skip)
                 .limit(limit)
                 .sort({ createdAt: -1 }),

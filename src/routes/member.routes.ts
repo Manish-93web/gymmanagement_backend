@@ -28,6 +28,7 @@ router.get('/', requirePermission('member:read'), memberController.getMembers.bi
 router.get('/stats', requirePermission('member:read'), memberController.getMemberStats.bind(memberController));
 router.get('/alerts/expiry', requirePermission('member:read'), memberController.getExpiryAlerts.bind(memberController));
 router.get('/expiry-alerts', requirePermission('member:read'), memberController.getExpiryAlertsBucketed.bind(memberController));
+router.post('/backfill-sno', requirePermission('member:create'), memberController.backfillSNo.bind(memberController));
 router.get('/:memberId', requirePermission('member:read'), memberController.getMember.bind(memberController));
 router.put('/:memberId', requirePermission('member:update'), invalidateCache, memberController.updateMember.bind(memberController));
 

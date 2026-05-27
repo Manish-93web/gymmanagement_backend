@@ -357,6 +357,7 @@ export class AnalyticsService {
                 todayAttendance,
                 activeSubscriptions,
                 newThisMonth,
+                monthlyRevenue: thisMonthRev,
             },
             revenue: {
                 totalRevenue: totalRev,
