@@ -1,7 +1,7 @@
 import Member, { IMember, MemberStatus } from '../models/Member.model';
 import Subscription from '../models/Subscription.model';
 import User from '../models/User.model';
-import { generateMembershipNumber, generateReferralCode } from '../utils/helpers.utils';
+import { generateReferralCode } from '../utils/helpers.utils';
 import mongoose from 'mongoose';
 
 export interface CreateMemberDTO {
@@ -99,8 +99,11 @@ export class MemberService {
             throw new Error('Member already exists with this email or mobile');
         }
 
-        // Generate membership number and referral code
-        const membershipNumber = generateMembershipNumber(data.tenantId, data.branchId);
+        // Generate sequential membership number: MEM-YYYY-NNNNN (per tenant)
+        const memberCount = await Member.countDocuments({ tenantId: data.tenantId });
+        const sNo = memberCount + 1;
+        const year = new Date().getFullYear();
+        const membershipNumber = `MEM-${year}-${String(sNo).padStart(5, '0')}`;
         const referralCode = generateReferralCode(membershipNumber);
 
         // 1. Create User account for the member
@@ -127,6 +130,7 @@ export class MemberService {
             mobile: data.mobile,
             ...(data.aadharNumber ? { aadharNumber: data.aadharNumber } : {}),
             membershipNumber,
+            sNo,
             status: 'active', // Default to active for new registrations
             personalInfo: data.personalInfo,
             address: data.address,
@@ -296,7 +300,8 @@ export class MemberService {
         page: number = 1,
         limit: number = 20,
         search?: string,
-        planId?: string
+        planId?: string,
+        duration?: string
     ): Promise<{ members: IMember[]; total: number }> {
         const skip = (page - 1) * limit;
 
@@ -305,6 +310,7 @@ export class MemberService {
         if (branchId) filter.branchId = branchId;
         if (status) filter.status = status;
         if (planId) filter.planId = planId;
+        if (duration) filter.membershipDuration = duration;
         if (search) {
             filter.$or = [
                 { firstName: { $regex: search, $options: 'i' } },

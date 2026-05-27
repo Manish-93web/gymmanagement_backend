@@ -1,5 +1,9 @@
 import dns from 'dns';
 dns.setServers(['8.8.8.8', '8.8.4.4']);
+// Allow Atlas TLS cert on dev — Node.js doesn't use system cert store unlike Next.js/browsers
+if (process.env.NODE_ENV !== 'production') {
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+}
 
 import express, { Application, Request, Response, NextFunction } from 'express';
 import http from 'http';
@@ -150,6 +154,15 @@ app.use((req: Request, res: Response, next: NextFunction) => {
             res.status(400).json({ success: false, message: 'Bulk operation exceeds maximum batch size of 500' });
             return;
         }
+    }
+    next();
+});
+
+// Log every request from non-localhost IPs so we can see device traffic
+app.use((req: Request, _res: Response, next: NextFunction) => {
+    const ip = req.ip || req.socket.remoteAddress || '';
+    if (!ip.includes('127.0.0.1') && !ip.includes('::1')) {
+        console.log(`[LAN REQUEST] ${req.method} ${req.url} from ${ip}`);
     }
     next();
 });
@@ -320,7 +333,7 @@ const startServer = async () => {
         await import('./workers/biometric-sync.worker');
         console.log('✅ Cron workers initialized');
 
-        httpServer.listen(PORT, () => {
+        httpServer.listen(PORT, '0.0.0.0', () => {
             console.log(`🚀 Server running on port ${PORT} in ${config.env} mode`);
             console.log(`🔌 WebSocket server ready`);
         }).on('error', (err) => {

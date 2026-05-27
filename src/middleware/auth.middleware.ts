@@ -19,14 +19,22 @@ export const authenticate = async (
     next: NextFunction
 ): Promise<void> => {
     try {
-        const token = req.headers.authorization?.replace('Bearer ', '');
+        // Accept Bearer header OR ?token= query param (needed for EventSource / SSE)
+        const token =
+            req.headers.authorization?.replace('Bearer ', '') ||
+            (req.query.token as string | undefined);
 
         if (!token) {
             res.status(401).json({ error: 'Authentication required' });
             return;
         }
 
-        const decoded = jwt.verify(token, config.jwt.secret) as { userId: string };
+        // Decode full JWT payload so we can use tenantId/branchId as fallback
+        const decoded = jwt.verify(token, config.jwt.secret) as {
+            userId: string;
+            tenantId?: string;
+            branchId?: string;
+        };
 
         const user = await User.findById(decoded.userId).select('+password');
 
@@ -36,8 +44,10 @@ export const authenticate = async (
         }
 
         req.user = user;
-        req.tenantId = user.tenantId?.toString();
-        req.branchId = user.branchId?.toString();
+        // Use DB value if present, fall back to JWT claim (covers users whose DB record
+        // was created before tenantId was backfilled)
+        req.tenantId = user.tenantId?.toString() || decoded.tenantId;
+        req.branchId = user.branchId?.toString() || decoded.branchId;
 
         next();
     } catch (error) {

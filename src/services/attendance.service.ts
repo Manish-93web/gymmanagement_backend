@@ -54,9 +54,19 @@ export class AttendanceService {
             throw new Error('Member is already checked in');
         }
 
+        // Map checkInMethod → method (Attendance schema field is 'method')
+        const methodMap: Record<string, string> = { qr_code: 'qr' };
+        const method = (methodMap[data.checkInMethod] ?? data.checkInMethod) as any;
+
         // Create attendance record
         const attendance = await Attendance.create({
-            ...data,
+            tenantId: data.tenantId,
+            branchId: data.branchId,
+            memberId: data.memberId,
+            classId: data.classId,
+            trainerId: data.trainerId,
+            location: data.location,
+            method,
             checkInTime: new Date(),
         });
 

@@ -5,6 +5,11 @@ export async function createIndexes(): Promise<void> {
     if (!db) return;
 
     try {
+        // Drop stale BiometricMember indexes from old schema before recreating
+        await db.collection('biometricmembers').dropIndex('deviceId_1_biometricUid_1').catch(() => {});
+        await db.collection('biometricmembers').dropIndex('tenantId_1_memberId_1_deviceId_1').catch(() => {});
+        await db.collection('biometricmembers').dropIndex('tenantId_1_biometricUserId_1').catch(() => {});
+
         await Promise.all([
             // Member — most queried per-tenant collection
             db.collection('members').createIndex({ tenantId: 1, status: 1 }),
@@ -57,8 +62,8 @@ export async function createIndexes(): Promise<void> {
             db.collection('biometricrawlogs').createIndex({ deviceId: 1, processed: 1, punchTime: 1 }),
             db.collection('biometricrawlogs').createIndex({ tenantId: 1, createdAt: -1 }),
             db.collection('biometricrawlogs').createIndex({ deviceId: 1, skippedReason: 1, createdAt: -1 }),
-            db.collection('biometricmembers').createIndex({ deviceId: 1, biometricUid: 1 }, { unique: true }),
-            db.collection('biometricmembers').createIndex({ tenantId: 1, memberId: 1 }),
+            db.collection('biometricmembers').createIndex({ tenantId: 1, biometricUserId: 1 }, { unique: true }),
+            db.collection('biometricmembers').createIndex({ memberId: 1 }, { unique: true }),
             db.collection('biometricsyncs').createIndex({ deviceId: 1, status: 1, createdAt: -1 }),
 
             // Gamification

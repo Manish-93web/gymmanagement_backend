@@ -122,11 +122,13 @@ export interface IMember extends Document {
         level: number;
         badges: string[];
     };
+    membershipDuration?: '1_month' | '2_month' | '3_month' | '4_month' | '6_month' | '7_month' | '8_month' | '9_month' | '1_year';
     membershipFee?: number;
     dueAmount?: number;
     paymentStatus?: 'paid' | 'unpaid';
     walletBalance: number;
     lastCheckIn?: Date;
+    sNo?: number;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -271,11 +273,16 @@ const MemberSchema: Schema = new Schema(
             level: { type: Number, default: 1 },
             badges: [{ type: String }],
         },
+        membershipDuration: {
+            type: String,
+            enum: ['1_month', '2_month', '3_month', '4_month', '6_month', '7_month', '8_month', '9_month', '1_year'],
+        },
         membershipFee: { type: Number, default: 0 },
         dueAmount: { type: Number, default: 0 },
         paymentStatus: { type: String, enum: ['paid', 'unpaid'], default: 'paid' },
         walletBalance: { type: Number, default: 0 },
         lastCheckIn: { type: Date },
+        sNo: { type: Number, index: true },
     },
     { timestamps: true }
 );
@@ -286,10 +293,42 @@ MemberSchema.index({ tenantId: 1, mobile: 1 });
 MemberSchema.index({ tenantId: 1, status: 1 });
 MemberSchema.index({ tenantId: 1, branchId: 1, status: 1 });
 MemberSchema.index({ tenantId: 1, createdAt: -1 });
+MemberSchema.index({ tenantId: 1, sNo: 1 }, { unique: true, sparse: true });
 // Additional indexes for 1000+ gym scale
 MemberSchema.index({ tenantId: 1, status: 1, createdAt: -1 });
 MemberSchema.index({ tenantId: 1, branchId: 1, createdAt: -1 });
 MemberSchema.index({ tenantId: 1, membershipPlanId: 1, status: 1 });
 MemberSchema.index({ tenantId: 1, membershipExpiry: 1, status: 1 });
+
+// One-time migration: backfill sNo for existing members that don't have one
+async function backfillSNo() {
+    try {
+        const col = mongoose.connection.collection('members');
+        // Find unique tenantIds that have members without sNo
+        const tenants = await col.distinct('tenantId', { sNo: { $exists: false } });
+        for (const tenantId of tenants) {
+            const members = await col
+                .find({ tenantId, sNo: { $exists: false } })
+                .sort({ createdAt: 1 })
+                .project({ _id: 1 })
+                .toArray();
+            // Get the max existing sNo for this tenant to avoid conflicts
+            const maxDoc = await col.findOne(
+                { tenantId, sNo: { $exists: true } },
+                { sort: { sNo: -1 }, projection: { sNo: 1 } }
+            );
+            let counter = (maxDoc?.sNo ?? 0) + 1;
+            for (const doc of members) {
+                await col.updateOne({ _id: doc._id }, { $set: { sNo: counter++ } });
+            }
+        }
+    } catch { /* non-critical — runs once on startup */ }
+}
+
+if (mongoose.connection.readyState === 1) {
+    backfillSNo();
+} else {
+    mongoose.connection.once('open', () => backfillSNo());
+}
 
 export default mongoose.model<IMember>('Member', MemberSchema);

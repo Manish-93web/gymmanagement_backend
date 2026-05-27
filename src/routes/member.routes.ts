@@ -21,11 +21,13 @@ router.post('/signup', memberController.publicSignup.bind(memberController));
 router.use(authenticate);
 router.use(tenantContext);
 
-// Member CRUD
+// Member CRUD — specific routes MUST come before /:memberId to avoid param capture
 router.get('/me', memberController.getProfile.bind(memberController));
 router.post('/', requirePermission('member:create'), invalidateCache, memberController.createMember.bind(memberController));
 router.get('/', requirePermission('member:read'), memberController.getMembers.bind(memberController));
 router.get('/stats', requirePermission('member:read'), memberController.getMemberStats.bind(memberController));
+router.get('/alerts/expiry', requirePermission('member:read'), memberController.getExpiryAlerts.bind(memberController));
+router.get('/expiry-alerts', requirePermission('member:read'), memberController.getExpiryAlertsBucketed.bind(memberController));
 router.get('/:memberId', requirePermission('member:read'), memberController.getMember.bind(memberController));
 router.put('/:memberId', requirePermission('member:update'), invalidateCache, memberController.updateMember.bind(memberController));
 
@@ -42,9 +44,7 @@ router.post('/:memberId/measurements', requirePermission('member:update'), membe
 router.put('/:memberId/profile-picture', requirePermission('member:update'), memberController.uploadProfilePicture.bind(memberController));
 router.post('/:memberId/transformation', requirePermission('member:update'), memberController.addTransformationPhoto.bind(memberController));
 
-// Expiry alerts & timeline
-router.get('/alerts/expiry', requirePermission('member:read'), memberController.getExpiryAlerts.bind(memberController));
-router.get('/expiry-alerts', requirePermission('member:read'), memberController.getExpiryAlertsBucketed.bind(memberController));
+// Timeline
 router.get('/:memberId/timeline', requirePermission('member:read'), memberController.getMemberTimeline.bind(memberController));
 
 // Change subscription plan

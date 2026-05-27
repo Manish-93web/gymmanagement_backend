@@ -14,6 +14,15 @@ import logger from '../config/logger';
  */
 export class BiometricHealthCheckWorker {
     private static instance: BiometricHealthCheckWorker;
+    // Cooldown: don't re-alert the same device+event within 60 minutes
+    private lastAlertAt = new Map<string, number>();
+
+    private shouldAlert(key: string, cooldownMs = 60 * 60_000): boolean {
+        const last = this.lastAlertAt.get(key) ?? 0;
+        if (Date.now() - last < cooldownMs) return false;
+        this.lastAlertAt.set(key, Date.now());
+        return true;
+    }
 
     private constructor() {
         this.initializeSchedules();
@@ -42,7 +51,7 @@ export class BiometricHealthCheckWorker {
                 try {
                     await this.checkDevice(device);
                 } catch (err: any) {
-                    logger.warn(`[HealthCheck] Failed for device ${(device as any).deviceName}: ${err.message}`);
+                    logger.warn(`[HealthCheck] Failed for device ${(device as any).name || (device as any).deviceName || (device as any)._id}: ${err.message}`);
                 }
             }
         } catch (err: any) {
@@ -57,33 +66,44 @@ export class BiometricHealthCheckWorker {
         }).lean();
 
         const thresholdMinutes = (settings as any)?.alertOnDeviceOfflineMinutes ?? 10;
-        const lastSeen         = device.lastSeenAt ? new Date(device.lastSeenAt).getTime() : 0;
+        // Model stores last heartbeat in `lastPing` (not `lastSeenAt`)
+        const lastPingTime     = device.lastPing ?? device.lastSeenAt ?? null;
+        if (!lastPingTime) return; // Never pinged — skip offline alert (device just added)
+        const lastSeen         = new Date(lastPingTime).getTime();
         const offlineMinutes   = (Date.now() - lastSeen) / 60_000;
 
-        if (offlineMinutes >= thresholdMinutes && device.status !== 'offline') {
-            await BiometricDevice.findByIdAndUpdate(device._id, { status: 'offline' });
-            const payload = {
-                deviceId:      device._id.toString(),
-                deviceName:    device.deviceName,
-                offlineMinutes: Math.round(offlineMinutes),
-                message:       `Device "${device.deviceName}" has been offline for ${Math.round(offlineMinutes)} minutes`,
-            };
-            this.emitToTenant(device.tenantId.toString(), 'biometric:device_offline', payload);
-            this.emitToTenant(device.tenantId.toString(), 'biometric:alert', { type: 'device_offline', ...payload });
+        if (offlineMinutes >= thresholdMinutes) {
+            const displayName = device.name || device.deviceName || device.deviceId || device._id.toString();
+            // Update status if not already offline
+            if (device.status !== 'offline') {
+                await BiometricDevice.findByIdAndUpdate(device._id, { status: 'offline' });
+            }
+            // Only emit alert once per hour per device
+            if (this.shouldAlert(`offline:${device._id}`)) {
+                const payload = {
+                    deviceId:       device._id.toString(),
+                    deviceName:     displayName,
+                    offlineMinutes: Math.round(offlineMinutes),
+                    message:        `Device "${displayName}" has been offline for ${Math.round(offlineMinutes)} minutes`,
+                };
+                this.emitToTenant(device.tenantId.toString(), 'biometric:device_offline', payload);
+            }
         }
 
-        // Alert on consecutive sync failures
+        // Alert on consecutive sync failures (once per hour per device)
         const failThreshold = (settings as any)?.alertOnSyncFailureCount ?? 3;
         if ((device.consecutiveFailures ?? 0) >= failThreshold) {
-            const payload = {
-                deviceId:     device._id.toString(),
-                deviceName:   device.deviceName,
-                failureCount: device.consecutiveFailures,
-                lastError:    device.lastErrorMessage,
-                message:      `Device "${device.deviceName}" has failed to sync ${device.consecutiveFailures} times in a row`,
-            };
-            this.emitToTenant(device.tenantId.toString(), 'biometric:sync_failure', payload);
-            this.emitToTenant(device.tenantId.toString(), 'biometric:alert', { type: 'sync_failure', ...payload });
+            if (this.shouldAlert(`syncfail:${device._id}`)) {
+                const displayName = device.name || device.deviceName || device.deviceId || device._id.toString();
+                const payload = {
+                    deviceId:     device._id.toString(),
+                    deviceName:   displayName,
+                    failureCount: device.consecutiveFailures,
+                    lastError:    device.lastErrorMessage,
+                    message:      `Device "${displayName}" has failed to sync ${device.consecutiveFailures} times in a row`,
+                };
+                this.emitToTenant(device.tenantId.toString(), 'biometric:sync_failure', payload);
+            }
         }
 
         // Alert on unmatched-fingerprint spike
@@ -111,12 +131,13 @@ export class BiometricHealthCheckWorker {
                 skippedReason: 'no_member_mapping',
                 createdAt:     { $gte: oneHourAgo },
             });
-            if (count >= threshold) {
+            if (count >= threshold && this.shouldAlert(`spike:${device._id}`)) {
+                const displayName = device.name || device.deviceName || device.deviceId || device._id.toString();
                 this.emitToTenant(device.tenantId.toString(), 'biometric:unmatched_spike', {
                     deviceId:   device._id.toString(),
-                    deviceName: device.deviceName,
+                    deviceName: displayName,
                     count,
-                    message:    `Device "${device.deviceName}" had ${count} unmatched scans in the last hour`,
+                    message:    `Device "${displayName}" had ${count} unmatched scans in the last hour`,
                 });
             }
         } catch (err: any) {

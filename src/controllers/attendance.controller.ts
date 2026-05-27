@@ -11,8 +11,9 @@ class AttendanceController {
             const tenantId = req.tenantId;
             if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant context required' });
 
-            const branchId = req.branchId;
-            const { memberId, checkInMethod, classId, trainerId, location } = req.body;
+            // Accept both field names for convenience
+            const { memberId, checkInMethod: bodyMethod, method: bodyMethodAlt, classId, trainerId, location } = req.body;
+            const checkInMethod = bodyMethod || bodyMethodAlt;
 
             if (!memberId) {
                 return res.status(400).json({ success: false, message: 'memberId is required' });
@@ -20,8 +21,16 @@ class AttendanceController {
             if (!checkInMethod) {
                 return res.status(400).json({ success: false, message: 'checkInMethod is required' });
             }
+
+            // gym_owner has no branchId in JWT — auto-pick first branch for tenant
+            let branchId = req.branchId;
             if (!branchId) {
-                return res.status(400).json({ success: false, message: 'Branch context required' });
+                const Branch = (await import('../models/Branch.model')).default;
+                const firstBranch = await Branch.findOne({ tenantId }).select('_id').lean();
+                branchId = (firstBranch as any)?._id?.toString();
+            }
+            if (!branchId) {
+                return res.status(400).json({ success: false, message: 'Branch context required — add a branch first' });
             }
 
             const attendance = await AttendanceService.checkIn({
@@ -226,9 +235,10 @@ class AttendanceController {
         try {
             const tenantId = req.tenantId;
             if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant context required' });
+            const isOwnerOrAdmin = req.user?.role === 'gym_owner' || req.user?.role === 'super_admin';
             const branchId = req.branchId;
             const query: any = { tenantId, checkOutTime: null };
-            if (branchId) query.branchId = branchId;
+            if (branchId && !isOwnerOrAdmin) query.branchId = branchId;
             const live = await Attendance.find(query)
                 .populate('memberId', 'firstName lastName avatar membershipNumber')
                 .sort({ checkInTime: -1 });
@@ -488,7 +498,7 @@ class AttendanceController {
 
             return res.status(200).json({
                 success: true,
-                data: records,
+                data: { records, total },
                 pagination: {
                     total,
                     page: pageNum,
@@ -513,12 +523,13 @@ class AttendanceController {
             const todayEnd = new Date();
             todayEnd.setHours(23, 59, 59, 999);
 
+            const isOwnerOrAdmin = req.user?.role === 'gym_owner' || req.user?.role === 'super_admin';
             const filter: any = {
                 tenantId,
                 checkInTime: { $gte: todayStart, $lte: todayEnd },
             };
             if (branchId) filter.branchId = branchId;
-            else if (req.branchId) filter.branchId = req.branchId;
+            else if (req.branchId && !isOwnerOrAdmin) filter.branchId = req.branchId;
 
             const [records, total, currentlyIn] = await Promise.all([
                 Attendance.find(filter)

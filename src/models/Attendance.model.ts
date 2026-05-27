@@ -2,6 +2,8 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export type CheckInMethod = 'manual' | 'qr' | 'rfid' | 'biometric' | 'mobile_app';
 
+export type AttendanceSource = 'biometric' | 'qr' | 'manual';
+
 export interface IAttendance extends Document {
     tenantId: mongoose.Types.ObjectId;
     branchId: mongoose.Types.ObjectId;
@@ -10,7 +12,9 @@ export interface IAttendance extends Document {
     checkOutTime?: Date;
     duration?: number; // in minutes
     method: CheckInMethod;
+    source?: AttendanceSource;
     deviceId?: string;
+    biometricLogId?: mongoose.Types.ObjectId;
     location?: {
         latitude: number;
         longitude: number;
@@ -40,7 +44,9 @@ const AttendanceSchema: Schema = new Schema(
             enum: ['manual', 'qr', 'rfid', 'biometric', 'mobile_app'],
             required: true,
         },
+        source: { type: String, enum: ['biometric', 'qr', 'manual'] },
         deviceId: { type: String },
+        biometricLogId: { type: Schema.Types.ObjectId, ref: 'BiometricRawLog' },
         location: {
             latitude: { type: Number },
             longitude: { type: Number },

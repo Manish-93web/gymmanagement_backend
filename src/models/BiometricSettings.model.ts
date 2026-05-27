@@ -25,7 +25,7 @@ const BiometricSettingsSchema = new Schema<IBiometricSettings>(
         branchId: { type: Schema.Types.ObjectId, ref: 'Branch', default: null },
         dedupeWindowMinutes:         { type: Number, default: 5,   min: 1 },
         autoCheckoutEnabled:         { type: Boolean, default: true },
-        autoCheckoutAfterMinutes:    { type: Number, default: 180, min: 30 },
+        autoCheckoutAfterMinutes:    { type: Number, default: 480, min: 30 },
         shiftStartTime:              { type: String, default: '06:00' },
         shiftEndTime:                { type: String, default: '22:00' },
         graceLateMinutes:            { type: Number, default: 15 },

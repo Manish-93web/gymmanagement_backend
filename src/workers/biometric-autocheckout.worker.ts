@@ -28,9 +28,11 @@ export class BiometricAutoCheckoutWorker {
     }
 
     private initializeSchedules() {
-        cron.schedule('59 23 * * *', () => this.runAutoCheckout());
-        cron.schedule('5 0 * * *',  () => this.runAutoCheckout());
-        logger.info('✅ Biometric Auto-Checkout Worker initialized (23:59 + 00:05)');
+        // Run at 23:59 and 00:05 in IST (UTC+5:30) so it triggers at end of Indian gym day.
+        // node-cron supports timezone option natively.
+        cron.schedule('59 23 * * *', () => this.runAutoCheckout(), { timezone: 'Asia/Kolkata' });
+        cron.schedule('5 0 * * *',   () => this.runAutoCheckout(), { timezone: 'Asia/Kolkata' });
+        logger.info('✅ Biometric Auto-Checkout Worker initialized (23:59 IST + 00:05 IST)');
     }
 
     private async runAutoCheckout() {
@@ -48,7 +50,8 @@ export class BiometricAutoCheckoutWorker {
                     await this.checkoutTenant(
                         settings.tenantId.toString(),
                         (settings as any).autoCheckoutAfterMinutes ?? 480,
-                        now
+                        now,
+                        (settings as any).timezone || 'Asia/Kolkata'
                     );
                 } catch (err: any) {
                     logger.warn(`[AutoCheckout] Tenant ${settings.tenantId} error: ${err.message}`);
@@ -59,10 +62,9 @@ export class BiometricAutoCheckoutWorker {
         }
     }
 
-    private async checkoutTenant(tenantId: string, autoCheckoutAfterMinutes: number, now: Date): Promise<void> {
-        const cutoffStart = new Date(now);
-        cutoffStart.setHours(0, 0, 0, 0);
-        cutoffStart.setDate(cutoffStart.getDate() - 1); // include yesterday crossover
+    private async checkoutTenant(tenantId: string, autoCheckoutAfterMinutes: number, now: Date, tz = 'Asia/Kolkata'): Promise<void> {
+        // Look back 2 days to catch any records that crossed midnight in the tenant's timezone
+        const cutoffStart = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
 
         const openRecords = await Attendance.find({
             tenantId:     new mongoose.Types.ObjectId(tenantId),
@@ -72,13 +74,29 @@ export class BiometricAutoCheckoutWorker {
 
         if (openRecords.length === 0) return;
 
+        // Compute end-of-day in the tenant's timezone
+        const endOfDayUTC = (date: Date): Date => {
+            try {
+                const dayStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(date);
+                const naive = new Date(`${dayStr}T23:59:59.999Z`);
+                const parts = new Intl.DateTimeFormat('en-US', {
+                    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+                    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+                }).formatToParts(naive);
+                const m: Record<string, string> = {};
+                for (const p of parts) if (p.type !== 'literal') m[p.type] = p.value;
+                const tzInterp = new Date(`${m.year}-${m.month}-${m.day}T${m.hour}:${m.minute}:${m.second}Z`);
+                return new Date(naive.getTime() - (tzInterp.getTime() - naive.getTime()));
+            } catch {
+                const d = new Date(date); d.setUTCHours(23, 59, 59, 999); return d;
+            }
+        };
+
         let closed = 0;
         for (const record of openRecords) {
             const checkInTime = new Date(record.checkInTime);
             const autoOut     = new Date(checkInTime.getTime() + autoCheckoutAfterMinutes * 60_000);
-
-            const endOfDay = new Date(checkInTime);
-            endOfDay.setHours(23, 59, 59, 999);
+            const endOfDay    = endOfDayUTC(checkInTime);
 
             const checkOutTime = autoOut < endOfDay ? autoOut : endOfDay;
             if (checkOutTime > now) continue;

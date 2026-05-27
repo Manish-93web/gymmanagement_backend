@@ -101,21 +101,18 @@ const seedEsslDevice = async () => {
         const existing = await BiometricMember.findOne({
             tenantId,
             memberId: member._id,
-            deviceId: (device as any)._id,
         });
 
         if (!existing) {
             await BiometricMember.create({
                 tenantId,
                 memberId: member._id,
-                userId: member.userId,
-                deviceId: (device as any)._id,
                 biometricUserId,
-                enrollmentData: [{ type: 'fingerprint', enrolledAt: new Date() }],
-                isActive: true,
+                assignedDeviceIds: [(device as any)._id],
+                active: true,
             });
             created++;
-        } else if (!(existing as any).biometricUserId) {
+        } else if (!existing.biometricUserId) {
             await BiometricMember.findByIdAndUpdate(existing._id, { biometricUserId });
             updated++;
         }

@@ -105,10 +105,21 @@ export class MemberController {
     async createMember(req: Request, res: Response): Promise<void> {
         try {
             const tenantId = req.tenantId || (req.user?.role === 'super_admin' ? req.body.tenantId : undefined);
-            const branchId = req.branchId || (req.user?.role === 'super_admin' ? req.body.branchId : undefined);
+            let branchId = req.branchId || (req.user?.role === 'super_admin' ? req.body.branchId : undefined);
 
-            if (!tenantId || !branchId) {
-                res.status(400).json({ status: 'error', message: 'Tenant and branch context required' });
+            if (!tenantId) {
+                res.status(400).json({ status: 'error', message: 'Tenant context required' });
+                return;
+            }
+
+            // gym_owner has no req.branchId (branchContext skips them) — auto-pick first branch
+            if (!branchId) {
+                const firstBranch = await Branch.findOne({ tenantId }).select('_id').lean();
+                branchId = (firstBranch as any)?._id?.toString();
+            }
+
+            if (!branchId) {
+                res.status(400).json({ status: 'error', message: 'No branch found for this gym. Please create a branch first.' });
                 return;
             }
 
@@ -367,6 +378,7 @@ export class MemberController {
             const status = req.query.status as MemberStatus | undefined;
             const search = req.query.search as string | undefined;
             const planId = req.query.planId as string | undefined;
+            const duration = req.query.duration as string | undefined;
 
             const result = await memberService.getMembers(
                 req.tenantId,
@@ -375,7 +387,8 @@ export class MemberController {
                 page,
                 limit,
                 search,
-                planId
+                planId,
+                duration
             );
 
             res.status(200).json({
