@@ -21,7 +21,7 @@ export interface IBiometricMember extends Document {
 const BiometricMemberSchema = new Schema<IBiometricMember>(
     {
         tenantId:         { type: Schema.Types.ObjectId, ref: 'Tenant',  required: true, index: true },
-        memberId:         { type: Schema.Types.ObjectId, ref: 'Member',  required: true, index: true },
+        memberId:         { type: Schema.Types.ObjectId, ref: 'Member',  required: true },
         biometricUserId:  { type: String, required: true, trim: true },
         faceId:           { type: String, trim: true },
         fingerprintId:    { type: String, trim: true },
@@ -47,11 +47,35 @@ BiometricMemberSchema.index({ tenantId: 1, pinCode: 1 },    { sparse: true });
 async function migrateSchema() {
     try {
         const col = mongoose.connection.collection('biometricmembers');
+
         // Rename isActive → active for existing records
         await col.updateMany(
             { isActive: { $exists: true }, active: { $exists: false } },
             [{ $set: { active: '$isActive' } }, { $unset: 'isActive' }] as any
         );
+
+        // Dedup {tenantId, biometricUserId} — keep the oldest, remove the rest
+        const dupBioId = await col.aggregate([
+            { $group: { _id: { tenantId: '$tenantId', biometricUserId: '$biometricUserId' }, ids: { $push: '$_id' }, count: { $sum: 1 } } },
+            { $match: { count: { $gt: 1 } } },
+        ]).toArray();
+        for (const group of dupBioId) {
+            const [keep, ...remove] = (group.ids as any[]).sort((a: any, b: any) => a.toString().localeCompare(b.toString()));
+            await col.deleteMany({ _id: { $in: remove } });
+            console.log(`[BiometricMember] dedup tenantId+biometricUserId: kept ${keep}, removed ${remove.length} duplicate(s)`);
+        }
+
+        // Dedup memberId — keep the oldest, remove the rest
+        const dupMember = await col.aggregate([
+            { $group: { _id: '$memberId', ids: { $push: '$_id' }, count: { $sum: 1 } } },
+            { $match: { count: { $gt: 1 } } },
+        ]).toArray();
+        for (const group of dupMember) {
+            const [keep, ...remove] = (group.ids as any[]).sort((a: any, b: any) => a.toString().localeCompare(b.toString()));
+            await col.deleteMany({ _id: { $in: remove } });
+            console.log(`[BiometricMember] dedup memberId: kept ${keep}, removed ${remove.length} duplicate(s)`);
+        }
+
         // Drop stale compound indexes from old schema
         const indexes = await col.indexes();
         for (const idx of indexes) {

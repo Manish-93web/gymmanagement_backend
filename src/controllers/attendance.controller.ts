@@ -1,8 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
+import QRCode from 'qrcode';
 import AttendanceService from '../services/attendance.service';
 import Attendance from '../models/Attendance.model';
+import Member from '../models/Member.model';
 
 class AttendanceController {
     // POST /
@@ -106,7 +108,7 @@ class AttendanceController {
 
             return res.status(200).json({
                 success: true,
-                data: result.attendance,
+                data: { attendance: result.attendance, total: result.total },
                 pagination: {
                     total: result.total,
                     page: parseInt(page as string, 10),
@@ -171,20 +173,42 @@ class AttendanceController {
             if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant context required' });
 
             const branchId = req.branchId;
+            const memberId = (req.query.memberId || req.body?.memberId) as string | undefined;
 
+            // Look up member if requested
+            let memberName = '';
+            let membershipNumber = '';
+            if (memberId) {
+                const m = await Member.findOne({ _id: memberId, tenantId }).select('firstName lastName membershipNumber').lean() as any;
+                if (m) {
+                    memberName       = `${m.firstName} ${m.lastName}`;
+                    membershipNumber = m.membershipNumber || '';
+                }
+            }
+
+            const EXPIRY_SECONDS = 86400; // 24 hours
             const secret = process.env.JWT_SECRET || 'default_secret';
-            const token = jwt.sign(
-                { tenantId, branchId },
+            const token  = jwt.sign(
+                { tenantId, branchId, memberId: memberId || undefined },
                 secret,
-                { expiresIn: '15m' }
+                { expiresIn: EXPIRY_SECONDS }
             );
+
+            const qrDataUrl = await QRCode.toDataURL(token, {
+                width: 300,
+                margin: 2,
+                color: { dark: '#000000', light: '#ffffff' },
+            });
 
             return res.status(200).json({
                 success: true,
                 data: {
                     token,
-                    expiresIn: 900, // 15 minutes in seconds
                     qrData: token,
+                    qrDataUrl,
+                    expiresIn: EXPIRY_SECONDS,
+                    memberName,
+                    membershipNumber,
                 },
             });
         } catch (error) {
@@ -449,39 +473,46 @@ class AttendanceController {
             const {
                 branchId,
                 memberId,
-                startDate,
-                endDate,
-                method,
+                startDate, dateFrom,
+                endDate,   dateTo,
+                method, source,
+                missingCheckout,
                 page = '1',
-                limit = '20',
+                limit = '50',
             } = req.query;
 
             const filter: any = { tenantId };
             if (branchId) filter.branchId = branchId;
             if (memberId) filter.memberId = memberId;
-            if (method) filter.method = method;
-            if (startDate || endDate) {
+            const methodVal = (method || source) as string | undefined;
+            if (methodVal) filter.method = methodVal;
+            if (missingCheckout === 'true') filter.checkOutTime = null;
+
+            const from = (dateFrom || startDate) as string | undefined;
+            const to   = (dateTo   || endDate)   as string | undefined;
+            if (from || to) {
                 filter.checkInTime = {};
-                if (startDate) filter.checkInTime.$gte = new Date(startDate as string);
-                if (endDate) filter.checkInTime.$lte = new Date(endDate as string);
+                if (from) filter.checkInTime.$gte = new Date(from);
+                if (to)   filter.checkInTime.$lte = new Date(to);
             }
 
-            const pageNum = parseInt(page as string, 10);
-            const limitNum = parseInt(limit as string, 10);
-            const skip = (pageNum - 1) * limitNum;
+            const pageNum  = parseInt(page  as string, 10) || 1;
+            const limitNum = parseInt(limit as string, 10) || 50;
+            const skip     = (pageNum - 1) * limitNum;
 
             const [records, total] = await Promise.all([
                 Attendance.find(filter)
                     .skip(skip)
                     .limit(limitNum)
                     .sort({ checkInTime: -1 })
-                    .populate('memberId', 'firstName lastName membershipNumber'),
+                    .populate('memberId', 'firstName lastName membershipNumber avatar')
+                    .populate('deviceId', 'deviceName'),
                 Attendance.countDocuments(filter),
             ]);
 
             return res.status(200).json({
                 success: true,
-                data: records,
+                data: { records, total },
                 pagination: {
                     total,
                     page: pageNum,

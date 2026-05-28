@@ -23,6 +23,7 @@ router.delete('/devices/:id', requireAnyRole('gym_owner', 'branch_manager', 'sup
 router.post('/devices/:id/test', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), biometricController.testDevice.bind(biometricController));
 router.post('/devices/:id/sync', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.syncDevice.bind(biometricController));
 router.post('/devices/:id/reset-cursor', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.resetSyncCursor.bind(biometricController));
+router.post('/devices/:id/reprocess', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.reprocessLogs.bind(biometricController));
 router.get('/devices/:id/logs', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), biometricController.getDeviceLogs.bind(biometricController));
 
 // Member enrollment

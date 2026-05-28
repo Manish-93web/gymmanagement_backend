@@ -143,6 +143,9 @@ class BiometricController {
             if (body.port        !== undefined) updates.port        = body.port;
             if (body.password    !== undefined) updates.password    = body.password;
             if (body.serialNumber !== undefined) updates.serialNumber = body.serialNumber;
+            // Status and failure counter (used by UI reset buttons)
+            if (body.status             !== undefined) updates.status             = body.status;
+            if (body.consecutiveFailures !== undefined) updates.consecutiveFailures = body.consecutiveFailures;
 
             // settings.* — always use dot-notation to avoid parent/child conflict in $set
             if (body.timezone            !== undefined) updates['settings.timezone']        = body.timezone;
@@ -227,10 +230,15 @@ class BiometricController {
             }
 
             const latencyMs = Date.now() - start;
-            await BiometricDevice.findByIdAndUpdate(device._id, {
-                status: connected ? 'active' : 'offline',
-                lastPing: connected ? new Date() : undefined,
-            });
+            // Only promote to 'active' — never downgrade to 'offline' here.
+            // The device's own heartbeats are the authority on online/offline status.
+            // Overwriting with 'offline' would undo a valid heartbeat that arrived seconds ago.
+            if (connected) {
+                await BiometricDevice.findByIdAndUpdate(device._id, {
+                    status: 'active',
+                    lastPing: new Date(),
+                });
+            }
 
             res.json({
                 success: true,
@@ -271,11 +279,24 @@ class BiometricController {
         try {
             const device = await BiometricDevice.findOne({ _id: req.params.id as string, tenantId: req.tenantId });
             if (!device) { res.status(404).json({ success: false, message: 'Device not found' }); return; }
+
+            // Reset cursor so device re-sends everything on next heartbeat (ATTLOGStamp=0)
             await BiometricDevice.findByIdAndUpdate(device._id, {
-                $unset: { lastSyncCursor: '', lastSync: '' },
-                totalRecordsFetched: 0,
+                $unset: { lastSyncCursor: '', lastSync: '', lastSyncAt: '' },
+                $set: { totalRecordsFetched: 0, consecutiveFailures: 0 },
             });
-            res.json({ success: true, message: 'Sync cursor reset. Device will re-send all records on next heartbeat.' });
+
+            // Also reset any skipped-reason raw logs so they can be reprocessed
+            await BiometricRawLog.updateMany(
+                {
+                    deviceId: device._id,
+                    processed: true,
+                    skippedReason: { $in: ['no_member_mapping', 'member_not_enrolled', 'member_not_found', 'no_branch'] },
+                },
+                { $set: { processed: false }, $unset: { skippedReason: '' } }
+            );
+
+            res.json({ success: true, message: 'Sync cursor reset — device will re-send all records on next heartbeat.' });
         } catch (error) { next(error); }
     }
 
@@ -645,25 +666,46 @@ class BiometricController {
             const now = new Date();
             const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
 
-            const [devices, mappings, recentRawLogs, recentAttendance, members] = await Promise.all([
+            const [devices, mappings, recentRawLogs, recentAttendance, members, totalRawLogs, unprocessedCount] = await Promise.all([
                 BiometricDevice.find({ tenantId }).lean(),
                 BiometricMember.find({ tenantId }).populate('memberId', 'firstName lastName sNo').lean(),
-                BiometricRawLog.find({ tenantId }).sort({ createdAt: -1 }).limit(20).lean(),
+                BiometricRawLog.find({ tenantId }).sort({ punchTime: -1 }).limit(50).lean(),
                 Attendance.find({ tenantId, checkInTime: { $gte: todayStart } })
-                    .sort({ checkInTime: -1 }).limit(20)
+                    .sort({ checkInTime: -1 }).limit(50)
                     .populate('memberId', 'firstName lastName').lean(),
                 Member.find({ tenantId, status: { $in: ['active', 'trial'] } })
-                    .select('firstName lastName sNo status _id').sort({ sNo: 1 }).limit(20).lean(),
+                    .select('firstName lastName sNo status _id').sort({ sNo: 1 }).limit(50).lean(),
+                BiometricRawLog.countDocuments({ tenantId }),
+                BiometricRawLog.countDocuments({ tenantId, processed: false }),
             ]);
 
             res.json({
                 success: true,
                 data: {
+                    summary: {
+                        totalRawLogs,
+                        unprocessedLogs: unprocessedCount,
+                        todayAttendanceCount: recentAttendance.length,
+                        deviceCount: devices.length,
+                        enrollmentCount: mappings.length,
+                        activeMemberCount: members.length,
+                    },
                     devices: devices.map((d: any) => ({
-                        _id: d._id, name: d.name, serialNumber: d.serialNumber,
-                        deviceId: d.deviceId, status: d.status, isActive: d.isActive,
-                        lastSeenAt: d.lastSeenAt, lastSyncCursor: d.lastSyncCursor,
+                        _id: d._id,
+                        name: d.deviceName || d.name || d.deviceId,
+                        serialNumber: d.serialNumber,
+                        deviceId: d.deviceId,
+                        deviceBrand: d.deviceBrand || d.vendor,
+                        ipAddress: d.ipAddress,
+                        status: d.status,
+                        isActive: d.isActive,
+                        branchId: d.branchId,
+                        tenantId: d.tenantId,
+                        lastSeenAt: d.lastSeenAt,
+                        lastPing: d.lastPing,
+                        lastSyncCursor: d.lastSyncCursor,
                         totalRecordsFetched: d.totalRecordsFetched,
+                        consecutiveFailures: d.consecutiveFailures,
                     })),
                     mappings: mappings.map((m: any) => ({
                         _id: m._id,
@@ -672,21 +714,72 @@ class BiometricController {
                         memberSNo: m.memberId?.sNo,
                         biometricUserId: m.biometricUserId,
                         active: m.active,
+                        lastPunchAt: m.lastPunchAt,
                     })),
                     recentRawLogs: recentRawLogs.map((l: any) => ({
-                        biometricUserId: l.biometricUserId, punchTime: l.punchTime,
-                        processed: l.processed, skippedReason: l.skippedReason,
-                        attendanceId: l.attendanceId, createdAt: l.createdAt,
+                        _id: l._id,
+                        deviceId: l.deviceId,
+                        biometricUserId: l.biometricUserId,
+                        punchTime: l.punchTime,
+                        eventType: l.eventType,
+                        processed: l.processed,
+                        skippedReason: l.skippedReason,
+                        attendanceId: l.attendanceId,
+                        createdAt: l.createdAt,
                     })),
                     todayAttendance: recentAttendance.map((a: any) => ({
-                        memberId: a.memberId?._id, memberName: a.memberId ? `${a.memberId.firstName} ${a.memberId.lastName}` : '?',
-                        checkInTime: a.checkInTime, checkOutTime: a.checkOutTime, method: a.method,
+                        _id: a._id,
+                        memberId: a.memberId?._id,
+                        memberName: a.memberId ? `${a.memberId.firstName} ${a.memberId.lastName}` : '?',
+                        checkInTime: a.checkInTime,
+                        checkOutTime: a.checkOutTime,
+                        method: a.method,
+                        source: a.source,
+                        deviceId: a.deviceId,
                     })),
                     activeMembers: members.map((m: any) => ({
-                        _id: m._id, name: `${m.firstName} ${m.lastName}`,
-                        sNo: m.sNo, status: m.status,
+                        _id: m._id,
+                        name: `${m.firstName} ${m.lastName}`,
+                        sNo: m.sNo,
+                        status: m.status,
                     })),
                 },
+            });
+        } catch (error) { next(error); }
+    }
+
+    /**
+     * POST /api/biometric/devices/:id/reprocess
+     * Re-process all unprocessed (and optionally skipped) raw logs for a device.
+     */
+    async reprocessLogs(req: Request, res: Response, next: NextFunction) {
+        try {
+            const device = await BiometricDevice.findOne({ _id: req.params.id as string, tenantId: req.tenantId });
+            if (!device) { res.status(404).json({ success: false, message: 'Device not found' }); return; }
+
+            // Optionally reset skipped logs so they get retried
+            const resetSkipped = req.query.resetSkipped !== 'false';
+            if (resetSkipped) {
+                await BiometricRawLog.updateMany(
+                    {
+                        tenantId: device.tenantId,
+                        deviceId: device._id,
+                        processed: true,
+                        skippedReason: { $in: ['no_member_mapping', 'member_not_enrolled', 'member_not_found', 'no_branch'] },
+                    },
+                    { $set: { processed: false }, $unset: { skippedReason: '' } }
+                );
+            }
+
+            const result = await BiometricAttendanceService.processUnprocessedLogs(
+                device.tenantId.toString(),
+                device._id.toString()
+            );
+
+            res.json({
+                success: true,
+                message: `Reprocess complete: ${result.created} attendance records created`,
+                data: { ...result, deviceId: device._id },
             });
         } catch (error) { next(error); }
     }

@@ -108,10 +108,21 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
     next();
 });
 
-// CORS
+// CORS — in development, also allow LAN IPs so the frontend works from network access
+const corsOriginFn = (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    if (!origin) { callback(null, true); return; } // allow non-browser requests (curl, mobile)
+    const allowed: (string | RegExp)[] = [
+        ...config.cors.origin,
+        // In development, allow any private LAN address accessing the frontend port
+        ...(config.env === 'development' ? [/^http:\/\/10\.\d+\.\d+\.\d+(:\d+)?$/, /^http:\/\/192\.168\.\d+\.\d+(:\d+)?$/, /^http:\/\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+(:\d+)?$/] : []),
+    ];
+    const ok = allowed.some(p => typeof p === 'string' ? p === origin : p.test(origin));
+    callback(ok ? null : new Error(`CORS: origin not allowed: ${origin}`), ok);
+};
+
 app.use(
     cors({
-        origin: config.cors.origin,
+        origin: corsOriginFn,
         credentials: true,
     })
 );

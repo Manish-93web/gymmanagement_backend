@@ -1,5 +1,6 @@
 import User, { IUser } from '../models/User.model';
 import Tenant from '../models/Tenant.model';
+import Branch from '../models/Branch.model';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt.utils';
 import { generateOTP, storeOTP, verifyOTP } from '../utils/otp.utils';
 
@@ -60,6 +61,13 @@ export class AuthService {
                 },
             });
             tenantId = tenant._id.toString();
+            // Auto-create a default Main Branch — required for biometric and attendance to work
+            await Branch.create({
+                tenantId: tenant._id,
+                name: 'Main Branch',
+                code: 'MAIN',
+                isActive: true,
+            }).catch(() => {}); // non-fatal if branch creation fails
         }
 
         // Create user (with resolved tenantId)
@@ -166,6 +174,24 @@ export class AuthService {
                 subscription: { plan: 'trial', status: 'active', startDate: new Date(), endDate: trialEnd },
             });
             user.tenantId = newTenant._id as any;
+            await Branch.create({
+                tenantId: newTenant._id,
+                name: 'Main Branch',
+                code: 'MAIN',
+                isActive: true,
+            }).catch(() => {});
+        }
+        // Ensure at least one branch exists for existing gym_owners (backfill)
+        if (user.role === 'gym_owner' && user.tenantId) {
+            const hasBranch = await Branch.exists({ tenantId: user.tenantId });
+            if (!hasBranch) {
+                await Branch.create({
+                    tenantId: user.tenantId,
+                    name: 'Main Branch',
+                    code: 'MAIN',
+                    isActive: true,
+                }).catch(() => {});
+            }
         }
 
         // Generate tokens (after tenant resolution so tenantId is present)

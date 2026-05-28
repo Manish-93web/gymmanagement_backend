@@ -20,10 +20,10 @@ const publicSignupSchema = z.object({
 
 // Validation schemas
 const createMemberSchema = z.object({
-    firstName: z.string().min(1),
-    lastName: z.string().min(1),
-    email: z.string().email(),
-    mobile: z.string().min(10).max(15),
+    firstName: z.string().min(2, 'First name must be at least 2 characters'),
+    lastName: z.string().optional().or(z.literal('')),
+    email: z.string().email('Invalid email address').optional().or(z.literal('')),
+    mobile: z.string().regex(/^[0-9]{10}$/, 'Mobile must be 10 digits'),
     aadharNumber: z.string().optional().refine(val => !val || /^[0-9]{12}$/.test(val), 'Aadhar number must be exactly 12 digits'),
     photo: z.string().optional(),           // base64 data URL from webcam or file picker
     personalInfo: z.object({
@@ -150,8 +150,8 @@ export class MemberController {
 
             const member = await memberService.createMember({
                 firstName: validatedData.firstName,
-                lastName: validatedData.lastName,
-                email: validatedData.email,
+                lastName: validatedData.lastName || '',
+                email: validatedData.email || undefined,
                 mobile: validatedData.mobile,
                 ...(validatedData.aadharNumber ? { aadharNumber: validatedData.aadharNumber } : {}),
                 tenantId,
@@ -162,7 +162,14 @@ export class MemberController {
                 referredBy: validatedData.referredBy,
                 documents: validatedData.document ? [{ ...validatedData.document, uploadedAt: new Date() }] : [],
                 amount: validatedData.amount,
+                discountType: (validatedData.discountType as any) || 'none',
+                discountAmount: validatedData.discountAmount ?? 0,
+                discountValue: validatedData.discountValue ?? 0,
+                gstAmount: validatedData.gstAmount ?? 0,
+                gstRate: validatedData.gstRate ?? 0,
+                paymentMethod: validatedData.paymentMethod || 'cash',
                 dueAmount: typeof validatedData.dueAmount === 'number' ? validatedData.dueAmount : 0,
+                dueDate: validatedData.dueDate,
                 membershipDuration: validatedData.membershipDuration,
                 membershipStart: validatedData.membershipStart,
                 membershipExpiry: validatedData.membershipExpiry,

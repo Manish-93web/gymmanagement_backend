@@ -70,7 +70,9 @@ export class BiometricSyncWorker {
 
         try {
             const syncMode: string = device.syncMode || 'realtime';
-            const isAdmsPush = syncMode === 'realtime';
+            const brand = (device.deviceBrand || device.vendor || '').toLowerCase();
+            // eSSL devices always use ADMS push — TCP pull is not supported on port 4370
+            const isAdmsPush = syncMode === 'realtime' || brand === 'essl';
 
             if (!isAdmsPush) {
                 // Pull mode: fetch from device REST API

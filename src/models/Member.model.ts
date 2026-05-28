@@ -30,8 +30,8 @@ export interface IMember extends Document {
         reason?: string;
     }[];
     personalInfo: {
-        dateOfBirth: Date;
-        gender: 'male' | 'female' | 'other';
+        dateOfBirth?: Date;
+        gender?: 'male' | 'female' | 'other';
         bloodGroup?: string;
         emergencyContact?: {
             name?: string;
@@ -166,8 +166,8 @@ const MemberSchema: Schema = new Schema(
             },
         ],
         personalInfo: {
-            dateOfBirth: { type: Date, required: true },
-            gender: { type: String, enum: ['male', 'female', 'other'], required: true },
+            dateOfBirth: { type: Date, required: false },
+            gender: { type: String, enum: ['male', 'female', 'other'], required: false },
             bloodGroup: { type: String },
             emergencyContact: {
                 name: { type: String },

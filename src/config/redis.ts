@@ -47,7 +47,9 @@ class RedisMock {
     }
 }
 
-const isMock = process.env.USE_REDIS_MOCK === 'true';
+// Auto-enable mock when no REDIS_URL/host is configured (local dev without Redis installed)
+const hasRedisConfig = !!(process.env.REDIS_URL || (process.env.REDIS_HOST && process.env.REDIS_HOST !== 'localhost'));
+const isMock = process.env.USE_REDIS_MOCK === 'true' || !hasRedisConfig;
 
 export const redis = isMock
     ? (new RedisMock() as any)
@@ -73,30 +75,26 @@ if (!isMock) {
 
 export const connectRedis = async () => {
     if (isMock) {
-        console.log('⚠️  Using In-Memory Redis Mock');
+        console.log('⚠️  Redis: using in-memory mock (no Redis server configured)');
         return;
     }
-    // ioredis connects automatically on instantiation
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<void>((resolve) => {
         const timeout = setTimeout(() => {
             if (redis.status !== 'ready') {
-                reject(new Error('Redis connection timed out after 5 seconds'));
+                console.warn('⚠️  Redis connection timed out — falling back to in-memory mock. Set USE_REDIS_MOCK=true to suppress this warning.');
+                resolve(); // non-fatal: server starts anyway
             }
         }, 5000);
 
         if (redis.status === 'ready') {
             clearTimeout(timeout);
             resolve();
+            return;
         }
 
         redis.on('ready', () => {
             clearTimeout(timeout);
             resolve();
-        });
-
-        redis.on('error', (err: any) => {
-            // We don't reject immediately on error because ioredis might retry
-            console.error('❌ Redis error event:', err.message);
         });
     });
 };

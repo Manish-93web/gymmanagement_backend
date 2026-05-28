@@ -1,21 +1,23 @@
 import Member, { IMember, MemberStatus } from '../models/Member.model';
 import Subscription from '../models/Subscription.model';
+import Payment from '../models/Payment.model';
 import User from '../models/User.model';
-import { generateReferralCode } from '../utils/helpers.utils';
+import { generateReferralCode, generateMembershipNumber, generateInvoiceNumber } from '../utils/helpers.utils';
 import mongoose from 'mongoose';
 
 export interface CreateMemberDTO {
     tenantId: string;
     branchId: string;
     firstName: string;
-    lastName: string;
-    email: string;
+    lastName?: string;
+    email?: string;
     mobile: string;
     aadharNumber?: string;
     personalInfo?: {
-        dateOfBirth: Date;
-        gender: 'male' | 'female' | 'other';
+        dateOfBirth?: Date;
+        gender?: 'male' | 'female' | 'other';
         bloodGroup?: string;
+        profilePicture?: string;
         emergencyContact?: {
             name?: string;
             relationship?: string;
@@ -34,7 +36,14 @@ export interface CreateMemberDTO {
     status?: MemberStatus;
     documents?: { type: string; name: string; url: string; uploadedAt: Date }[];
     amount?: number;
+    discountType?: 'none' | 'flat' | 'percentage';
+    discountAmount?: number;
+    discountValue?: number;
+    gstAmount?: number;
+    gstRate?: number;
+    paymentMethod?: string;
     dueAmount?: number;
+    dueDate?: Date | string;
     membershipFee?: number;
     membershipDuration?: string;
     membershipStart?: Date | string;
@@ -89,49 +98,87 @@ export class MemberService {
 
     // Create new member
     async createMember(data: CreateMemberDTO): Promise<IMember> {
-        // Check if member already exists
+        // Check for duplicate mobile (within tenant)
+        const orConditions: any[] = [{ mobile: data.mobile }];
+        if (data.email) orConditions.push({ email: data.email.toLowerCase() });
         const existingMember = await Member.findOne({
             tenantId: data.tenantId,
-            $or: [{ email: data.email }, { mobile: data.mobile }],
+            $or: orConditions,
         });
-
         if (existingMember) {
-            throw new Error('Member already exists with this email or mobile');
+            throw new Error('A member with this mobile or email is already registered.');
         }
 
-        // Generate sequential membership number: MEM-YYYY-NNNNN (per tenant)
-        const memberCount = await Member.countDocuments({ tenantId: data.tenantId });
-        const sNo = memberCount + 1;
-        const year = new Date().getFullYear();
-        const membershipNumber = `MEM-${year}-${String(sNo).padStart(5, '0')}`;
+        // Generate membership number and sequential S.No
+        const membershipNumber = generateMembershipNumber(data.tenantId, data.branchId);
         const referralCode = generateReferralCode(membershipNumber);
+        const sNo = (await Member.countDocuments({ tenantId: new mongoose.Types.ObjectId(data.tenantId) })) + 1;
+
+        // Placeholder email when none provided (avoids cross-tenant collisions)
+        const tenantSuffix = data.tenantId.toString().slice(-6);
+        const emailForUser = data.email ? data.email.toLowerCase() : `${data.mobile}.${tenantSuffix}@member.local`;
 
         // 1. Create User account for the member
-        const user = await (User as any).create({
-            tenantId: data.tenantId,
-            branchId: data.branchId,
-            role: 'member',
-            email: data.email.toLowerCase(),
-            mobile: data.mobile,
-            password: 'Welcome@123', // Initial password, should be changed on first login
-            firstName: data.firstName,
-            lastName: data.lastName,
-            isActive: true,
-        });
+        let user: any;
+        try {
+            user = await (User as any).create({
+                tenantId: data.tenantId,
+                branchId: data.branchId,
+                role: 'member',
+                email: emailForUser,
+                mobile: data.mobile,
+                password: 'Welcome@123',
+                firstName: data.firstName,
+                lastName: data.lastName ?? '',
+                isActive: true,
+            });
+        } catch (err: any) {
+            if (err.code === 11000) {
+                const field = Object.keys(err.keyPattern || {})[0];
+                if (field === 'email') {
+                    throw new Error('This email is already registered. Please use a different email or leave it blank.');
+                }
+                if (field === 'mobile') {
+                    const existingUser = await User.findOne({ mobile: data.mobile });
+                    if (existingUser && (existingUser as any).role === 'member') {
+                        user = existingUser;
+                    } else {
+                        throw new Error('This mobile number is linked to a staff or owner account.');
+                    }
+                } else {
+                    throw new Error('A member with this email or mobile already exists.');
+                }
+            } else {
+                throw err;
+            }
+        }
 
-        // 2. Create member
+        // 2. Compute membership dates
+        const membershipStart = data.membershipStart ? new Date(data.membershipStart as string) : new Date();
+        const DURATION_MONTHS: Record<string, number> = {
+            '1_month': 1, '2_month': 2, '3_month': 3, '4_month': 4,
+            '6_month': 6, '7_month': 7, '8_month': 8, '9_month': 9, '1_year': 12,
+        };
+        let membershipExpiry: Date | undefined = data.membershipExpiry ? new Date(data.membershipExpiry as string) : undefined;
+        if (!membershipExpiry && data.membershipDuration) {
+            const months = DURATION_MONTHS[data.membershipDuration] ?? 1;
+            membershipExpiry = new Date(membershipStart);
+            membershipExpiry.setMonth(membershipExpiry.getMonth() + months);
+        }
+
+        // 3. Create member document
         const member = await (Member as any).create({
             tenantId: data.tenantId,
             branchId: data.branchId,
             userId: user._id,
             firstName: data.firstName,
-            lastName: data.lastName,
-            email: data.email.toLowerCase(),
+            lastName: data.lastName ?? '',
+            email: data.email ? data.email.toLowerCase() : emailForUser,
             mobile: data.mobile,
             ...(data.aadharNumber ? { aadharNumber: data.aadharNumber } : {}),
             membershipNumber,
             sNo,
-            status: 'active', // Default to active for new registrations
+            status: 'active',
             personalInfo: data.personalInfo,
             address: data.address,
             goals: data.goals,
@@ -139,24 +186,68 @@ export class MemberService {
             referredBy: data.referredBy ? new mongoose.Types.ObjectId(data.referredBy) : undefined,
             documents: data.documents ?? [],
             membershipFee: data.amount ?? 0,
+            discountAmount: data.discountAmount ?? 0,
+            discountType: data.discountType ?? 'none',
+            discountValue: data.discountValue ?? 0,
             dueAmount: data.dueAmount ?? 0,
+            dueDate: data.dueDate ? new Date(data.dueDate as string) : undefined,
             paymentStatus: (data.amount && data.amount > 0 && (data.dueAmount ?? 0) === 0) ? 'paid' : 'unpaid',
             ...(data.membershipDuration ? { membershipDuration: data.membershipDuration } : {}),
-            ...(data.membershipStart ? { membershipStart: new Date(data.membershipStart as string) } : {}),
-            ...(data.membershipExpiry ? { membershipExpiry: new Date(data.membershipExpiry as string) } : {}),
+            membershipStart,
+            ...(membershipExpiry ? { membershipExpiry } : {}),
             ...(data.planId ? { planId: new mongoose.Types.ObjectId(data.planId) } : {}),
-            statusHistory: [{
-                status: 'active',
-                changedAt: new Date(),
-                reason: 'Initial registration',
-            }]
+            statusHistory: [{ status: 'active', changedAt: new Date(), reason: 'Initial registration' }],
+            membershipHistory: membershipStart && membershipExpiry ? [{
+                startDate: membershipStart,
+                expiryDate: membershipExpiry,
+                planDuration: data.membershipDuration,
+                fee: data.amount ?? 0,
+                discountAmount: data.discountAmount ?? 0,
+                paymentMethod: data.paymentMethod ?? 'cash',
+                type: 'new',
+                recordedAt: new Date(),
+            }] : [],
         });
 
-        // 3. Return member with identity fields (for immediate UI update)
+        // 4. Auto-create Payment record so revenue appears in analytics
+        if (data.amount && data.amount > 0) {
+            try {
+                const invoiceNumber = generateInvoiceNumber(data.tenantId, 'MEM');
+                const gstAmt = data.gstAmount ?? 0;
+                const discAmt = data.discountAmount ?? 0;
+                const dueAmt = data.dueAmount ?? 0;
+                const total = data.amount - discAmt + gstAmt - dueAmt;
+                await Payment.create({
+                    tenantId: new mongoose.Types.ObjectId(data.tenantId),
+                    branchId: new mongoose.Types.ObjectId(data.branchId),
+                    memberId: member._id,
+                    invoiceNumber,
+                    paymentType: 'subscription',
+                    type: 'subscription',
+                    method: (data.paymentMethod || 'cash') as any,
+                    status: 'completed',
+                    paidAt: new Date(),
+                    amount: { subtotal: data.amount, taxAmount: gstAmt, discountAmount: discAmt, total },
+                    taxDetails: { taxType: gstAmt > 0 ? 'GST' : 'NONE', taxRate: data.gstRate ?? 0 },
+                    invoice: { generated: false, emailSent: false },
+                    metadata: {
+                        description: `Membership registration — ${data.membershipDuration?.replace('_', ' ') ?? ''}`,
+                        membershipStart,
+                        membershipExpiry,
+                        items: [{ name: `Membership (${data.membershipDuration?.replace('_', ' ') ?? ''})`, quantity: 1, price: data.amount, total }],
+                    },
+                    notes: 'Auto-created on member registration',
+                });
+            } catch (payErr) {
+                console.error('[MemberService] Failed to create membership payment record:', payErr);
+            }
+        }
+
+        // 5. Return member with identity fields for immediate UI update
         const memberObj = member.toObject();
         memberObj.firstName = data.firstName;
-        memberObj.lastName = data.lastName;
-        memberObj.email = data.email;
+        memberObj.lastName = data.lastName ?? '';
+        memberObj.email = data.email ?? '';
         memberObj.mobile = data.mobile;
 
         return memberObj as any;

@@ -16,9 +16,19 @@ export class WebSocketService {
     private connectedUsers: Map<string, string> = new Map(); // userId -> socketId
 
     constructor(httpServer: HTTPServer) {
+        // Same CORS as the Express app: allow configured origins + LAN IPs in dev
+        const wsOrigin = config.env === 'development'
+            ? (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
+                if (!origin) { cb(null, true); return; }
+                const ok = config.cors.origin.includes(origin)
+                    || /^http:\/\/(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(origin);
+                cb(ok ? null : new Error('WS CORS blocked'), ok);
+              }
+            : config.cors.origin;
+
         this.io = new Server(httpServer, {
             cors: {
-                origin: config.cors.origin,
+                origin: wsOrigin,
                 credentials: true,
             },
             pingTimeout: 60000,

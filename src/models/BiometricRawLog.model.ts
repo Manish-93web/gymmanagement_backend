@@ -4,7 +4,7 @@ export type PunchEventType = 'check_in' | 'check_out' | 'overtime_in' | 'overtim
 
 export interface IBiometricRawLog extends Document {
     tenantId: mongoose.Types.ObjectId;
-    branchId: mongoose.Types.ObjectId;
+    branchId?: mongoose.Types.ObjectId;
     deviceId: mongoose.Types.ObjectId;
     biometricUserId: string;
     eventType: PunchEventType;
@@ -21,7 +21,7 @@ export interface IBiometricRawLog extends Document {
 const BiometricRawLogSchema = new Schema<IBiometricRawLog>(
     {
         tenantId:        { type: Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
-        branchId:        { type: Schema.Types.ObjectId, ref: 'Branch', required: true, index: true },
+        branchId:        { type: Schema.Types.ObjectId, ref: 'Branch', required: false, index: true },
         deviceId:        { type: Schema.Types.ObjectId, ref: 'BiometricDevice', required: true, index: true },
         biometricUserId: { type: String, required: true, index: true },
         eventType:       { type: String, enum: ['check_in', 'check_out', 'overtime_in', 'overtime_out', 'unknown'], default: 'unknown' },
