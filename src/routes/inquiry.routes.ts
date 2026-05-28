@@ -10,6 +10,7 @@ router.get('/', authenticate, requireAnyRole('gym_owner', 'branch_manager', 'sta
 router.post('/', optionalAuth, inquiryController.createInquiry.bind(inquiryController));
 router.get('/stats', authenticate, requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), inquiryController.getInquiryStats.bind(inquiryController));
 router.put('/:id', authenticate, requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), inquiryController.updateInquiry.bind(inquiryController));
+router.delete('/:id', authenticate, requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), inquiryController.deleteInquiry.bind(inquiryController));
 router.post('/:id/convert', authenticate, requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), inquiryController.convertToMember.bind(inquiryController));
 
 export default router;

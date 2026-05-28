@@ -31,7 +31,7 @@ const chatbotSchema = z.object({
 const createLeadSchema = z.object({
     firstName: z.string().min(1),
     lastName: z.string().min(1),
-    email: z.string().email().optional(),
+    email: z.preprocess(v => (v === '' ? undefined : v), z.string().email().optional()),
     mobile: z.string(),
     source: z.enum(['walk_in', 'website', 'referral', 'social_media', 'advertisement', 'other']),
     interestedIn: z.array(z.string()).optional(),

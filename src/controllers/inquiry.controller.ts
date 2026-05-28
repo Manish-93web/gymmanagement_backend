@@ -148,6 +148,30 @@ export class InquiryController {
         }
     }
 
+    // DELETE /:id
+    async deleteInquiry(req: Request, res: Response): Promise<void> {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) { NO_TENANT(res); return; }
+
+            const id = req.params.id as string;
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                res.status(400).json({ success: false, message: 'Invalid inquiry ID' });
+                return;
+            }
+
+            const inquiry = await Inquiry.findOneAndDelete({ _id: id, tenantId });
+            if (!inquiry) {
+                res.status(404).json({ success: false, message: 'Inquiry not found' });
+                return;
+            }
+
+            res.status(200).json({ success: true, message: 'Inquiry deleted' });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to delete inquiry' });
+        }
+    }
+
     // POST /:id/convert — convert inquiry to member
     async convertToMember(req: Request, res: Response): Promise<void> {
         try {
