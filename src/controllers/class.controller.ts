@@ -94,7 +94,7 @@ class ClassController {
 
             return res.status(200).json({
                 success: true,
-                data: result.classes,
+                data: { classes: result.classes, total: result.total },
                 pagination: {
                     total: result.total,
                     page: parseInt(page as string, 10),
@@ -350,6 +350,32 @@ class ClassController {
                     pages: Math.ceil(result.total / parseInt(limit as string, 10)),
                 },
             });
+        } catch (error) {
+            return next(error);
+        }
+    }
+
+    // GET /:classId/bookings
+    async getClassBookings(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant context required' });
+
+            const classId = String(req.params.classId);
+            const { page = '1', limit = '50' } = req.query;
+            const pageNum = parseInt(page as string, 10);
+            const limitNum = parseInt(limit as string, 10);
+
+            const [bookings, total] = await Promise.all([
+                Booking.find({ classId, tenantId })
+                    .populate('memberId', 'firstName lastName membershipNumber email mobile')
+                    .sort({ createdAt: -1 })
+                    .skip((pageNum - 1) * limitNum)
+                    .limit(limitNum),
+                Booking.countDocuments({ classId, tenantId }),
+            ]);
+
+            return res.status(200).json({ success: true, data: { bookings, total } });
         } catch (error) {
             return next(error);
         }

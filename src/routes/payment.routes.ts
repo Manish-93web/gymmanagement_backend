@@ -1,4 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import mongoose from 'mongoose';
 import Payment from '../models/Payment.model';
 import Tenant from '../models/Tenant.model';
 import paymentController from '../controllers/payment.controller';
@@ -75,12 +76,14 @@ router.get(
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const tenantId = req.tenantId;
+            if (!tenantId) { res.status(400).json({ success: false, message: 'Tenant context required' }); return; }
+            const tid = new mongoose.Types.ObjectId(tenantId as string);
             const monthlyRevenue = await Payment.aggregate([
-                { $match: { tenantId, status: 'completed' } },
+                { $match: { tenantId: tid, status: 'completed' } },
                 {
                     $group: {
                         _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
-                        revenue: { $sum: '$amount' },
+                        revenue: { $sum: '$amount.total' },
                         count: { $sum: 1 },
                     },
                 },

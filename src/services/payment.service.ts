@@ -297,8 +297,9 @@ export class PaymentService {
 
     // Get payment statistics
     async getPaymentStats(tenantId: string, branchId?: string): Promise<any> {
-        const filter: any = { tenantId };
-        if (branchId) filter.branchId = branchId;
+        const tid = new mongoose.Types.ObjectId(tenantId);
+        const filter: any = { tenantId: tid };
+        if (branchId) filter.branchId = new mongoose.Types.ObjectId(branchId);
 
         const now = new Date();
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);

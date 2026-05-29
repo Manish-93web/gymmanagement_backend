@@ -7,6 +7,7 @@ import BiometricSyncJob from '../models/BiometricSyncJob.model';
 import BiometricSettings from '../models/BiometricSettings.model';
 import Attendance from '../models/Attendance.model';
 import Member from '../models/Member.model';
+import Branch from '../models/Branch.model';
 import { AttendanceService } from '../services/attendance.service';
 import BiometricAttendanceService from '../services/biometric-attendance.service';
 
@@ -189,6 +190,14 @@ class BiometricController {
             let errorMsg: string | undefined;
             let lastHeartbeatMsg: string | undefined;
 
+            const humanAge = (ageMs: number) => {
+                const mins = Math.floor(ageMs / 60_000);
+                if (mins < 60) return `${mins} min ago`;
+                const hrs = Math.floor(mins / 60);
+                if (hrs < 24) return `${hrs}h ago`;
+                return `${Math.floor(hrs / 24)}d ago`;
+            };
+
             // Primary check: ADMS push-mode devices dial OUT to this server — they never
             // listen on port 4370 for incoming connections. The most reliable online
             // indicator is a recent heartbeat (GET /iclock/cdata?SN=...).
@@ -199,45 +208,52 @@ class BiometricController {
                 if (ageMs < 10 * 60_000) {
                     // Heartbeat within last 10 minutes — device is definitely online
                     connected = true;
-                    lastHeartbeatMsg = ageMins < 1 ? 'Last heartbeat: just now' : `Last heartbeat: ${ageMins}m ago`;
+                    lastHeartbeatMsg = ageMins < 1 ? 'Last heartbeat: just now' : `Last heartbeat: ${humanAge(ageMs)}`;
                 } else {
-                    // Stale heartbeat — try HTTP on port 80 (ZKTeco web UI) as secondary check
-                    errorMsg = `No heartbeat for ${ageMins} minutes`;
+                    // Stale heartbeat — try TCP on device port as secondary check
+                    errorMsg = `No heartbeat since ${humanAge(ageMs)} — device may be offline or ADMS server address changed`;
                 }
             } else {
-                errorMsg = 'Device has never sent a heartbeat — check cloud server settings on the device';
+                errorMsg = 'Device has never sent a heartbeat. On the device go to Network → Cloud/ADMS and set Server Address + Port to point to this server.';
             }
 
-            // Secondary check: if no recent heartbeat, try HTTP port 80 (device web UI)
+            // Secondary check: TCP connect to the device's configured port (e.g. 4370 for eSSL)
+            // This confirms the device is reachable on the LAN even if ADMS push hasn't fired yet.
             if (!connected && device.ipAddress) {
+                const tcpPort = (device as any).port || 4370;
                 try {
                     await new Promise<void>((resolve, reject) => {
-                        const http = require('http');
-                        const req2 = http.get(
-                            { host: device.ipAddress, port: 80, path: '/', timeout: 4000 },
-                            (r: any) => { connected = true; errorMsg = undefined; r.resume(); resolve(); }
-                        );
-                        req2.on('timeout', () => { req2.destroy(); reject(new Error('timeout')); });
-                        req2.on('error', (err: any) => {
-                            if (['ECONNREFUSED', 'ECONNRESET', 'EPIPE'].includes(err.code || '')) {
-                                connected = true; errorMsg = undefined; resolve();
+                        const net = require('net');
+                        const socket = net.createConnection({ host: device.ipAddress, port: tcpPort });
+                        socket.setTimeout(4000);
+                        socket.on('connect', () => {
+                            socket.destroy();
+                            connected = true;
+                            errorMsg = undefined;
+                            lastHeartbeatMsg = `Device reachable on port ${tcpPort} (ADMS push not yet received)`;
+                            resolve();
+                        });
+                        socket.on('timeout', () => { socket.destroy(); reject(new Error('timeout')); });
+                        socket.on('error', (err: any) => {
+                            // ECONNREFUSED = port closed but host alive (device reachable)
+                            if (err.code === 'ECONNREFUSED') {
+                                connected = true;
+                                errorMsg = undefined;
+                                lastHeartbeatMsg = `Device IP reachable (port ${tcpPort} closed — ADMS push expected)`;
+                                resolve();
                             } else {
                                 reject(err);
                             }
                         });
                     });
-                } catch { /* stays offline */ }
+                } catch { /* stays offline — device IP not reachable from this server */ }
             }
 
             const latencyMs = Date.now() - start;
             // Only promote to 'active' — never downgrade to 'offline' here.
             // The device's own heartbeats are the authority on online/offline status.
-            // Overwriting with 'offline' would undo a valid heartbeat that arrived seconds ago.
             if (connected) {
-                await BiometricDevice.findByIdAndUpdate(device._id, {
-                    status: 'active',
-                    lastPing: new Date(),
-                });
+                await BiometricDevice.findByIdAndUpdate(device._id, { status: 'active', lastPing: new Date() });
             }
 
             res.json({
@@ -385,6 +401,11 @@ class BiometricController {
                 if (deviceId) {
                     await BiometricDevice.findByIdAndUpdate(deviceId, { $inc: { enrolledMembers: 1 } });
                 }
+            }
+
+            // Reprocess any previously-skipped punches for this enrollId
+            if (enrollId) {
+                BiometricAttendanceService.reprocessSkippedLogs(tenantId, enrollId).catch(() => {});
             }
 
             res.status(201).json({ success: true, message: 'Member enrolled successfully', data: enrollment });
@@ -536,23 +557,159 @@ class BiometricController {
     async getReports(req: Request, res: Response, next: NextFunction) {
         try {
             const tenantId = req.tenantId;
-            const { startDate, endDate } = req.query as Record<string, string>;
-            const start = startDate ? new Date(startDate) : new Date(Date.now() - 7 * 86400000);
-            const end = endDate ? new Date(endDate) : new Date();
+            if (!tenantId) { res.status(400).json({ success: false, message: 'Tenant context required' }); return; }
+            const tid = new mongoose.Types.ObjectId(tenantId as string);
+            const q = req.query as Record<string, string>;
+            const type = q.type || 'daily';
 
-            const [totalAttendance, devices, enrollments] = await Promise.all([
-                Attendance.countDocuments({ tenantId, checkInTime: { $gte: start, $lte: end } }),
-                BiometricDevice.countDocuments({ tenantId, isDeleted: { $ne: true } }),
-                BiometricMember.countDocuments({ tenantId }),
-            ]);
+            // ── DAILY ATTENDANCE ─────────────────────────────────────────────────
+            if (type === 'daily') {
+                const date = q.date || new Date().toISOString().split('T')[0];
+                const dayStart = new Date(`${date}T00:00:00.000Z`);
+                const dayEnd   = new Date(`${date}T23:59:59.999Z`);
 
-            const dailyStats = await Attendance.aggregate([
-                { $match: { tenantId: new mongoose.Types.ObjectId(tenantId as string), checkInTime: { $gte: start, $lte: end } } },
-                { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$checkInTime' } }, count: { $sum: 1 } } },
-                { $sort: { _id: 1 } },
-            ]);
+                const matchStage: any = { tenantId: tid, checkInTime: { $gte: dayStart, $lte: dayEnd } };
+                if (q.source) matchStage.source = q.source;
 
-            res.json({ success: true, data: { totalAttendance, devices, enrollments, dailyStats } });
+                const [records, bySource] = await Promise.all([
+                    Attendance.find(matchStage)
+                        .populate('memberId', 'firstName lastName membershipNumber mobile')
+                        .populate('branchId', 'name')
+                        .sort({ checkInTime: -1 })
+                        .limit(500)
+                        .lean(),
+                    Attendance.aggregate([
+                        { $match: matchStage },
+                        { $group: { _id: '$source', count: { $sum: 1 } } },
+                        { $sort: { count: -1 } },
+                    ]),
+                ]);
+
+                res.json({ success: true, data: { records, bySource } });
+                return;
+            }
+
+            // ── MONTHLY VISITS ───────────────────────────────────────────────────
+            if (type === 'monthly_visits') {
+                const now   = new Date();
+                const month = parseInt(q.month || String(now.getMonth() + 1), 10);
+                const year  = parseInt(q.year  || String(now.getFullYear()),   10);
+                const minVisits = parseInt(q.minVisits || '0', 10);
+
+                const monthStart = new Date(year, month - 1, 1);
+                const monthEnd   = new Date(year, month,     1);
+
+                const rows = await Attendance.aggregate([
+                    { $match: { tenantId: tid, checkInTime: { $gte: monthStart, $lt: monthEnd } } },
+                    { $group: {
+                        _id: '$memberId',
+                        visitCount:   { $sum: 1 },
+                        totalMinutes: { $sum: { $ifNull: ['$duration', 0] } },
+                        lastVisit:    { $max: '$checkInTime' },
+                        firstVisit:   { $min: '$checkInTime' },
+                    }},
+                    { $match: { visitCount: { $gte: minVisits || 1 } } },
+                    { $sort: { visitCount: -1 } },
+                    { $lookup: { from: 'members', localField: '_id', foreignField: '_id', as: 'member' } },
+                    { $unwind: { path: '$member', preserveNullAndEmptyArrays: true } },
+                    { $limit: 500 },
+                ]);
+
+                res.json({ success: true, data: rows });
+                return;
+            }
+
+            // ── TOP VISITORS (FREQUENT) ──────────────────────────────────────────
+            if (type === 'frequent') {
+                const rangeDays = parseInt(q.rangeDays || '30', 10);
+                const limit     = parseInt(q.limit     || '20', 10);
+                const since     = new Date(Date.now() - rangeDays * 86400000);
+
+                const rows = await Attendance.aggregate([
+                    { $match: { tenantId: tid, checkInTime: { $gte: since } } },
+                    { $group: {
+                        _id:       '$memberId',
+                        visits:    { $sum: 1 },
+                        totalMin:  { $sum: { $ifNull: ['$duration', 0] } },
+                        lastVisit: { $max: '$checkInTime' },
+                    }},
+                    { $sort: { visits: -1 } },
+                    { $limit: limit },
+                    { $lookup: { from: 'members', localField: '_id', foreignField: '_id', as: 'member' } },
+                    { $unwind: { path: '$member', preserveNullAndEmptyArrays: true } },
+                ]);
+
+                res.json({ success: true, data: rows });
+                return;
+            }
+
+            // ── DEVICE UPTIME ────────────────────────────────────────────────────
+            if (type === 'device_uptime') {
+                const days  = parseInt(q.days || '30', 10);
+                const since = new Date(Date.now() - days * 86400000);
+
+                const devices = await BiometricDevice.find({ tenantId, isDeleted: { $ne: true } }).lean();
+
+                const rows = await Promise.all(devices.map(async (dev: any) => {
+                    const jobs = await BiometricSyncJob.find({
+                        deviceId:  dev._id,
+                        createdAt: { $gte: since },
+                    }).lean();
+                    const total   = jobs.length;
+                    const success = jobs.filter((j: any) => j.status === 'completed').length;
+                    const failed  = jobs.filter((j: any) => j.status === 'failed').length;
+                    return {
+                        deviceId:     dev._id,
+                        deviceName:   dev.name || dev.deviceName || 'Unknown',
+                        brand:        dev.brand || '',
+                        location:     dev.location || '',
+                        status:       dev.status || 'unknown',
+                        totalJobs:    total,
+                        successJobs:  success,
+                        failedJobs:   failed,
+                        uptimePercent: total > 0 ? Math.round((success / total) * 100) : 0,
+                        lastSync:     dev.lastSync || dev.lastPing || null,
+                    };
+                }));
+
+                res.json({ success: true, data: rows });
+                return;
+            }
+
+            // ── BRANCH COMPARISON ────────────────────────────────────────────────
+            if (type === 'branch_comparison') {
+                const dateFrom = q.dateFrom ? new Date(q.dateFrom) : new Date(Date.now() - 30 * 86400000);
+                const dateTo   = q.dateTo   ? new Date(q.dateTo)   : new Date();
+
+                const branches = await Branch.find({ tenantId }).lean();
+
+                const rows = await Promise.all(branches.map(async (br: any) => {
+                    const agg = await Attendance.aggregate([
+                        { $match: { tenantId: tid, branchId: br._id, checkInTime: { $gte: dateFrom, $lte: dateTo } } },
+                        { $group: {
+                            _id:           null,
+                            totalVisits:   { $sum: 1 },
+                            uniqueMembers: { $addToSet: '$memberId' },
+                            totalDuration: { $sum: { $ifNull: ['$duration', 0] } },
+                        }},
+                    ]);
+                    const stat = agg[0] || {};
+                    return {
+                        _id:           br._id,
+                        branch:        br,
+                        totalVisits:   stat.totalVisits   || 0,
+                        uniqueMembers: stat.uniqueMembers ? stat.uniqueMembers.length : 0,
+                        avgDuration:   stat.totalVisits
+                            ? Math.round((stat.totalDuration || 0) / stat.totalVisits)
+                            : 0,
+                    };
+                }));
+
+                res.json({ success: true, data: rows });
+                return;
+            }
+
+            res.status(400).json({ success: false, message: `Unknown report type: ${type}` });
         } catch (error) { next(error); }
     }
 
@@ -666,7 +823,7 @@ class BiometricController {
             const now = new Date();
             const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
 
-            const [devices, mappings, recentRawLogs, recentAttendance, members, totalRawLogs, unprocessedCount] = await Promise.all([
+            const [devices, mappings, recentRawLogs, recentAttendance, members, totalRawLogs, unprocessedCount, unmatchedIds] = await Promise.all([
                 BiometricDevice.find({ tenantId }).lean(),
                 BiometricMember.find({ tenantId }).populate('memberId', 'firstName lastName sNo').lean(),
                 BiometricRawLog.find({ tenantId }).sort({ punchTime: -1 }).limit(50).lean(),
@@ -677,6 +834,13 @@ class BiometricController {
                     .select('firstName lastName sNo status _id').sort({ sNo: 1 }).limit(50).lean(),
                 BiometricRawLog.countDocuments({ tenantId }),
                 BiometricRawLog.countDocuments({ tenantId, processed: false }),
+                // Distinct device User IDs that are skipped with no_member_mapping
+                BiometricRawLog.aggregate([
+                    { $match: { tenantId: new mongoose.Types.ObjectId(tenantId as string), skippedReason: 'no_member_mapping' } },
+                    { $group: { _id: '$biometricUserId', count: { $sum: 1 }, lastSeen: { $max: '$punchTime' } } },
+                    { $sort: { count: -1 } },
+                    { $limit: 20 },
+                ]),
             ]);
 
             res.json({
@@ -743,6 +907,12 @@ class BiometricController {
                         sNo: m.sNo,
                         status: m.status,
                     })),
+                    // Device User IDs that have punches but no member mapping
+                    unmatchedDeviceIds: (unmatchedIds as any[]).map((u: any) => ({
+                        deviceUserId: u._id,
+                        punchCount: u.count,
+                        lastSeen: u.lastSeen,
+                    })),
                 },
             });
         } catch (error) { next(error); }
@@ -780,6 +950,48 @@ class BiometricController {
                 success: true,
                 message: `Reprocess complete: ${result.created} attendance records created`,
                 data: { ...result, deviceId: device._id },
+            });
+        } catch (error) { next(error); }
+    }
+
+    /**
+     * POST /api/biometric/reprocess-all
+     * Reset ALL no_member_mapping / no_branch skipped logs for this tenant and re-run processing.
+     * Call this after bulk-enrolling members to backfill past punches.
+     */
+    async reprocessAll(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) { res.status(400).json({ success: false, message: 'Tenant context required' }); return; }
+
+            const tid = new mongoose.Types.ObjectId(tenantId as string);
+
+            const resetResult = await BiometricRawLog.updateMany(
+                {
+                    tenantId: tid,
+                    processed: true,
+                    skippedReason: { $in: ['no_member_mapping', 'member_not_enrolled', 'member_not_found', 'no_branch'] },
+                },
+                { $set: { processed: false }, $unset: { skippedReason: '' } }
+            );
+
+            const devices = await BiometricDevice.find({ tenantId: tid, isDeleted: { $ne: true } }).select('_id');
+
+            let totalCreated = 0, totalSkipped = 0, totalUnmatched = 0;
+            for (const dev of devices) {
+                const result = await BiometricAttendanceService.processUnprocessedLogs(
+                    tenantId as string,
+                    dev._id.toString()
+                );
+                totalCreated   += result.created;
+                totalSkipped   += result.skipped;
+                totalUnmatched += result.unmatched;
+            }
+
+            res.json({
+                success: true,
+                message: `Reprocessed ${resetResult.modifiedCount} skipped punches — ${totalCreated} attendance records created`,
+                data: { reset: resetResult.modifiedCount, created: totalCreated, skipped: totalSkipped, unmatched: totalUnmatched },
             });
         } catch (error) { next(error); }
     }

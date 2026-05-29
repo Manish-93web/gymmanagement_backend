@@ -13,10 +13,10 @@ const createProductSchema = z.object({
         sellingPrice: z.number().positive(),
         mrp: z.number().positive(),
     }),
-    stock: z.object({
-        quantity: z.number().min(0),
-        minQuantity: z.number().min(0),
-        unit: z.string(),
+    inventory: z.object({
+        currentStock: z.number().min(0),
+        minStock: z.number().min(0).default(0),
+        unit: z.string().default('piece'),
     }),
     vendor: z.object({
         name: z.string(),

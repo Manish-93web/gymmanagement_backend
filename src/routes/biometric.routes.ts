@@ -46,6 +46,7 @@ router.get('/unmatched', requireAnyRole('gym_owner', 'branch_manager', 'staff', 
 
 // Diagnostic + simulate punch (dev/ops tooling)
 router.get('/diagnostic', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.getDiagnostic.bind(biometricController));
+router.post('/reprocess-all', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.reprocessAll.bind(biometricController));
 router.post('/simulate-punch', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.simulatePunch.bind(biometricController));
 
 // Sync jobs history

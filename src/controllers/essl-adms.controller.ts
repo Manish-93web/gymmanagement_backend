@@ -153,17 +153,33 @@ class EsslAdmsController {
     async heartbeat(req: Request, res: Response) {
         const sn = (req.query.SN as string) || (req.query.sn as string) || '';
         const deviceIP = (req.socket?.remoteAddress || req.ip || '').replace(/^::ffff:/, '');
-        console.log(`[eSSL ADMS] GET heartbeat SN="${sn}" from ${deviceIP}`);
 
         if (!sn) { res.type('text/plain').send('ERROR'); return; }
         const device = await resolveDevice(sn, deviceIP);
 
+        // ATTLOGStamp must be a UTC Unix epoch.
+        // Cursor is stored as device-LOCAL time string (e.g. "2026-05-28 15:31:25" IST).
+        // Convert to UTC; treat naively as UTC would produce +5.5h offset for IST devices.
+        // stamp=0 means "send everything" — used when cursor is null/missing.
         let stamp = 0;
-        const cursor = (device as any)?.lastSyncCursor;
-        if (cursor) {
-            const t = new Date(String(cursor).replace(' ', 'T'));
-            if (!isNaN(t.getTime())) stamp = Math.floor(t.getTime() / 1000);
+        if (device) {
+            const cursor = (device as any)?.lastSyncCursor;
+            if (cursor) {
+                const deviceTz = (device as any).timezone || (device as any).settings?.timezone || 'Asia/Kolkata';
+                const t = deviceLocalToUTC(String(cursor), deviceTz);
+                if (!isNaN(t.getTime())) stamp = Math.floor(t.getTime() / 1000);
+            }
         }
+
+        // Build TransTimes: every 30 min throughout the day so device syncs even if RealTime=1
+        // is ignored by older firmware. Format: HH:MM;HH:MM;...
+        const transTimes = Array.from({ length: 48 }, (_, i) => {
+            const hh = String(Math.floor(i / 2)).padStart(2, '0');
+            const mm = i % 2 === 0 ? '00' : '30';
+            return `${hh}:${mm}`;
+        }).join(';');
+
+        console.log(`[eSSL ADMS] GET heartbeat SN="${sn}" stamp=${stamp} (cursor=${(device as any)?.lastSyncCursor || 'null → full resync'})`);
 
         const response = [
             `GET OPTION FROM:${sn}`,
@@ -171,8 +187,8 @@ class EsslAdmsController {
             `OPERLOGStamp=9999`,
             `ATTPHOTOStamp=9999`,
             `ErrorDelay=30`,
-            `Delay=5`,
-            `TransTimes=00:00`,
+            `Delay=10`,
+            `TransTimes=${transTimes}`,
             `TransInterval=1`,
             `RealTime=1`,
             `TransFlag=TransData AttLog OpLog AttPhoto`,

@@ -15,9 +15,9 @@ export interface CreateProductDTO {
         sellingPrice: number;
         mrp: number;
     };
-    stock: {
-        quantity: number;
-        minQuantity: number;
+    inventory: {
+        currentStock: number;
+        minStock: number;
         unit: string;
     };
     vendor?: {
@@ -163,7 +163,9 @@ export class POSService {
                     productId: item.productId,
                     productName: product.name,
                     quantity: item.quantity,
-                    price: item.price,
+                    unitPrice: item.price,
+                    discount: 0,
+                    taxAmount: 0,
                     total: item.price * item.quantity,
                 });
 
@@ -185,17 +187,22 @@ export class POSService {
                 );
             }
 
-            const discount = data.discount || 0;
-            const tax = data.tax || 0;
-            const total = subtotal - discount + tax;
+            const discountAmt = data.discount || 0;
+            const taxAmount = data.tax || 0;
+            const total = subtotal - discountAmt + taxAmount;
+            const invoiceNumber = `POS-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+            const customerType = data.customerType === 'walk_in' ? 'guest' : data.customerType;
 
             const sale = await (Sale as any).create([{
-                ...data,
+                tenantId: data.tenantId,
+                branchId: data.branchId,
+                invoiceNumber,
+                customerId: data.customerId,
+                customerType,
                 items,
-                subtotal,
-                discount,
-                tax,
-                total,
+                totals: { subtotal, discount: discountAmt, taxAmount, total },
+                paymentMethod: data.paymentMethod === 'razorpay' ? 'card' : data.paymentMethod,
+                paymentStatus: 'completed',
                 soldBy,
             }], { session });
 

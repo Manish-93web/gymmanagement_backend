@@ -20,8 +20,8 @@ router.get('/products/stats', requireAnyRole('gym_owner', 'branch_manager', 'sta
         const tenantId = (req as any).user?.tenantId;
         const matchStage: any = tenantId ? { $match: { tenantId: new mongoose.Types.ObjectId(tenantId) } } : { $match: {} };
         const [byCategory, totals] = await Promise.all([
-            Product.aggregate([matchStage, { $group: { _id: '$category', count: { $sum: 1 }, totalStock: { $sum: '$stock.quantity' }, totalValue: { $sum: { $multiply: ['$stock.quantity', '$pricing.cost'] } } } }, { $sort: { count: -1 } }]),
-            Product.aggregate([matchStage, { $group: { _id: null, totalProducts: { $sum: 1 }, totalStock: { $sum: '$stock.quantity' }, totalValue: { $sum: { $multiply: ['$stock.quantity', '$pricing.cost'] } }, lowStockCount: { $sum: { $cond: [{ $lte: ['$stock.quantity', '$stock.minQuantity'] }, 1, 0] } } } }]),
+            Product.aggregate([matchStage, { $group: { _id: '$category', count: { $sum: 1 }, totalStock: { $sum: '$inventory.currentStock' }, totalValue: { $sum: { $multiply: ['$inventory.currentStock', '$pricing.cost'] } } } }, { $sort: { count: -1 } }]),
+            Product.aggregate([matchStage, { $group: { _id: null, totalProducts: { $sum: 1 }, totalStock: { $sum: '$inventory.currentStock' }, totalValue: { $sum: { $multiply: ['$inventory.currentStock', '$pricing.cost'] } }, lowStockCount: { $sum: { $cond: [{ $lte: ['$inventory.currentStock', '$inventory.minStock'] }, 1, 0] } } } }]),
         ]);
         res.json({ success: true, data: { totalProducts: totals[0]?.totalProducts ?? 0, totalStock: totals[0]?.totalStock ?? 0, totalValue: totals[0]?.totalValue ?? 0, lowStockCount: totals[0]?.lowStockCount ?? 0, byCategory } });
     } catch (err: any) {
