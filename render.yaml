@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: gymmanagement-backend
+    runtime: node
+    region: singapore
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: node dist/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: USE_REDIS_MOCK
+        value: true
