@@ -313,6 +313,20 @@ const PORT = config.port || 5000;
 
 const startServer = async () => {
     console.log('🏁 startServer called');
+
+    // Bind port FIRST so Render's port scan succeeds immediately
+    await new Promise<void>((resolve, reject) => {
+        httpServer.listen(PORT, '0.0.0.0', () => {
+            console.log(`🚀 Server running on port ${PORT} in ${config.env} mode`);
+            console.log(`🔌 WebSocket server ready`);
+            resolve();
+        }).on('error', (err) => {
+            console.error('❌ Server failed to start:', err);
+            reject(err);
+        });
+    });
+
+    // Initialize services after port is bound (non-blocking for Render)
     try {
         await connectDB();
         console.log('✅ MongoDB connected');
@@ -327,7 +341,6 @@ const startServer = async () => {
             console.warn('⚠️ BullMQ init failed (Redis may not be running):', err);
         }
 
-        // Initialize scheduled reports (restores all active cron jobs from DB)
         try {
             const { default: ScheduledReportService } = await import('./services/scheduled-report.service');
             await ScheduledReportService.initializeScheduledReports();
@@ -336,7 +349,6 @@ const startServer = async () => {
             console.warn('⚠️ Scheduled reports init failed:', err);
         }
 
-        // Start cron-based workers (all singletons — imported for side-effects)
         await import('./workers/attendance.worker');
         await import('./workers/billing.worker');
         await import('./workers/retention.worker');
@@ -345,16 +357,9 @@ const startServer = async () => {
         await import('./workers/biometric-sync.worker');
         console.log('✅ Cron workers initialized');
 
-        httpServer.listen(PORT, '0.0.0.0', () => {
-            console.log(`🚀 Server running on port ${PORT} in ${config.env} mode`);
-            console.log(`🔌 WebSocket server ready`);
-        }).on('error', (err) => {
-            console.error('❌ Server failed to start:', err);
-            process.exit(1);
-        });
     } catch (error) {
-        console.error('❌ Failed to start server:', error);
-        process.exit(1);
+        console.error('❌ Service initialization failed:', error);
+        // Server stays up even if some services fail
     }
 };
 
