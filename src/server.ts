@@ -297,6 +297,7 @@ app.use((_req: Request, res: Response) => {
 
 // Error handler
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    if (res.headersSent) return;
     console.error('Error:', err);
     const statusCode = err.statusCode || 500;
     const message = err.message || 'Internal Server Error';

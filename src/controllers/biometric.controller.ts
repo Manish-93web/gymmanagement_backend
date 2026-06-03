@@ -824,7 +824,7 @@ class BiometricController {
             const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
 
             const [devices, mappings, recentRawLogs, recentAttendance, members, totalRawLogs, unprocessedCount, unmatchedIds] = await Promise.all([
-                BiometricDevice.find({ tenantId }).lean(),
+                BiometricDevice.find({ tenantId, isDeleted: { $ne: true } }).lean(),
                 BiometricMember.find({ tenantId }).populate('memberId', 'firstName lastName sNo').lean(),
                 BiometricRawLog.find({ tenantId }).sort({ punchTime: -1 }).limit(50).lean(),
                 Attendance.find({ tenantId, checkInTime: { $gte: todayStart } })

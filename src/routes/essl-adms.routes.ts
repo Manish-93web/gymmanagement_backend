@@ -73,4 +73,61 @@ router.post('/debug/fix-sn', async (req: Request, res: Response) => {
     }
 });
 
+// Reset cursor for any device by ID
+router.post('/debug/reset-device-cursor', express.json(), async (req: Request, res: Response) => {
+    try {
+        const { deviceId } = req.body;
+        if (!deviceId) return res.status(400).json({ error: 'deviceId required' });
+        const mongoose = (await import('mongoose')).default;
+        const result = await BiometricDevice.findByIdAndUpdate(
+            new mongoose.Types.ObjectId(deviceId),
+            { $unset: { lastSyncCursor: '', lastSync: '', lastSyncAt: '' }, $set: { totalRecordsFetched: 0, consecutiveFailures: 0, status: 'inactive' } },
+            { new: true }
+        );
+        return res.json({ ok: true, device: result?.deviceName, message: 'Cursor reset — device will resend all records on next heartbeat' });
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+// Fix: find ALL devices with the real SN across ALL tenants and clear duplicates
+// Keeps only the device belonging to the specified tenantId
+router.post('/debug/fix-device-sn', express.json(), async (req: Request, res: Response) => {
+    try {
+        const { tenantId, serialNumber } = req.body;
+        if (!tenantId || !serialNumber) {
+            return res.status(400).json({ error: 'tenantId and serialNumber required' });
+        }
+
+        const mongoose = (await import('mongoose')).default;
+        const tid = new mongoose.Types.ObjectId(tenantId);
+
+        // Find ALL devices with this SN across all tenants
+        const allDevices = await BiometricDevice.find({ serialNumber }).lean();
+
+        const results: any[] = [];
+        for (const device of allDevices) {
+            const isSameTenant = device.tenantId.toString() === tenantId;
+            if (!isSameTenant) {
+                // Clear SN from devices belonging to other tenants
+                await BiometricDevice.findByIdAndUpdate(device._id, { $unset: { serialNumber: '' } });
+                results.push({ id: device._id, tenant: device.tenantId, action: 'cleared SN' });
+            } else {
+                results.push({ id: device._id, tenant: device.tenantId, action: 'kept (correct tenant)' });
+            }
+        }
+
+        // Also ensure the current tenant has at least one device with this SN
+        const tenantDevice = await BiometricDevice.findOne({ tenantId: tid, isDeleted: { $ne: true } }).lean();
+        if (tenantDevice && !allDevices.find(d => d.tenantId.toString() === tenantId)) {
+            await BiometricDevice.findByIdAndUpdate(tenantDevice._id, { serialNumber });
+            results.push({ id: tenantDevice._id, tenant: tenantId, action: 'assigned SN to first tenant device' });
+        }
+
+        return res.json({ success: true, serialNumber, results });
+    } catch (err: any) {
+        return res.status(500).json({ error: err.message });
+    }
+});
+
 export default router;
