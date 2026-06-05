@@ -406,6 +406,12 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 process.on('unhandledRejection', (err: Error) => {
+    const msg = err?.message || String(err);
+    // Redis/BullMQ connection errors are non-fatal — server keeps running with mock
+    if (msg.includes('ECONNREFUSED') || msg.includes('Connection is closed') || msg.includes('Redis')) {
+        console.warn('⚠️  [Redis] Unhandled rejection suppressed (non-fatal):', msg);
+        return;
+    }
     console.error('Unhandled Promise Rejection:', err);
     if (config.env === 'production') process.exit(1);
 });
