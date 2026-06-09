@@ -109,6 +109,37 @@ export const updateTenantStatus = async (req: Request, res: Response) => {
 };
 
 /**
+ * General tenant update — handles status changes, plan assignment, and arbitrary field updates.
+ * Called by frontend PlatformService.updateTenant() via PATCH /platform/tenants/:tenantId
+ */
+export const updateTenant = async (req: Request, res: Response) => {
+    try {
+        const { tenantId } = req.params;
+        const { action, planId, status, isActive, ...rest } = req.body;
+
+        const updatePayload: Record<string, any> = { ...rest };
+
+        if (status !== undefined)   updatePayload['subscription.status'] = status;
+        if (isActive !== undefined) updatePayload.isActive = isActive;
+        if (action === 'upgrade_plan' && planId) updatePayload.saasPlanId = planId;
+
+        const tenant = await Tenant.findByIdAndUpdate(
+            tenantId,
+            { $set: updatePayload },
+            { new: true }
+        ).populate('saasPlanId', 'name slug pricing');
+
+        if (!tenant) {
+            return res.status(404).json({ success: false, message: 'Tenant not found' });
+        }
+
+        return res.status(200).json({ success: true, data: tenant, message: 'Tenant updated successfully' });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error updating tenant', error: (error as Error).message });
+    }
+};
+
+/**
  * Get Platform-wide Metrics (Aggregation only)
  */
 export const getPlatformMetrics = async (req: Request, res: Response) => {
@@ -264,7 +295,7 @@ export const getAllSupportTickets = async (req: Request, res: Response) => {
             SupportTicket.countDocuments(filter),
         ]);
         const normalized = tickets.map(normalizeTicket);
-        return res.status(200).json({ success: true, data: { tickets: normalized, total, page: parseInt(page) } });
+        return res.status(200).json({ success: true, data: normalized, total, page: parseInt(page) });
     } catch (error) {
         return res.status(500).json({ success: false, message: 'Error fetching tickets', error: (error as Error).message });
     }
@@ -284,11 +315,31 @@ export const getPlatformPlans = async (req: Request, res: Response) => {
 };
 
 /**
- * Get platform-wide payment/revenue summary (supports dynamic status filter)
+ * Normalize a member Payment doc to match the SaaSPayment shape expected by RevenueModule.
+ */
+const normalizeMemberPayment = (p: any) => ({
+    _id: p._id,
+    tenantId: p.tenantId,   // populated { name, slug }
+    saasPlanId: { name: p.planId?.name || 'Member Fee', type: p.type || 'subscription' },
+    type: p.type || 'subscription',
+    amount: p.amount?.total ?? 0,
+    currency: 'INR',
+    status: p.status,
+    gateway: {
+        provider: p.method || 'manual',
+        transactionId: p.gateway?.transactionId || p.invoiceNumber || String(p._id).slice(-10),
+    },
+    createdAt: p.createdAt,
+});
+
+/**
+ * Get platform-wide payments.
+ * Primary source: SaaSPayment (platform billing).
+ * Fallback: gym member Payment records when no SaaS billing records exist.
  */
 export const getPlatformPayments = async (req: Request, res: Response) => {
     try {
-        const Payment = (await import('../models/Payment.model')).default;
+        const SaaSPayment = (await import('../models/SaaSPayment.model')).default;
         const { startDate, endDate, tenantId, status, page = '1', limit = '50' } = req.query as Record<string, string>;
         const filter: any = {};
         if (status) filter.status = status;
@@ -299,16 +350,44 @@ export const getPlatformPayments = async (req: Request, res: Response) => {
             if (endDate) filter.createdAt.$lte = new Date(endDate);
         }
         const skip = (parseInt(page) - 1) * parseInt(limit);
-        const [payments, total] = await Promise.all([
-            Payment.find(filter)
-                .populate('memberId', 'firstName lastName')
+
+        const [saasPayments, saasTotal] = await Promise.all([
+            SaaSPayment.find(filter)
                 .populate('tenantId', 'name slug')
+                .populate('saasPlanId', 'name type')
                 .sort({ createdAt: -1 })
                 .skip(skip)
                 .limit(parseInt(limit)),
-            Payment.countDocuments(filter),
+            SaaSPayment.countDocuments(filter),
         ]);
-        return res.status(200).json({ success: true, data: { payments, total, page: parseInt(page) } });
+
+        // If SaaS payment records exist, return them directly
+        if (saasTotal > 0) {
+            return res.status(200).json({ success: true, data: { payments: saasPayments, total: saasTotal, page: parseInt(page) } });
+        }
+
+        // Fallback: gym member payment records normalized to match the SaaS payment shape
+        const memberFilter: any = {};
+        if (status) memberFilter.status = status;
+        if (tenantId) memberFilter.tenantId = tenantId;
+        if (startDate || endDate) {
+            memberFilter.createdAt = {};
+            if (startDate) memberFilter.createdAt.$gte = new Date(startDate);
+            if (endDate) memberFilter.createdAt.$lte = new Date(endDate);
+        }
+
+        const [memberPayments, memberTotal] = await Promise.all([
+            Payment.find(memberFilter)
+                .populate('tenantId', 'name slug')
+                .populate('planId', 'name')
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(parseInt(limit)),
+            Payment.countDocuments(memberFilter),
+        ]);
+
+        const payments = memberPayments.map(normalizeMemberPayment);
+        return res.status(200).json({ success: true, data: { payments, total: memberTotal, page: parseInt(page) } });
     } catch (error) {
         return res.status(500).json({ success: false, message: 'Error fetching payments', error: (error as Error).message });
     }
@@ -559,54 +638,127 @@ export const getPlatformHealth = async (_req: Request, res: Response) => {
 /** Get platform analytics — full SaaS intelligence shape for AnalyticsModule */
 export const getPlatformAnalytics = async (req: Request, res: Response) => {
     try {
-        const mongoose = (await import('mongoose')).default;
-        const Payment = (await import('../models/Payment.model')).default;
-        const Subscription = (await import('../models/Subscription.model')).default;
+        const SaaSPayment = (await import('../models/SaaSPayment.model')).default;
         const SupportTicket = (await import('../models/SupportTicket.model')).default;
 
         const now = new Date();
 
-        // MRR — sum of active subscription amounts in current month
-        const mrrAgg = await Payment.aggregate([
+        // MRR — actual SaaS subscription payments collected this month
+        const mrrAgg = await SaaSPayment.aggregate([
             { $match: { status: 'completed', createdAt: { $gte: new Date(now.getFullYear(), now.getMonth(), 1) } } },
-            { $group: { _id: null, total: { $sum: '$amount.total' } } },
+            { $group: { _id: null, total: { $sum: '$amount' } } },
         ]);
-        const mrr = mrrAgg[0]?.total || 0;
+        const actualMrr = mrrAgg[0]?.total || 0;
 
-        // Total collected (all time)
-        const totalAgg = await Payment.aggregate([
+        // Total collected (all time) from SaaS payments
+        const totalAgg = await SaaSPayment.aggregate([
+            { $match: { status: 'completed' } },
+            { $group: { _id: null, total: { $sum: '$amount' } } },
+        ]);
+        const actualTotalCollected = totalAgg[0]?.total || 0;
+
+        // Fallback: expected MRR from active non-trial tenants using customPrice + billingCycle
+        // (same approach as reference gymmanagement platform-business.service.ts)
+        // Then further fallback to plan pricing if customPrice not set
+        const activePaidTenants = await Tenant.find({
+            isActive: true,
+            'subscription.status': 'active',
+        } as any).select('customPrice billingCycle saasPlanId').lean();
+
+        let expectedMrr = 0;
+        const tenantsNeedingPlanPrice: string[] = [];
+        for (const t of activePaidTenants) {
+            const price = (t as any).customPrice;
+            if (price && price > 0) {
+                const cycle = (t as any).billingCycle || 'monthly';
+                if (cycle === 'monthly')      expectedMrr += price;
+                else if (cycle === 'quarterly')  expectedMrr += price / 3;
+                else if (cycle === 'semi_annual') expectedMrr += price / 6;
+                else if (cycle === 'yearly')      expectedMrr += price / 12;
+                // lifetime = 0 MRR contribution
+            } else if ((t as any).saasPlanId) {
+                tenantsNeedingPlanPrice.push(String((t as any).saasPlanId));
+            }
+        }
+        // For tenants without customPrice, fall back to their plan's monthly price
+        if (tenantsNeedingPlanPrice.length) {
+            const planPriceAgg = await Tenant.aggregate([
+                { $match: { isActive: true, saasPlanId: { $exists: true, $ne: null }, customPrice: { $not: { $gt: 0 } } } },
+                { $lookup: { from: 'saasplans', localField: 'saasPlanId', foreignField: '_id', as: 'plan' } },
+                { $unwind: { path: '$plan', preserveNullAndEmptyArrays: false } },
+                { $group: { _id: null, total: { $sum: '$plan.pricing.monthly' } } },
+            ]);
+            expectedMrr += planPriceAgg[0]?.total || 0;
+        }
+        expectedMrr = Math.round(expectedMrr);
+
+        // Fallback total collected: sum all completed gym member payments (total volume through platform)
+        const memberPaymentAgg = await Payment.aggregate([
             { $match: { status: 'completed' } },
             { $group: { _id: null, total: { $sum: '$amount.total' } } },
         ]);
-        const totalCollected = totalAgg[0]?.total || 0;
+        const memberRevenue = memberPaymentAgg[0]?.total || 0;
+
+        const mrr = actualMrr || expectedMrr;
+        const totalCollected = actualTotalCollected || memberRevenue;
 
         // Tenant counts for conversion + churn
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
         const totalTenants = await Tenant.countDocuments();
         const activeTenants = await Tenant.countDocuments({ isActive: true } as any);
         const trialTenants = await Tenant.countDocuments({ 'subscription.status': 'trial' } as any);
         const trialToPaidConversion = totalTenants > 0 ? Math.round(((totalTenants - trialTenants) / totalTenants) * 100) : 0;
+        // Churn = tenants deactivated in last 30 days (same as reference platform-business.service)
+        const recentChurned = await Tenant.countDocuments({ isActive: false, updatedAt: { $gte: thirtyDaysAgo } } as any);
+        const churnRate = totalTenants > 0 ? parseFloat(((recentChurned / totalTenants) * 100).toFixed(2)) : 0;
         const churnedTenants = await Tenant.countDocuments({ isActive: false } as any);
-        const churnRate = totalTenants > 0 ? Math.round((churnedTenants / totalTenants) * 100) : 0;
 
-        // Plan distribution
-        const planDistAgg = await Subscription.aggregate([
-            { $match: { status: 'active' } },
-            { $group: { _id: '$planName', count: { $sum: 1 }, revenue: { $sum: '$amount' } } },
-            { $project: { _id: 0, plan: { $toLower: '$_id' }, count: 1, revenue: 1 } },
+        // Plan distribution — prefer actual SaaS payments; fall back to active tenant plan subscriptions
+        const planDistAgg = await SaaSPayment.aggregate([
+            { $match: { status: 'completed' } },
+            { $group: { _id: '$saasPlanId', count: { $sum: 1 }, revenue: { $sum: '$amount' } } },
+            { $lookup: { from: 'saasplans', localField: '_id', foreignField: '_id', as: 'plan' } },
+            { $unwind: { path: '$plan', preserveNullAndEmptyArrays: true } },
+            { $project: { _id: 0, plan: { $toLower: { $ifNull: ['$plan.name', 'unknown'] } }, count: 1, revenue: 1 } },
             { $sort: { revenue: -1 } },
         ]);
-        const planDistribution = planDistAgg.map(p => ({ plan: p.plan || 'basic', count: p.count, revenue: p.revenue || 0 }));
+        let planDistribution = planDistAgg.map(p => ({ plan: p.plan || 'basic', count: p.count, revenue: p.revenue || 0 }));
+
+        // Fallback: count tenants per plan when no payment records exist
+        if (!planDistribution.length) {
+            const tenantPlanAgg = await Tenant.aggregate([
+                { $match: { isActive: true, saasPlanId: { $exists: true, $ne: null } } },
+                { $lookup: { from: 'saasplans', localField: 'saasPlanId', foreignField: '_id', as: 'plan' } },
+                { $unwind: { path: '$plan', preserveNullAndEmptyArrays: false } },
+                { $group: { _id: '$plan._id', plan: { $first: { $toLower: '$plan.name' } }, count: { $sum: 1 }, revenue: { $sum: '$plan.pricing.monthly' } } },
+                { $project: { _id: 0, plan: 1, count: 1, revenue: 1 } },
+                { $sort: { count: -1 } },
+            ]);
+            planDistribution = tenantPlanAgg.map(p => ({ plan: p.plan || 'basic', count: p.count, revenue: p.revenue || 0 }));
+        }
 
         // Monthly revenue trend (last 6 months)
         const sixMonthsAgo = new Date();
         sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-        const monthlyAgg = await Payment.aggregate([
+        const monthlyAgg = await SaaSPayment.aggregate([
             { $match: { status: 'completed', createdAt: { $gte: sixMonthsAgo } } },
-            { $group: { _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } }, revenue: { $sum: '$amount.total' } } },
+            { $group: { _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } }, revenue: { $sum: '$amount' } } },
             { $sort: { '_id.year': 1, '_id.month': 1 } },
         ]);
         const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const monthlyTrend = monthlyAgg.map(m => ({ month: MONTH_NAMES[m._id.month - 1], revenue: m.revenue }));
+        let monthlyTrend = monthlyAgg.map(m => ({ month: MONTH_NAMES[m._id.month - 1], revenue: m.revenue }));
+
+        // Fallback: use member payment revenue by month when no SaaS payment trend data
+        if (!monthlyTrend.length) {
+            const memberMonthlyAgg = await Payment.aggregate([
+                { $match: { status: 'completed', createdAt: { $gte: sixMonthsAgo } } },
+                { $group: { _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } }, revenue: { $sum: '$amount.total' } } },
+                { $sort: { '_id.year': 1, '_id.month': 1 } },
+            ]);
+            monthlyTrend = memberMonthlyAgg.map(m => ({ month: MONTH_NAMES[m._id.month - 1], revenue: m.revenue || 0 }));
+        }
 
         // Signups & conversions trend (last 6 months)
         const signupsAgg = await Tenant.aggregate([

@@ -113,12 +113,15 @@ class AuditService {
         }
 
         const total = await AuditLog.countDocuments(query);
-        const logs = await AuditLog.find(query)
-            .sort({ timestamp: -1 })
+        const rawLogs = await AuditLog.find(query)
+            .sort({ createdAt: -1 })
             .skip((page - 1) * limit)
             .limit(limit)
             .populate('userId', 'firstName lastName email')
+            .populate('tenantId', 'name slug')
             .lean();
+        // Add `user` alias so frontend can access log.user.email
+        const logs = rawLogs.map((log: any) => ({ ...log, user: log.userId }));
 
         return {
             logs,

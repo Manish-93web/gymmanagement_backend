@@ -3,6 +3,7 @@ import {
     getAllTenants,
     getTenantById,
     updateTenantStatus,
+    updateTenant,
     getPlatformMetrics,
     getPlatformConfig,
     updatePlatformConfig,
@@ -38,6 +39,7 @@ router.use(authenticate, requireRole('super_admin'));
 
 router.get('/tenants', getAllTenants);
 router.get('/tenants/:tenantId', getTenantById);
+router.patch('/tenants/:tenantId', updateTenant);
 router.patch('/tenants/:tenantId/status', updateTenantStatus);
 router.get('/metrics', getPlatformMetrics);
 

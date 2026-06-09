@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import Tenant from '../models/Tenant.model';
 import Lead from '../models/Lead.model';
 import Member from '../models/Member.model';
+import Attendance from '../models/Attendance.model';
 import mongoose from 'mongoose';
 
 export class PublicController {
@@ -55,21 +56,27 @@ export class PublicController {
 
     async getPublicStats(req: Request, res: Response) {
         try {
-            const [gymCount, memberCount] = await Promise.all([
+            const todayStart = new Date();
+            todayStart.setHours(0, 0, 0, 0);
+            const todayEnd = new Date();
+            todayEnd.setHours(23, 59, 59, 999);
+
+            const [gymCount, totalMemberCount, activeMemberCount, todayCheckIns] = await Promise.all([
                 Tenant.countDocuments({ isActive: true }),
+                (Member as any).countDocuments({}),
                 (Member as any).countDocuments({ status: 'active' }),
+                (Attendance as any).countDocuments({ checkInTime: { $gte: todayStart, $lte: todayEnd } }),
             ]);
 
-            // Format numbers for display
             const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
             return res.json({
                 success: true,
                 formatted: {
                     gyms: fmt(gymCount),
-                    members: fmt(memberCount),
-                    revenue: '₹2.4Cr+',
-                    checkIns: fmt(Math.floor(memberCount * 0.3)),
+                    totalMembers: fmt(totalMemberCount),
+                    activeMembers: fmt(activeMemberCount),
+                    checkIns: fmt(todayCheckIns),
                 },
             });
         } catch (error) {
