@@ -57,7 +57,7 @@ const createMemberSchema = z.object({
     membershipStart: z.string().optional(),
     membershipExpiry: z.string().optional(),
     amount: z.number().optional(),
-    discountType: z.string().optional(),
+    discountType: z.enum(['none', 'flat', 'percentage']).optional(),
     discountAmount: z.number().optional(),
     discountValue: z.number().optional(),
     gstAmount: z.number().optional(),
