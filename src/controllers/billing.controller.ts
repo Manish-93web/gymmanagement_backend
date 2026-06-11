@@ -2,8 +2,18 @@ import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import Payment from '../models/Payment.model';
 import WhatsAppLog from '../models/WhatsAppLog.model';
+import Tenant from '../models/Tenant.model';
 import InvoiceService from '../services/invoice.service';
 import fs from 'fs';
+
+const PLAN_WA_LIMITS: Record<string, number> = {
+    trial: 100,
+    basic: 500,
+    pro: 2000,
+    pro_6m: 2000,
+    pro_annual: 2000,
+    enterprise: 99999, // unlimited
+};
 
 class BillingController {
     // GET /billing/my-invoices  — returns payments for the logged-in member
@@ -257,49 +267,60 @@ class BillingController {
             }
 
             const { startDate, endDate, month, year } = req.query;
-
             const tenantObjId = new mongoose.Types.ObjectId(tenantId);
-            const matchFilter: Record<string, any> = { tenantId: tenantObjId };
+            const now = new Date();
 
+            // Current calendar month filter for the "used this month" stat
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+            // Custom date-range filter (when explicitly requested)
+            const rangeFilter: Record<string, any> = { tenantId: tenantObjId };
             if (month && year) {
-                const start = new Date(
-                    parseInt(year as string),
-                    parseInt(month as string) - 1,
-                    1
-                );
-                const end = new Date(
-                    parseInt(year as string),
-                    parseInt(month as string),
-                    0,
-                    23,
-                    59,
-                    59
-                );
-                matchFilter.sentAt = { $gte: start, $lte: end };
+                const start = new Date(parseInt(year as string), parseInt(month as string) - 1, 1);
+                const end = new Date(parseInt(year as string), parseInt(month as string), 0, 23, 59, 59);
+                rangeFilter.sentAt = { $gte: start, $lte: end };
             } else if (startDate || endDate) {
-                matchFilter.sentAt = {};
-                if (startDate) matchFilter.sentAt.$gte = new Date(startDate as string);
-                if (endDate) matchFilter.sentAt.$lte = new Date(endDate as string);
+                rangeFilter.sentAt = {};
+                if (startDate) rangeFilter.sentAt.$gte = new Date(startDate as string);
+                if (endDate) rangeFilter.sentAt.$lte = new Date(endDate as string);
             }
 
-            const [totalCount, byType] = await Promise.all([
-                WhatsAppLog.countDocuments(matchFilter),
+            // Look up tenant plan for monthly limit
+            const tenant = await Tenant.findById(tenantId).select('subscription.plan').lean();
+            const plan = (tenant as any)?.subscription?.plan ?? 'basic';
+            const waLimit = PLAN_WA_LIMITS[plan] ?? 1000;
+
+            const [totalSent, sentThisMonth, rangeCount, byType] = await Promise.all([
+                WhatsAppLog.countDocuments({ tenantId: tenantObjId }),
+                WhatsAppLog.countDocuments({ tenantId: tenantObjId, sentAt: { $gte: monthStart, $lte: monthEnd } }),
+                Object.keys(rangeFilter).length > 1
+                    ? WhatsAppLog.countDocuments(rangeFilter)
+                    : Promise.resolve(null),
                 WhatsAppLog.aggregate([
-                    { $match: matchFilter },
+                    { $match: { tenantId: tenantObjId } },
                     { $group: { _id: '$type', count: { $sum: 1 } } },
                     { $sort: { count: -1 } },
                 ]),
             ]);
 
             const usageByType: Record<string, number> = {};
-            byType.forEach((t: any) => {
-                usageByType[t._id] = t.count;
-            });
+            (byType as any[]).forEach((t: any) => { usageByType[t._id] = t.count; });
+
+            const monthLabel = now.toLocaleString('en', { month: 'long', year: 'numeric' });
 
             return res.json({
                 success: true,
                 data: {
-                    totalMessages: totalCount,
+                    // Unified fields consumed by both WhatsAppCreditsWidget and WhatsAppCreditUsage
+                    used: sentThisMonth,
+                    limit: waLimit,
+                    plan,
+                    month: monthLabel,
+                    // Legacy/extended fields
+                    totalSent,
+                    sentThisMonth,
+                    totalMessages: rangeCount ?? totalSent,
                     usageByType,
                 },
             });

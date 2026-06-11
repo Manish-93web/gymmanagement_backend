@@ -14,7 +14,8 @@ export type WALogTemplateType =
     | 'refer_earn'
     | 'pt_reminder'
     | 'class_reminder'
-    | 'custom_message';
+    | 'custom_message'
+    | 'inquiry_followup';
 
 export type LogStatus = 'opened' | 'copied' | 'cancelled' | 'failed';
 export type LogDeviceType = 'mobile' | 'desktop' | 'unknown';
@@ -40,7 +41,7 @@ export interface IWhatsAppLog extends Document {
 const ALL_TEMPLATE_TYPES: WALogTemplateType[] = [
     'welcome', 'renewal_reminder', 'payment_receipt', 'invoice', 'birthday_wish',
     'festival_offer', 'pending_payment', 'expiry_today', 'freeze_confirmation',
-    'comeback_offer', 'refer_earn', 'pt_reminder', 'class_reminder', 'custom_message',
+    'comeback_offer', 'refer_earn', 'pt_reminder', 'class_reminder', 'custom_message', 'inquiry_followup',
 ];
 
 const WhatsAppLogSchema = new Schema<IWhatsAppLog>(

@@ -352,6 +352,7 @@ const startServer = async () => {
         await import('./workers/attendance.worker');
         await import('./workers/billing.worker');
         await import('./workers/retention.worker');
+        await import('./workers/membership-expiry.worker');
         await import('./workers/biometric-autocheckout.worker');
         await import('./workers/biometric-healthcheck.worker');
         await import('./workers/biometric-sync.worker');

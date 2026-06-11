@@ -2,6 +2,7 @@ import Member, { IMember, MemberStatus } from '../models/Member.model';
 import Subscription from '../models/Subscription.model';
 import Payment from '../models/Payment.model';
 import User from '../models/User.model';
+import BiometricMember from '../models/BiometricMember.model';
 import { generateReferralCode, generateMembershipNumber, generateInvoiceNumber } from '../utils/helpers.utils';
 import mongoose from 'mongoose';
 
@@ -56,14 +57,31 @@ export interface UpdateMemberDTO {
     lastName?: string;
     email?: string;
     mobile?: string;
+    aadharNumber?: string;
     dateOfBirth?: Date;
     gender?: 'male' | 'female' | 'other';
     bloodGroup?: string;
     address?: any;
     emergencyContact?: any;
+    personalInfo?: any;
     healthInfo?: any;
     goals?: string[];
     preferences?: any;
+    // Membership
+    planId?: string;
+    membershipDuration?: string;
+    membershipStart?: Date | string;
+    membershipExpiry?: Date | string;
+    // Payment (from MemberForm submission)
+    amount?: number;
+    discountType?: 'none' | 'flat' | 'percentage';
+    discountAmount?: number;
+    discountValue?: number;
+    gstAmount?: number;
+    gstRate?: number;
+    paymentMethod?: string;
+    dueAmount?: number;
+    dueDate?: Date | string;
 }
 
 export interface AddMeasurementDTO {
@@ -83,16 +101,32 @@ export interface AddMeasurementDTO {
 
 export class MemberService {
     // Helper to repair/populate missing fields from User identity
+    // Also applies sensible defaults for payment fields that old members (created before
+    // the schema migration) may not have stored in MongoDB.
     private _repairMemberFields(member: any): any {
         if (!member) return null;
         const memberObj = member.toObject ? member.toObject() : member;
 
+        // Identity fields — fill from linked User if blank on Member document
         if (memberObj.userId && (typeof memberObj.userId === 'object')) {
             memberObj.firstName = memberObj.firstName || memberObj.userId.firstName;
             memberObj.lastName = memberObj.lastName || memberObj.userId.lastName;
             memberObj.email = memberObj.email || memberObj.userId.email;
             memberObj.mobile = memberObj.mobile || memberObj.userId.mobile;
         }
+
+        // Payment / discount defaults — fields added to schema after initial release;
+        // existing DB documents won't have them, so we apply fallbacks here so the
+        // Edit popup always receives a consistent, fully-populated member object.
+        memberObj.discountType = memberObj.discountType ?? 'none';
+        memberObj.discountValue = memberObj.discountValue ?? 0;
+        memberObj.lastPaymentSubtotal = memberObj.lastPaymentSubtotal ?? memberObj.membershipFee ?? 0;
+        memberObj.lastPaymentGstRate = memberObj.lastPaymentGstRate ?? 0;
+        memberObj.lastPaymentGstAmount = memberObj.lastPaymentGstAmount ?? 0;
+        memberObj.lastPaymentDiscountAmount = memberObj.lastPaymentDiscountAmount ?? 0;
+        memberObj.lastPaymentMethod = memberObj.lastPaymentMethod ?? 'cash';
+        memberObj.dueAmount = memberObj.dueAmount ?? 0;
+
         return memberObj;
     }
 
@@ -186,11 +220,15 @@ export class MemberService {
             referredBy: data.referredBy ? new mongoose.Types.ObjectId(data.referredBy) : undefined,
             documents: data.documents ?? [],
             membershipFee: data.amount ?? 0,
-            discountAmount: data.discountAmount ?? 0,
             discountType: data.discountType ?? 'none',
             discountValue: data.discountValue ?? 0,
             dueAmount: data.dueAmount ?? 0,
             dueDate: data.dueDate ? new Date(data.dueDate as string) : undefined,
+            lastPaymentSubtotal: data.amount ?? 0,
+            lastPaymentGstRate: data.gstRate ?? 0,
+            lastPaymentGstAmount: data.gstAmount ?? 0,
+            lastPaymentDiscountAmount: data.discountAmount ?? 0,
+            lastPaymentMethod: data.paymentMethod ?? 'cash',
             paymentStatus: (data.amount && data.amount > 0 && (data.dueAmount ?? 0) === 0) ? 'paid' : 'unpaid',
             ...(data.membershipDuration ? { membershipDuration: data.membershipDuration } : {}),
             membershipStart,
@@ -277,9 +315,48 @@ export class MemberService {
     async updateMember(memberId: string, tenantId: string, data: UpdateMemberDTO): Promise<IMember | null> {
         const query: any = { _id: memberId };
         if (tenantId) query.tenantId = tenantId;
+
+        // Build explicit $set to correctly map form field names to schema field names
+        const setObj: Record<string, any> = {};
+
+        // Personal / identity fields
+        const directFields: (keyof UpdateMemberDTO)[] = [
+            'firstName', 'lastName', 'email', 'mobile', 'aadharNumber',
+            'personalInfo', 'healthInfo', 'goals', 'preferences',
+        ];
+        for (const f of directFields) {
+            if (data[f] !== undefined) setObj[f] = data[f];
+        }
+
+        // Membership fields
+        if (data.planId !== undefined) {
+            setObj.planId = data.planId
+                ? new mongoose.Types.ObjectId(data.planId)
+                : null;
+        }
+        if (data.membershipDuration !== undefined) setObj.membershipDuration = data.membershipDuration;
+        if (data.membershipStart !== undefined) setObj.membershipStart = new Date(data.membershipStart as string);
+        if (data.membershipExpiry !== undefined) setObj.membershipExpiry = new Date(data.membershipExpiry as string);
+
+        // Payment fields — map form names → schema names
+        if (data.amount !== undefined) {
+            setObj.membershipFee = data.amount;
+            setObj.lastPaymentSubtotal = data.amount;
+        }
+        if (data.discountType !== undefined) setObj.discountType = data.discountType;
+        if (data.discountValue !== undefined) setObj.discountValue = data.discountValue;
+        if (data.discountAmount !== undefined) setObj.lastPaymentDiscountAmount = data.discountAmount;
+        if (data.gstRate !== undefined) setObj.lastPaymentGstRate = data.gstRate;
+        if (data.gstAmount !== undefined) setObj.lastPaymentGstAmount = data.gstAmount;
+        if (data.paymentMethod !== undefined) setObj.lastPaymentMethod = data.paymentMethod;
+        if (data.dueAmount !== undefined) setObj.dueAmount = data.dueAmount;
+        if (data.dueDate !== undefined) {
+            setObj.dueDate = data.dueDate ? new Date(data.dueDate as string) : null;
+        }
+
         const member = await Member.findOneAndUpdate(
             query,
-            { $set: data },
+            { $set: setObj },
             { new: true, runValidators: true }
         ).populate('userId');
         return this._repairMemberFields(member);
@@ -292,7 +369,7 @@ export class MemberService {
         newStatus: MemberStatus,
         reason: string
     ): Promise<IMember | null> {
-        return await Member.findOneAndUpdate(
+        const updated = await Member.findOneAndUpdate(
             { _id: memberId, tenantId },
             {
                 $set: { status: newStatus },
@@ -306,6 +383,15 @@ export class MemberService {
             },
             { new: true }
         );
+
+        // Sync biometric enrollment active flag with new member status
+        const bioActive = ['active', 'trial'].includes(newStatus);
+        await BiometricMember.updateOne(
+            { memberId, tenantId },
+            { $set: { active: bioActive } }
+        ).catch(() => {});
+
+        return updated;
     }
 
     // Add body measurement
@@ -418,7 +504,7 @@ export class MemberService {
                 .populate('planId', 'name price duration')
                 .skip(skip)
                 .limit(limit)
-                .sort({ createdAt: -1 }),
+                .sort({ membershipStart: -1, createdAt: -1 }),
             Member.countDocuments(filter),
         ]);
 
@@ -543,6 +629,12 @@ export class MemberService {
                 }
             );
         }
+
+        // 3. Re-activate biometric enrollment so the member can punch again
+        await BiometricMember.updateOne(
+            { memberId, tenantId },
+            { $set: { active: true } }
+        ).catch(() => {});
 
         return this._repairMemberFields(updatedMember);
     }

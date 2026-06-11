@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
 import WhatsAppLog from '../models/WhatsAppLog.model';
 import WaReminder from '../models/WaReminder.model';
+import WhatsAppScheduled from '../models/WhatsAppScheduled.model';
 
 class WhatsAppController {
     // GET /api/whatsapp/scheduled  — due=true returns array of ScheduledReminder
@@ -174,16 +175,43 @@ class WhatsAppController {
     }
 
     // POST /api/whatsapp/create-pdf-link
+    // Encodes all member/gym data into a base64url token so the frontend can render the PDF
+    // at /p/receipt/{token} or /p/invoice/{token} without a DB lookup.
     async createPdfLink(req: Request, res: Response, next: NextFunction) {
         try {
-            const { paymentId, type } = req.body;
-            if (!paymentId || !type) {
-                res.status(400).json({ success: false, message: 'paymentId and type required' });
+            const {
+                type, memberId, memberName, phone, membershipPlan,
+                amount, subtotal, gstAmount, gstRate,
+                discountAmount, discountType, paymentMethod,
+                joiningDate, expiryDate, invoiceNumber,
+                dueAmount, dueDate,
+                gymName, gymAddress, gymPhone,
+            } = req.body;
+
+            if (!type || !memberName || !gymName) {
+                res.status(400).json({ success: false, message: 'type, memberName, and gymName are required' });
                 return;
             }
-            const token = Buffer.from(`${paymentId}:${type}:${Date.now()}`).toString('base64url');
-            const link = `${process.env.FRONTEND_URL || 'http://localhost:3001'}/p/${type}/${token}`;
-            res.json({ success: true, data: { link, token, expiresIn: '24h' } });
+
+            const pdfType = type === 'receipt' ? 'receipt' : 'invoice';
+
+            const data = {
+                memberName, phone, membershipPlan,
+                amount, subtotal, gstAmount, gstRate,
+                discountAmount, discountType, paymentMethod,
+                joiningDate, expiryDate, invoiceNumber,
+                dueAmount, dueDate,
+                gymName, gymAddress, gymPhone,
+            };
+
+            // Encode as base64url of the raw UTF-8 JSON bytes.
+            // Frontend page decodes with: decodeURIComponent(escape(atob(token))) → JSON.parse()
+            const json = JSON.stringify(data);
+            const token = Buffer.from(json, 'utf8').toString('base64url');
+            const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+            const url = `${frontendUrl}/p/${pdfType}/${token}`;
+
+            res.json({ success: true, data: { slug: token, url } });
         } catch (error) { next(error); }
     }
 
@@ -201,6 +229,83 @@ class WhatsAppController {
                 queuedAt: new Date(),
             }));
             res.json({ success: true, message: `${results.length} messages queued`, data: results });
+        } catch (error) { next(error); }
+    }
+
+    // GET /api/whatsapp/broadcasts
+    async getBroadcasts(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.tenantId;
+            const { page = '1', limit = '20', status } = req.query as Record<string, string>;
+            const filter: any = { tenantId, recipientType: 'segment' };
+            if (status) filter.status = status;
+            const skip = (parseInt(page) - 1) * parseInt(limit);
+            const [broadcasts, total] = await Promise.all([
+                WhatsAppScheduled.find(filter).sort({ scheduledAt: -1 }).skip(skip).limit(parseInt(limit)).lean(),
+                WhatsAppScheduled.countDocuments(filter),
+            ]);
+            res.json({ success: true, data: { broadcasts, total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) } });
+        } catch (error) { next(error); }
+    }
+
+    // POST /api/whatsapp/broadcasts
+    async createBroadcast(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.tenantId!;
+            const user = req.user!;
+            const { segment, message, templateName, scheduledAt } = req.body;
+            if (!segment || !message) {
+                res.status(400).json({ success: false, message: 'segment and message are required' });
+                return;
+            }
+            const SEGMENT_LABELS: Record<string, string> = {
+                all: 'All Members',
+                expiring_soon: 'Expiring Soon',
+                pending_payment: 'Pending Payment',
+                birthday_today: 'Birthday Today',
+                inactive: 'Inactive Members',
+            };
+            const broadcast = await WhatsAppScheduled.create({
+                tenantId,
+                createdBy: user._id,
+                recipient: SEGMENT_LABELS[segment] ?? segment,
+                message,
+                templateName: templateName || 'custom_message',
+                scheduledAt: scheduledAt ? new Date(scheduledAt) : new Date(),
+                status: 'pending',
+                recipientType: 'segment',
+                segment,
+            });
+            res.status(201).json({ success: true, data: broadcast });
+        } catch (error) { next(error); }
+    }
+
+    // PATCH /api/whatsapp/broadcasts/:id
+    async updateBroadcast(req: Request, res: Response, next: NextFunction) {
+        try {
+            const broadcast = await WhatsAppScheduled.findOneAndUpdate(
+                { _id: req.params.id, tenantId: req.tenantId, recipientType: 'segment' },
+                { $set: req.body },
+                { new: true }
+            ).lean();
+            if (!broadcast) { res.status(404).json({ success: false, message: 'Broadcast not found' }); return; }
+            res.json({ success: true, data: broadcast });
+        } catch (error) { next(error); }
+    }
+
+    // DELETE /api/whatsapp/broadcasts/:id
+    async deleteBroadcast(req: Request, res: Response, next: NextFunction) {
+        try {
+            await WhatsAppScheduled.findOneAndDelete({ _id: req.params.id, tenantId: req.tenantId });
+            res.json({ success: true, message: 'Deleted' });
+        } catch (error) { next(error); }
+    }
+
+    // DELETE /api/whatsapp-quick/logs/:id
+    async deleteLog(req: Request, res: Response, next: NextFunction) {
+        try {
+            await WhatsAppLog.findOneAndDelete({ _id: req.params.id, tenantId: req.tenantId });
+            res.json({ success: true, message: 'Log deleted' });
         } catch (error) { next(error); }
     }
 }

@@ -124,8 +124,16 @@ export interface IMember extends Document {
     };
     membershipDuration?: '1_month' | '2_month' | '3_month' | '4_month' | '6_month' | '7_month' | '8_month' | '9_month' | '1_year';
     membershipFee?: number;
+    discountType?: 'none' | 'flat' | 'percentage';
+    discountValue?: number;
     dueAmount?: number;
+    dueDate?: Date;
     paymentStatus?: 'paid' | 'unpaid';
+    lastPaymentSubtotal?: number;
+    lastPaymentGstRate?: number;
+    lastPaymentGstAmount?: number;
+    lastPaymentDiscountAmount?: number;
+    lastPaymentMethod?: string;
     walletBalance: number;
     lastCheckIn?: Date;
     sNo?: number;
@@ -278,8 +286,16 @@ const MemberSchema: Schema = new Schema(
             enum: ['1_month', '2_month', '3_month', '4_month', '6_month', '7_month', '8_month', '9_month', '1_year'],
         },
         membershipFee: { type: Number, default: 0 },
+        discountType: { type: String, enum: ['none', 'flat', 'percentage'], default: 'none' },
+        discountValue: { type: Number, default: 0 },
         dueAmount: { type: Number, default: 0 },
+        dueDate: { type: Date },
         paymentStatus: { type: String, enum: ['paid', 'unpaid'], default: 'paid' },
+        lastPaymentSubtotal: { type: Number },
+        lastPaymentGstRate: { type: Number },
+        lastPaymentGstAmount: { type: Number },
+        lastPaymentDiscountAmount: { type: Number },
+        lastPaymentMethod: { type: String },
         walletBalance: { type: Number, default: 0 },
         lastCheckIn: { type: Date },
         sNo: { type: Number, index: true },
@@ -325,10 +341,54 @@ async function backfillSNo() {
     } catch { /* non-critical — runs once on startup */ }
 }
 
+// One-time migration: backfill payment / discount fields for members created before
+// those fields were added to the schema. Uses $set with pipeline syntax so we can
+// reference existing fields (e.g. membershipFee) as fallback for lastPaymentSubtotal.
+async function backfillPaymentFields() {
+    try {
+        const col = mongoose.connection.collection('members');
+
+        // 1. Set discountType / discountValue defaults for members that never had them
+        await col.updateMany(
+            { discountType: { $exists: false } },
+            { $set: { discountType: 'none', discountValue: 0 } }
+        );
+
+        // 2. Set lastPayment* defaults; use membershipFee as subtotal fallback
+        await col.updateMany(
+            { lastPaymentMethod: { $exists: false } },
+            [
+                {
+                    $set: {
+                        lastPaymentSubtotal: {
+                            $ifNull: ['$lastPaymentSubtotal', { $ifNull: ['$membershipFee', 0] }],
+                        },
+                        lastPaymentGstRate: { $ifNull: ['$lastPaymentGstRate', 0] },
+                        lastPaymentGstAmount: { $ifNull: ['$lastPaymentGstAmount', 0] },
+                        lastPaymentDiscountAmount: { $ifNull: ['$lastPaymentDiscountAmount', 0] },
+                        lastPaymentMethod: { $ifNull: ['$lastPaymentMethod', 'cash'] },
+                    },
+                },
+            ]
+        );
+
+        // 3. Ensure dueAmount is always present
+        await col.updateMany(
+            { dueAmount: { $exists: false } },
+            { $set: { dueAmount: 0 } }
+        );
+    } catch { /* non-critical — runs once on startup */ }
+}
+
+async function runStartupMigrations() {
+    await backfillSNo();
+    await backfillPaymentFields();
+}
+
 if (mongoose.connection.readyState === 1) {
-    backfillSNo();
+    runStartupMigrations();
 } else {
-    mongoose.connection.once('open', () => backfillSNo());
+    mongoose.connection.once('open', () => runStartupMigrations());
 }
 
 export default mongoose.model<IMember>('Member', MemberSchema);
