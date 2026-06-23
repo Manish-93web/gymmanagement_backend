@@ -144,13 +144,6 @@ router.get(
     }
 );
 
-// Get payment by ID
-router.get(
-    '/:paymentId',
-    requireAnyRole('gym_owner', 'branch_manager', 'staff', 'accountant', 'auditor', 'super_admin'),
-    paymentController.getPaymentById.bind(paymentController)
-);
-
 // Get all payments
 router.get(
     '/',
@@ -165,11 +158,18 @@ router.post(
     paymentController.getCheckoutDetails.bind(paymentController)
 );
 
-// Export payments
+// Export payments — must be before /:paymentId to avoid being caught as an ID
 router.get(
     '/export',
     requireAnyRole('gym_owner', 'branch_manager', 'accountant', 'auditor', 'super_admin'),
     paymentController.exportPayments.bind(paymentController)
+);
+
+// Get payment by ID
+router.get(
+    '/:paymentId',
+    requireAnyRole('gym_owner', 'branch_manager', 'staff', 'accountant', 'auditor', 'super_admin'),
+    paymentController.getPaymentById.bind(paymentController)
 );
 
 export default router;

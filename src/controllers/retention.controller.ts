@@ -254,6 +254,61 @@ export const redeemOffer = async (req: Request, res: Response) => {
 };
 
 /**
+ * Send Offer to a Member — creates a PersonalizedOffer and logs a RetentionAction.
+ * Body fields are all optional; sensible defaults are applied.
+ */
+export const sendOffer = async (req: Request, res: Response) => {
+    try {
+        const memberId = String(req.params.memberId);
+        const tenantId = req.tenantId as string | undefined;
+
+        if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant context required' });
+        if (!mongoose.Types.ObjectId.isValid(memberId)) {
+            return res.status(400).json({ success: false, message: 'Invalid memberId' });
+        }
+
+        const tid = new mongoose.Types.ObjectId(tenantId);
+        const mid = new mongoose.Types.ObjectId(memberId);
+
+        const member = await Member.findOne({ _id: mid, tenantId: tid }).select('firstName lastName email');
+        if (!member) return res.status(404).json({ success: false, message: 'Member not found' });
+
+        const expiryDate = new Date();
+        expiryDate.setDate(expiryDate.getDate() + 30);
+
+        const body = req.body ?? {};
+        const offerDoc = await PersonalizedOffer.create({
+            tenantId: tid,
+            memberId: mid,
+            type: body.type ?? 'discount',
+            title: body.title ?? 'Special Re-engagement Offer',
+            description: body.description ?? `We miss you, ${member.firstName}! Here is a special offer to welcome you back.`,
+            value: body.value ?? 10,
+            expiryDate: body.expiryDate ? new Date(body.expiryDate) : expiryDate,
+            status: 'sent',
+            sentAt: new Date(),
+        });
+
+        await RetentionAction.create({
+            tenantId: tid,
+            memberId: mid,
+            type: 'offer',
+            status: 'completed',
+            notes: `Sent offer: ${offerDoc.title} (${offerDoc.type}, value: ${offerDoc.value})`,
+            performedBy: req.user?._id,
+            completedAt: new Date(),
+        });
+
+        const offer = offerDoc;
+
+        res.status(201).json({ success: true, message: 'Offer sent successfully', data: offer });
+    } catch (error) {
+        console.error('[sendOffer] error:', error);
+        res.status(500).json({ success: false, message: 'Error sending offer', error: (error as Error).message });
+    }
+};
+
+/**
  * Log Retention Action
  */
 export const logAction = async (req: Request, res: Response) => {

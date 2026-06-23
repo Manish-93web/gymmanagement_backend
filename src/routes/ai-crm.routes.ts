@@ -14,6 +14,7 @@ router.use(authenticate);
 router.post('/ai/workout-plan', requireAnyRole('trainer', 'gym_owner', 'branch_manager', 'super_admin'), aiCrmController.generateWorkoutPlan.bind(aiCrmController));
 router.post('/ai/diet-plan', requireAnyRole('trainer', 'gym_owner', 'branch_manager', 'super_admin'), aiCrmController.generateDietPlan.bind(aiCrmController));
 router.post('/ai/chatbot', requireAnyRole('member', 'trainer', 'super_admin'), aiCrmController.chatbot.bind(aiCrmController));
+router.get('/ai/predict', aiCrmController.predict.bind(aiCrmController));
 router.get('/ai/churn/:memberId', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), aiCrmController.predictChurn.bind(aiCrmController));
 router.get('/ai/insights/:memberId', requireAnyRole('trainer', 'member', 'super_admin'), aiCrmController.getProgressInsights.bind(aiCrmController));
 

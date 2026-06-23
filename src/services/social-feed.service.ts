@@ -82,7 +82,7 @@ class SocialFeedService {
                     const liked = await PostLike.exists({ postId: post._id, memberId });
                     return {
                         ...post.toObject(),
-                        likedByMe: !!liked,
+                        isLikedByMe: !!liked,
                     };
                 })
             );

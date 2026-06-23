@@ -21,6 +21,9 @@ router.get('/offers', requireAnyRole('gym_owner', 'branch_manager', 'super_admin
 router.get('/member/offers', requireAnyRole('member', 'gym_owner', 'branch_manager', 'super_admin'), retentionController.getMemberOffers);
 router.post('/offers/redeem', requireAnyRole('member', 'gym_owner', 'branch_manager', 'super_admin'), retentionController.redeemOffer);
 
+// Send offer to a specific member
+router.post('/send-offer/:memberId', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), retentionController.sendOffer);
+
 // Actions
 router.post('/actions', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), retentionController.logAction);
 router.get('/members/:memberId/actions', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), retentionController.getMemberActions);

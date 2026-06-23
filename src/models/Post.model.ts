@@ -44,7 +44,7 @@ const PostSchema: Schema = new Schema({
         default: 'members'
     },
     groupId: { type: Schema.Types.ObjectId, ref: 'Group' },
-    authorId: { type: Schema.Types.ObjectId, ref: 'Member', required: true },
+    authorId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
     likeCount: { type: Number, default: 0 },
     commentCount: { type: Number, default: 0 },

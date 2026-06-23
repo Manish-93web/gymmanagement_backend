@@ -495,6 +495,56 @@ export class AIAndCRMController {
             return res.json({ success: true, message: 'CRM settings saved' });
         } catch (error) { return next(error); }
     }
+
+    // GET /ai/predict — dashboard-level AI predictions for the current user
+    async predict(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = (req as any).tenantId as string | undefined;
+            const userId = (req as any).user?._id;
+
+            // Lightweight prediction: look up member's workout/attendance stats
+            const Member = require('../models/Member.model').default;
+            const WorkoutLog = require('../models/WorkoutLog.model').default;
+
+            const member = await Member.findOne({ userId, tenantId }).select('firstName lastName membershipStatus').lean();
+
+            const recentLogs = member
+                ? await WorkoutLog.countDocuments({
+                    memberId: member._id,
+                    createdAt: { $gte: new Date(Date.now() - 30 * 86400000) },
+                })
+                : 0;
+
+            const churnScore = recentLogs >= 8 ? 10 : recentLogs >= 4 ? 35 : recentLogs >= 1 ? 60 : 80;
+            const churnRisk = churnScore >= 70 ? 'high' : churnScore >= 40 ? 'medium' : 'low';
+            const injuryRisk = recentLogs >= 20 ? 'high' : 'low';
+
+            return res.json({
+                success: true,
+                data: {
+                    churn: {
+                        riskLevel: churnRisk,
+                        score: churnScore,
+                        reason: churnRisk === 'low'
+                            ? 'Member is highly engaged with consistent sessions.'
+                            : churnRisk === 'medium'
+                            ? 'Attendance has declined over the past 2 weeks.'
+                            : 'No sessions logged in the past 30 days.',
+                    },
+                    injury: {
+                        riskLevel: injuryRisk,
+                        reason: injuryRisk === 'high'
+                            ? 'High volume spike detected — consider a deload week.'
+                            : 'Consistent progressive overload pattern. Safe profile.',
+                    },
+                    trainers: [],
+                    nudges: recentLogs >= 8
+                        ? 'Keep it up! Your consistency is inspiring.'
+                        : 'Try to hit at least 3 sessions this week to stay on track.',
+                },
+            });
+        } catch (error) { return next(error); }
+    }
 }
 
 export default new AIAndCRMController();

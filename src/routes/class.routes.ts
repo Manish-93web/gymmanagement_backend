@@ -10,6 +10,8 @@ router.use(authenticate);
 
 // Static routes first (must be before /:classId param routes)
 router.get('/my-bookings', authenticate, classController.getMyBookings.bind(classController));
+router.get('/me/bookings', authenticate, classController.getMyBookings.bind(classController));
+router.get('/occurrences', authenticate, classController.getAllOccurrences.bind(classController));
 router.post('/bookings', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'member', 'super_admin'), classController.createBooking.bind(classController));
 router.post('/bookings/:bookingId/cancel', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'member', 'super_admin'), classController.cancelBooking.bind(classController));
 router.post('/bookings/:bookingId/attendance', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'trainer', 'super_admin'), classController.markAttendance.bind(classController));

@@ -381,6 +381,78 @@ class ClassController {
         }
     }
 
+    // GET /occurrences?startDate=&endDate=&type=
+    async getAllOccurrences(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant context required' });
+
+            const { startDate, endDate, type } = req.query;
+            const from = startDate ? new Date(startDate as string) : new Date();
+            const to = endDate
+                ? new Date(endDate as string)
+                : new Date(from.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+            const filter: any = { isActive: true, tenantId };
+            if (type) filter.classType = type;
+
+            const classes = await Class.find(filter).lean();
+            const result: any[] = [];
+
+            for (const classDoc of classes) {
+                const schedule = classDoc.schedule as any;
+                if (!schedule) continue;
+
+                const recurrence = schedule.recurrence;
+                const classStart = new Date(schedule.startDate);
+                const classEnd = schedule.endDate ? new Date(schedule.endDate) : to;
+
+                const effectiveStart = classStart > from ? classStart : from;
+                const effectiveEnd = classEnd < to ? classEnd : to;
+
+                if (recurrence === 'once') {
+                    if (classStart >= from && classStart <= to) {
+                        result.push({
+                            ...classDoc,
+                            instanceDate: classStart.toISOString(),
+                        });
+                    }
+                } else {
+                    const cursor = new Date(effectiveStart);
+                    while (cursor <= effectiveEnd) {
+                        const dayOfWeek = cursor.getDay();
+                        let include = false;
+
+                        if (recurrence === 'daily') {
+                            include = true;
+                        } else if (recurrence === 'weekly') {
+                            include = !schedule.daysOfWeek || schedule.daysOfWeek.length === 0
+                                ? dayOfWeek === classStart.getDay()
+                                : schedule.daysOfWeek.includes(dayOfWeek);
+                        } else if (recurrence === 'monthly') {
+                            include = cursor.getDate() === classStart.getDate();
+                        }
+
+                        if (include) {
+                            result.push({
+                                ...classDoc,
+                                instanceDate: new Date(cursor).toISOString(),
+                            });
+                        }
+
+                        cursor.setDate(cursor.getDate() + 1);
+                    }
+                }
+            }
+
+            result.sort((a, b) => new Date(a.instanceDate).getTime() - new Date(b.instanceDate).getTime());
+
+            return res.status(200).json({ success: true, data: result });
+        } catch (error) {
+            return next(error);
+        }
+    }
+
     // GET /:classId/occurrences
     async getClassOccurrences(req: Request, res: Response, next: NextFunction) {
         try {

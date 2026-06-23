@@ -101,7 +101,12 @@ export class WorkoutController {
     async getWorkoutStats(req: Request, res: Response, next: NextFunction) {
         try {
             const tenantId = req.user?.tenantId?.toString();
-            const { memberId } = req.query;
+            let { memberId } = req.query as { memberId?: string };
+            if (memberId === 'me') {
+                const Member = require('../models/Member.model').default;
+                const m = await Member.findOne({ userId: req.user?._id, tenantId }).select('_id').lean();
+                memberId = m?._id?.toString();
+            }
             const query: any = { tenantId };
             if (memberId) query.memberId = memberId;
             const [total, thisWeek, thisMonth] = await Promise.all([
@@ -117,7 +122,12 @@ export class WorkoutController {
     async getPersonalRecords(req: Request, res: Response, next: NextFunction) {
         try {
             const tenantId = req.user?.tenantId?.toString();
-            const { memberId } = req.query;
+            let { memberId } = req.query as { memberId?: string };
+            if (memberId === 'me') {
+                const Member = require('../models/Member.model').default;
+                const m = await Member.findOne({ userId: req.user?._id, tenantId }).select('_id').lean();
+                memberId = m?._id?.toString();
+            }
             const query: any = { tenantId, type: 'personal_record' };
             if (memberId) query.memberId = memberId;
             const records = await WorkoutLog.find(query).sort({ createdAt: -1 }).limit(20);
