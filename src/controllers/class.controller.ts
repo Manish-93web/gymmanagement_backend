@@ -46,14 +46,29 @@ class ClassController {
                 name,
                 description,
                 classType: resolvedType,
+                type: resolvedType,
                 trainerId,
+                category,
+                level,
                 schedule,
                 capacity,
                 pricing,
+                online,
+                cancellationPolicy,
                 zoomMeetingId,
-            });
+            } as any);
 
             return res.status(201).json({ success: true, data: classDoc });
+        } catch (error) {
+            return next(error);
+        }
+    }
+
+    // GET /categories
+    async getCategories(req: Request, res: Response, next: NextFunction) {
+        try {
+            const categories = await ClassService.getCategories(req.tenantId);
+            return res.json({ success: true, data: categories });
         } catch (error) {
             return next(error);
         }

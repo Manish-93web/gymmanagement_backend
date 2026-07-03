@@ -32,10 +32,11 @@ export interface IClass extends Document {
     };
     online: {
         isOnline: boolean;
-        platform?: 'zoom' | 'google_meet' | 'custom';
+        platform?: 'zoom' | 'google_meet' | 'custom' | 'gymvideo';
         meetingLink?: string;
         meetingId?: string;
         password?: string;
+        hostUrl?: string;
     };
     cancellationPolicy: {
         allowCancellation: boolean;
@@ -96,10 +97,11 @@ const ClassSchema: Schema = new Schema(
         },
         online: {
             isOnline: { type: Boolean, default: false },
-            platform: { type: String, enum: ['zoom', 'google_meet', 'custom'] },
+            platform: { type: String, enum: ['zoom', 'google_meet', 'custom', 'gymvideo'] },
             meetingLink: { type: String },
             meetingId: { type: String },
             password: { type: String },
+            hostUrl: { type: String },
         },
         cancellationPolicy: {
             allowCancellation: { type: Boolean, default: true },

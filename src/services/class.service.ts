@@ -132,6 +132,7 @@ export class ClassService {
             const booking = await (Booking as any).create({
                 ...data,
                 status: 'waitlist',
+                classDate: classDoc.schedule.startDate,
                 waitlistPosition: (await (Booking as any).countDocuments({
                     classId: data.classId,
                     status: 'waitlist',
@@ -145,6 +146,7 @@ export class ClassService {
         const booking = await (Booking as any).create({
             ...data,
             status: 'confirmed',
+            classDate: classDoc.schedule.startDate,
             bookedAt: new Date(),
         });
 
@@ -234,6 +236,20 @@ export class ClassService {
         }
 
         return updatedBooking;
+    }
+
+    // Get distinct categories
+    async getCategories(tenantId?: string): Promise<string[]> {
+        const defaults = ['yoga', 'crossfit', 'zumba', 'pilates', 'hiit', 'strength', 'cardio', 'boxing', 'cycling', 'swimming', 'other'];
+        try {
+            const query: any = { isActive: true };
+            if (tenantId) query.tenantId = tenantId;
+            const distinct: string[] = await Class.distinct('category', query);
+            const merged = [...new Set([...distinct.filter(Boolean).map((c: string) => c.toLowerCase()), ...defaults])];
+            return merged.sort();
+        } catch {
+            return defaults;
+        }
     }
 
     // Mark attendance

@@ -49,6 +49,42 @@ router.get('/diagnostic', requireAnyRole('gym_owner', 'branch_manager', 'super_a
 router.post('/reprocess-all', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.reprocessAll.bind(biometricController));
 router.post('/simulate-punch', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.simulatePunch.bind(biometricController));
 
+// Sync status — per-device summary + total pending count
+router.get('/sync-status', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+        const tenantId = (req as any).user?.tenantId;
+        const recentJobs = await BiometricSyncJob.find({ tenantId })
+            .populate('deviceId', 'name deviceId location status lastSeenAt lastSyncAt')
+            .sort({ startedAt: -1 })
+            .limit(100);
+        // Keep only the latest job per device
+        const seen = new Set<string>();
+        const deviceStatuses: any[] = [];
+        for (const job of recentJobs) {
+            const key = String((job as any).deviceId?._id || job.deviceId);
+            if (!seen.has(key)) { seen.add(key); deviceStatuses.push(job); }
+        }
+        const pendingCount = await BiometricSyncJob.countDocuments({ tenantId, status: 'pending' });
+        res.json({ success: true, data: { deviceStatuses, pendingCount } });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Trigger manual sync for all pending jobs
+router.post('/sync-pending', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+        const tenantId = (req as any).user?.tenantId;
+        const result = await BiometricSyncJob.updateMany(
+            { tenantId, status: 'pending' },
+            { $set: { status: 'queued', updatedAt: new Date() } }
+        );
+        res.json({ success: true, data: { queued: result.modifiedCount } });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 // Sync jobs history
 router.get('/sync-jobs', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), async (req: Request, res: Response) => {
     try {

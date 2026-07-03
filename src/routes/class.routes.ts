@@ -2,13 +2,15 @@ import { Router, Request, Response } from 'express';
 import classController from '../controllers/class.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireAnyRole } from '../middleware/rbac.middleware';
-import ZoomService from '../services/zoom.service';
+import { videoService } from '../services/video.service';
+import ClassModel from '../models/Class.model';
 
 const router = Router();
 
 router.use(authenticate);
 
 // Static routes first (must be before /:classId param routes)
+router.get('/categories', authenticate, classController.getCategories.bind(classController));
 router.get('/my-bookings', authenticate, classController.getMyBookings.bind(classController));
 router.get('/me/bookings', authenticate, classController.getMyBookings.bind(classController));
 router.get('/occurrences', authenticate, classController.getAllOccurrences.bind(classController));
@@ -28,16 +30,22 @@ router.get('/:classId', authenticate, classController.getClassById.bind(classCon
 router.put('/:classId', requireAnyRole('gym_owner', 'branch_manager', 'trainer', 'super_admin'), classController.updateClass.bind(classController));
 router.delete('/:classId', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), classController.deleteClass.bind(classController));
 
-// Zoom meeting for a class
+// Video meeting for a class (gymvideo server)
 router.post('/:classId/zoom', requireAnyRole('gym_owner', 'branch_manager', 'trainer', 'super_admin'), async (req: Request, res: Response) => {
     try {
-        const { topic, startTime, duration } = req.body;
-        const meeting = await ZoomService.createMeeting(
-            topic || `Class ${String(req.params.classId)}`,
-            new Date(startTime || Date.now()),
-            Number(duration) || 60
-        );
-        res.json({ success: true, data: meeting });
+        const { topic } = req.body;
+        const classId = req.params.classId;
+        const result = await videoService.createRoom(classId, topic || 'Gym Class');
+
+        await ClassModel.findByIdAndUpdate(classId, {
+            'online.isOnline': true,
+            'online.platform': 'gymvideo',
+            'online.meetingLink': result.joinUrl,
+            'online.meetingId': result.roomId,
+            'online.password': '',
+        });
+
+        res.json({ success: true, meetingLink: result.joinUrl, meetingId: result.roomId });
     } catch (err: any) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -45,8 +53,12 @@ router.post('/:classId/zoom', requireAnyRole('gym_owner', 'branch_manager', 'tra
 
 router.delete('/:classId/zoom/:meetingId', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), async (req: Request, res: Response) => {
     try {
-        await ZoomService.deleteMeeting(String(req.params.meetingId));
-        res.json({ success: true, message: 'Meeting deleted' });
+        await videoService.deleteRoom(req.params.meetingId);
+        await ClassModel.findByIdAndUpdate(req.params.classId, {
+            $unset: { 'online.meetingLink': 1, 'online.meetingId': 1, 'online.platform': 1 },
+            'online.isOnline': false,
+        });
+        res.json({ success: true });
     } catch (err: any) {
         res.status(500).json({ success: false, message: err.message });
     }
