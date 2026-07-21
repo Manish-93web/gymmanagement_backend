@@ -11,12 +11,20 @@ export interface IBirthdayConfig {
     enabled: boolean;
     template: string;
     sendTime: string; // HH:mm format
+    daysInAdvance: number;
+}
+
+export interface IFestivalTemplate {
+    message: string;
+    enabled: boolean;
+    sendTime: string;
 }
 
 export interface IWhatsAppAutomationConfig extends Document {
     tenantId: mongoose.Types.ObjectId;
     birthday: IBirthdayConfig;
     festivals: IFestival[];
+    festivalTemplate: IFestivalTemplate;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -35,6 +43,12 @@ const WhatsAppAutomationConfigSchema: Schema = new Schema(
         birthday: {
             enabled: { type: Boolean, default: false },
             template: { type: String, default: 'Happy Birthday {name}! 🎂 Wishing you great health and fitness. From {gymName}' },
+            sendTime: { type: String, default: '09:00' },
+            daysInAdvance: { type: Number, default: 0 },
+        },
+        festivalTemplate: {
+            message: { type: String, default: 'Happy {festivalName}, {name}! From {gymName}' },
+            enabled: { type: Boolean, default: true },
             sendTime: { type: String, default: '09:00' },
         },
         festivals: {

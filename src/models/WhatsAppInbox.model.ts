@@ -8,7 +8,9 @@ export interface IWhatsAppInbox extends Document {
   message: string;
   mediaUrl?: string;
   messageId: string;     // WhatsApp message ID
+  direction: 'inbound' | 'outbound';
   status: 'unread' | 'read' | 'replied';
+  resolved: boolean;
   assignedTo?: mongoose.Types.ObjectId;
   replies: Array<{
     message: string;
@@ -28,7 +30,9 @@ const WhatsAppInboxSchema = new Schema({
   message: { type: String, required: true },
   mediaUrl: { type: String },
   messageId: { type: String, required: true, unique: true },
+  direction: { type: String, enum: ['inbound', 'outbound'], default: 'inbound' },
   status: { type: String, enum: ['unread', 'read', 'replied'], default: 'unread', index: true },
+  resolved: { type: Boolean, default: false },
   assignedTo: { type: Schema.Types.ObjectId, ref: 'User' },
   replies: [{
     message: { type: String, required: true },

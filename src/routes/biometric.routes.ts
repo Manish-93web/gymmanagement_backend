@@ -4,6 +4,7 @@ import { authenticate } from '../middleware/auth.middleware';
 import { requireAnyRole } from '../middleware/rbac.middleware';
 import { tenantContext } from '../middleware/tenant.middleware';
 import BiometricSyncJob from '../models/BiometricSyncJob.model';
+import Notification from '../models/Notification.model';
 
 const router = Router();
 
@@ -64,8 +65,62 @@ router.get('/sync-status', requireAnyRole('gym_owner', 'branch_manager', 'staff'
             const key = String((job as any).deviceId?._id || job.deviceId);
             if (!seen.has(key)) { seen.add(key); deviceStatuses.push(job); }
         }
+
+        // Create a one-per-device-per-day offline notification when a device goes offline
+        const recipientId = (req as any).user?._id;
+        if (recipientId) {
+            const todayStart = new Date();
+            todayStart.setHours(0, 0, 0, 0);
+
+            for (const job of deviceStatuses) {
+                const deviceDoc = (job as any).deviceId;
+                const lastSeenAt: Date | undefined = deviceDoc?.lastSeenAt;
+                const isOnline =
+                    lastSeenAt &&
+                    Date.now() - new Date(lastSeenAt).getTime() < 15 * 60 * 1000;
+
+                if (!isOnline && lastSeenAt) {
+                    const deviceId: string =
+                        deviceDoc?.deviceId || String(deviceDoc?._id || '');
+                    const deviceName: string =
+                        deviceDoc?.deviceName || deviceDoc?.name || deviceId || 'Unknown Device';
+
+                    // Avoid duplicate notifications: check if one was already created today
+                    const existingNotif = await Notification.findOne({
+                        tenantId,
+                        'metadata.triggeredBy': 'biometric_offline',
+                        'variables.deviceId': deviceId,
+                        createdAt: { $gte: todayStart },
+                    }).lean();
+
+                    if (!existingNotif) {
+                        await Notification.create({
+                            tenantId,
+                            recipientId,
+                            recipientType: 'staff',
+                            type: 'push',
+                            subject: 'Biometric Device Offline',
+                            message: `Device "${deviceName}" has gone offline. Last seen: ${new Date(lastSeenAt).toLocaleString()}`,
+                            status: 'pending',
+                            variables: { deviceId },
+                            metadata: {
+                                triggeredBy: 'biometric_offline',
+                                priority: 'high',
+                            },
+                        });
+                    }
+                }
+            }
+        }
+
+        // Attach failedRecordsLastSync from the job's failedCount field
+        const enrichedStatuses = deviceStatuses.map((job: any) => {
+            const j = typeof job.toObject === 'function' ? job.toObject() : { ...job };
+            return { ...j, failedRecordsLastSync: j.failedCount ?? 0 };
+        });
+
         const pendingCount = await BiometricSyncJob.countDocuments({ tenantId, status: 'pending' });
-        res.json({ success: true, data: { deviceStatuses, pendingCount } });
+        res.json({ success: true, data: { deviceStatuses: enrichedStatuses, pendingCount } });
     } catch (err: any) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -78,6 +133,23 @@ router.post('/sync-pending', requireAnyRole('gym_owner', 'branch_manager', 'supe
         const result = await BiometricSyncJob.updateMany(
             { tenantId, status: 'pending' },
             { $set: { status: 'queued', updatedAt: new Date() } }
+        );
+        res.json({ success: true, data: { queued: result.modifiedCount } });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// POST /sync/retry — re-queue pending/failed jobs (optionally filtered by deviceId)
+router.post('/sync/retry', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+        const tenantId = (req as any).user?.tenantId;
+        const { deviceId } = req.body;
+        const filter: any = { tenantId, status: { $in: ['pending', 'failed'] } };
+        if (deviceId) filter.deviceId = deviceId;
+        const result = await BiometricSyncJob.updateMany(
+            filter,
+            { $set: { status: 'pending', retryCount: 0, updatedAt: new Date() }, $unset: { errorMessage: '', errorStack: '' } }
         );
         res.json({ success: true, data: { queued: result.modifiedCount } });
     } catch (err: any) {

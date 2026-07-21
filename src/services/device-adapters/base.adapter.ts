@@ -12,13 +12,21 @@ export interface RawPunchRecord {
     deviceLocalTime: string;   // raw string from device for audit
     eventType: 'check_in' | 'check_out' | 'overtime_in' | 'overtime_out' | 'unknown';
     rawPayload?: any;
+    // Per-record cursor: adapter sets this to the position of this record on the device.
+    // The controller advances lastSyncCursor only after each record is successfully saved,
+    // so failed records remain retrievable on the next pull (cursor does not skip ahead past them).
+    cursor?: string;
 }
 
 export interface SyncResult {
     records: RawPunchRecord[];
-    newCursor: string;         // pass back as lastSyncCursor next time
+    newCursor: string;         // cursor AFTER last successfully fetched record (advance per-record, not per-batch)
     deviceTime?: Date;         // for drift detection
     clockDriftSeconds?: number;
+    // Records that could not be parsed or were rejected by the device layer (not DB failures).
+    // These are already past the cursor; the controller should log them to BiometricSyncJob.failedCount.
+    failedRecords?: RawPunchRecord[];
+    skippedCount?: number;     // total count of records skipped (invalid format, unknown user type, etc.)
 }
 
 export interface ConnectionTestResult {

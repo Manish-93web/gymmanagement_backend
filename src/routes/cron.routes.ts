@@ -1,9 +1,11 @@
 import { Router, Request, Response, NextFunction } from 'express';
+import mongoose from 'mongoose';
 import cronController from '../controllers/cron.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireAnyRole } from '../middleware/rbac.middleware';
 import Member from '../models/Member.model';
 import WhatsAppAutomationConfig from '../models/WhatsAppAutomationConfig.model';
+import WhatsAppLog from '../models/WhatsAppLog.model';
 
 const router = Router();
 
@@ -40,6 +42,7 @@ router.post('/birthday-whatsapp', cronAuth, async (req: Request, res: Response, 
             },
         }).select('tenantId firstName lastName mobile').lean();
 
+        const systemUserId = new mongoose.Types.ObjectId('000000000000000000000000');
         let sentCount = 0;
         const results: { memberId: string; name: string; phone: string; tenantId: string }[] = [];
 
@@ -47,11 +50,29 @@ router.post('/birthday-whatsapp', cronAuth, async (req: Request, res: Response, 
             const config = await WhatsAppAutomationConfig.findOne({ tenantId: member.tenantId }).lean();
             if (!config || !(config as any).birthday?.enabled) continue;
 
-            const name = `${member.firstName} ${member.lastName}`.trim();
+            const name = `${member.firstName} ${member.lastName}`.trim() || 'Member';
             const phone = member.mobile;
+            if (!phone) continue;
 
-            // Log the birthday WhatsApp that would be sent (WhatsApp API integration required)
-            console.log(`[BirthdayWhatsApp] Would send birthday message to ${name} (${phone}) for tenant ${member.tenantId}`);
+            const template: string = (config as any).birthday?.template
+                ?? 'Happy Birthday {name}! 🎂 Wishing you great health and fitness. From {gymName}';
+
+            const message = template
+                .replace(/\{name\}/g, name)
+                .replace(/\{gymName\}/g, 'GymFlow');
+
+            await WhatsAppLog.create({
+                tenantId: member.tenantId,
+                memberId: (member as any)._id,
+                memberName: name,
+                phone,
+                message,
+                type: 'birthday',
+                sentAt: new Date(),
+                sentBy: systemUserId,
+                sentByName: 'System (Cron)',
+                deviceType: 'unknown',
+            });
 
             results.push({
                 memberId: String(member._id),
@@ -64,10 +85,80 @@ router.post('/birthday-whatsapp', cronAuth, async (req: Request, res: Response, 
 
         res.json({
             success: true,
-            message: `Birthday WhatsApp cron completed. ${sentCount} messages queued.`,
+            message: `Birthday WhatsApp cron completed. ${sentCount} messages sent.`,
             data: { count: sentCount, members: results },
         });
     } catch (error) { next(error); }
+});
+
+// POST /festival-whatsapp — runs daily to send festival WhatsApp messages to active members.
+// Checks all tenants with festival automation enabled, finds festivals whose date matches
+// today (MM-DD), and queues a WhatsApp log entry for each active member of those tenants.
+router.post('/festival-whatsapp', cronAuth, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const today = new Date();
+        const todayMonth = today.getMonth() + 1; // 1-12
+        const todayDay = today.getDate();
+
+        // System ObjectId placeholder for automated cron sends (no real user context)
+        const systemUserId = new mongoose.Types.ObjectId('000000000000000000000000');
+
+        // Get all tenants with festival automation enabled
+        const configs = await WhatsAppAutomationConfig.find({ 'festivalTemplate.enabled': true });
+
+        let totalSent = 0;
+        for (const config of configs) {
+            // Check if any festival in the config's list matches today's MM-DD date
+            const matchingFestivals = (config.festivals ?? []).filter((f: any) => {
+                if (!f.enabled || !f.date) return false;
+                const [fMonth, fDay] = (f.date as string).split('-').map(Number);
+                return fMonth === todayMonth && fDay === todayDay;
+            });
+
+            if (matchingFestivals.length === 0) continue;
+            const festival = matchingFestivals[0];
+
+            // Get all active members for this tenant
+            const members = await Member.find({ tenantId: config.tenantId, status: 'active' })
+                .select('firstName lastName mobile').lean();
+
+            // Use the festival's own template, fall back to the config-level festivalTemplate message
+            const template =
+                festival.template ??
+                config.festivalTemplate?.message ??
+                'Happy {festivalName}! 🎉 Wishing you joy and prosperity!';
+
+            for (const member of members) {
+                const phone = (member as any).mobile;
+                if (!phone) continue;
+
+                const name = `${(member as any).firstName || ''} ${(member as any).lastName || ''}`.trim() || 'Member';
+
+                const message = template
+                    .replace(/\{name\}/g, name)
+                    .replace(/\{festivalName\}/g, festival.name ?? 'Festival')
+                    .replace(/\{festival\}/g, festival.name ?? 'Festival');
+
+                await WhatsAppLog.create({
+                    tenantId: config.tenantId,
+                    memberId: (member as any)._id,
+                    memberName: name,
+                    phone,
+                    message,
+                    type: 'festival_offer',
+                    sentAt: new Date(),
+                    sentBy: systemUserId,
+                    sentByName: 'System (Cron)',
+                    deviceType: 'unknown',
+                });
+                totalSent++;
+            }
+        }
+
+        res.json({ success: true, data: { totalSent } });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 export default router;

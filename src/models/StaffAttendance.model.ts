@@ -8,6 +8,8 @@ export interface IStaffAttendance extends Document {
   clockIn: Date;
   clockOut?: Date;
   hoursWorked?: number;  // calculated when clocked out
+  overtime?: number;     // hours beyond 8h shift, calculated at clock-out
+  earlyDeparture?: boolean; // true if clocked out before shift end (18:00 default)
   status: 'present' | 'late' | 'absent' | 'half_day';
   notes?: string;
   createdAt: Date;
@@ -22,6 +24,8 @@ const StaffAttendanceSchema = new Schema({
   clockIn: { type: Date, required: true },
   clockOut: { type: Date },
   hoursWorked: { type: Number },
+  overtime: { type: Number, default: 0 },
+  earlyDeparture: { type: Boolean, default: false },
   status: { type: String, enum: ['present', 'late', 'absent', 'half_day'], default: 'present' },
   notes: { type: String },
 }, { timestamps: true });

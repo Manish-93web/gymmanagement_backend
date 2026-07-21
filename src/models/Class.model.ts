@@ -38,6 +38,18 @@ export interface IClass extends Document {
         password?: string;
         hostUrl?: string;
     };
+    videoConfig?: {
+        defaultAudio: boolean;
+        defaultVideo: boolean;
+        trainerAutoScreen: boolean;
+    };
+    sessionHistory?: {
+        _id?: mongoose.Types.ObjectId;
+        startedAt: Date;
+        endedAt?: Date;
+        startedBy?: mongoose.Types.ObjectId;
+        durationMinutes?: number;
+    }[];
     cancellationPolicy: {
         allowCancellation: boolean;
         hoursBeforeClass: number;
@@ -50,6 +62,21 @@ export interface IClass extends Document {
         userId: mongoose.Types.ObjectId;
         eventId: string;
         provider: 'google' | 'outlook' | 'apple';
+    }[];
+    recordings?: {
+        _id?: mongoose.Types.ObjectId;
+        title: string;
+        date: Date;
+        duration?: string;
+        url?: string;
+        uploadedBy?: mongoose.Types.ObjectId;
+    }[];
+    materials?: {
+        _id?: mongoose.Types.ObjectId;
+        type: 'video_url' | 'pdf' | 'note';
+        title: string;
+        url?: string;
+        content?: string;
     }[];
     createdAt: Date;
     updatedAt: Date;
@@ -116,6 +143,36 @@ const ClassSchema: Schema = new Schema(
                 userId: { type: Schema.Types.ObjectId, ref: 'User' },
                 eventId: { type: String },
                 provider: { type: String, enum: ['google', 'outlook', 'apple'] },
+            },
+        ],
+        recordings: [
+            {
+                title: { type: String, required: true },
+                date: { type: Date, default: Date.now },
+                duration: { type: String },
+                url: { type: String },
+                uploadedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+            },
+        ],
+        materials: [
+            {
+                type: { type: String, enum: ['video_url', 'pdf', 'note'], default: 'video_url' },
+                title: { type: String, required: true },
+                url: { type: String },
+                content: { type: String },
+            },
+        ],
+        videoConfig: {
+            defaultAudio: { type: Boolean, default: true },
+            defaultVideo: { type: Boolean, default: true },
+            trainerAutoScreen: { type: Boolean, default: false },
+        },
+        sessionHistory: [
+            {
+                startedAt: { type: Date, required: true },
+                endedAt: { type: Date },
+                startedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+                durationMinutes: { type: Number },
             },
         ],
     },
