@@ -1,10 +1,15 @@
 import { Router, Request, Response } from 'express';
+import mongoose from 'mongoose';
 import * as staffController from '../controllers/staff.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireAnyRole } from '../middleware/rbac.middleware';
 import StaffAttendance from '../models/StaffAttendance.model';
 import StaffDeductionSettings from '../models/StaffDeductionSettings.model';
 import User from '../models/User.model';
+
+function safeObjectId(val: any): mongoose.Types.ObjectId | undefined {
+    return val && mongoose.Types.ObjectId.isValid(val) ? new mongoose.Types.ObjectId(String(val)) : undefined;
+}
 
 const router = Router();
 
@@ -20,15 +25,24 @@ router.get('/stats', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'
 // Staff Clock-In
 router.post('/clock-in', async (req: Request, res: Response) => {
   try {
-    const tenantId = (req as any).tenantId || (req as any).user?.tenantId?.toString();
-    const staffId = req.body.staffId || (req as any).user?._id;
-    if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant not found. Please log out and log back in.' });
-    if (!staffId) return res.status(400).json({ success: false, message: 'Staff ID is required.' });
-    const now = new Date();
-    const today = new Date(now); today.setHours(0, 0, 0, 0);
+    const rawTenantId = (req as any).tenantId || (req as any).user?.tenantId?.toString();
+    const rawStaffId = req.body.staffId || (req as any).user?._id?.toString();
+    if (!rawTenantId) return res.status(400).json({ success: false, message: 'Tenant not found. Please log out and log back in.' });
+    if (!rawStaffId) return res.status(400).json({ success: false, message: 'Staff ID is required.' });
 
-    // Check if already has a record today
-    const existing = await StaffAttendance.findOne({ tenantId, staffId, date: today });
+    const tenantId = safeObjectId(rawTenantId);
+    const staffId = safeObjectId(rawStaffId);
+    const branchId = safeObjectId((req as any).branchId);
+
+    if (!tenantId) return res.status(400).json({ success: false, message: 'Invalid tenant ID. Please log out and log back in.' });
+    if (!staffId) return res.status(400).json({ success: false, message: 'Invalid staff ID.' });
+
+    const now = new Date();
+    const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(now); todayEnd.setHours(23, 59, 59, 999);
+
+    // Check if already has a record today (use range to handle any timezone edge cases)
+    const existing = await StaffAttendance.findOne({ tenantId, staffId, date: { $gte: todayStart, $lte: todayEnd } });
     if (existing) {
       if (!existing.clockOut) {
         return res.status(400).json({ success: false, message: 'Already clocked in. Please clock out first.' });
@@ -43,15 +57,18 @@ router.post('/clock-in', async (req: Request, res: Response) => {
 
     const record = await StaffAttendance.create({
       tenantId,
-      branchId: (req as any).branchId,
+      ...(branchId && { branchId }),
       staffId,
-      date: today,
+      date: todayStart,
       clockIn: now,
       status,
     });
 
     return res.status(201).json({ success: true, data: record, message: `Clocked in at ${now.toLocaleTimeString()}` });
   } catch (err: any) {
+    if (err.code === 11000) {
+      return res.status(400).json({ success: false, message: 'Already clocked in for today.' });
+    }
     return res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -59,14 +76,21 @@ router.post('/clock-in', async (req: Request, res: Response) => {
 // Staff Clock-Out
 router.post('/clock-out', async (req: Request, res: Response) => {
   try {
-    const tenantId = (req as any).tenantId || (req as any).user?.tenantId?.toString();
-    const staffId = req.body.staffId || (req as any).user?._id;
-    if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant not found. Please log out and log back in.' });
-    if (!staffId) return res.status(400).json({ success: false, message: 'Staff ID is required.' });
-    const now = new Date();
-    const today = new Date(now); today.setHours(0, 0, 0, 0);
+    const rawTenantId = (req as any).tenantId || (req as any).user?.tenantId?.toString();
+    const rawStaffId = req.body.staffId || (req as any).user?._id?.toString();
+    if (!rawTenantId) return res.status(400).json({ success: false, message: 'Tenant not found. Please log out and log back in.' });
+    if (!rawStaffId) return res.status(400).json({ success: false, message: 'Staff ID is required.' });
 
-    const record = await StaffAttendance.findOne({ tenantId, staffId, date: today, clockOut: { $exists: false } });
+    const tenantId = safeObjectId(rawTenantId);
+    const staffId = safeObjectId(rawStaffId);
+    if (!tenantId) return res.status(400).json({ success: false, message: 'Invalid tenant ID. Please log out and log back in.' });
+    if (!staffId) return res.status(400).json({ success: false, message: 'Invalid staff ID.' });
+
+    const now = new Date();
+    const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(now); todayEnd.setHours(23, 59, 59, 999);
+
+    const record = await StaffAttendance.findOne({ tenantId, staffId, date: { $gte: todayStart, $lte: todayEnd }, clockOut: { $exists: false } });
     if (!record) {
       return res.status(404).json({ success: false, message: 'No active clock-in found for today.' });
     }
@@ -100,10 +124,11 @@ router.post('/clock-out', async (req: Request, res: Response) => {
 // Get today's clock-in status for current user
 router.get('/clock-status', async (req: Request, res: Response) => {
   try {
-    const tenantId = (req as any).tenantId || (req as any).user?.tenantId?.toString();
-    const staffId = req.query.staffId as string || (req as any).user?._id?.toString();
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const record = await StaffAttendance.findOne({ tenantId, staffId, date: today });
+    const tenantId = safeObjectId((req as any).tenantId || (req as any).user?.tenantId?.toString());
+    const staffId = safeObjectId(req.query.staffId as string || (req as any).user?._id?.toString());
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
+    const record = await StaffAttendance.findOne({ tenantId, staffId, date: { $gte: todayStart, $lte: todayEnd } });
     if (!record) {
       return res.json({ success: true, data: { isClockedIn: false, clockInTime: null, hoursWorkedToday: 0 } });
     }

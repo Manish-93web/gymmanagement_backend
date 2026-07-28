@@ -4,6 +4,7 @@ import { authenticate } from '../middleware/auth.middleware';
 import { requirePermission } from '../middleware/rbac.middleware';
 import { tenantContext } from '../middleware/tenant.middleware';
 import { invalidateTenantCache } from '../middleware/cache.middleware';
+import QRCode from 'qrcode';
 
 // Invalidate tenant cache after any mutation
 const invalidateCache = async (req: Request, _res: Response, next: NextFunction) => {
@@ -23,6 +24,19 @@ router.use(tenantContext);
 
 // Member CRUD — specific routes MUST come before /:memberId to avoid param capture
 router.get('/me', memberController.getProfile.bind(memberController));
+
+// GET /me/qr-code — generate digital membership QR code for gym entry
+router.get('/me/qr-code', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const user = (req as any).user;
+        const memberId = user?.memberId || user?._id;
+        const tenantId = user?.tenantId;
+        if (!memberId) return res.status(400).json({ success: false, message: 'Not a member account' });
+        const payload = JSON.stringify({ memberId: String(memberId), tenantId: String(tenantId ?? ''), type: 'membership', v: 1 });
+        const qrDataUrl = await QRCode.toDataURL(payload, { width: 300, margin: 2, color: { dark: '#000000', light: '#ffffff' } });
+        return res.json({ success: true, data: { qrDataUrl, memberId: String(memberId) } });
+    } catch (err) { next(err); }
+});
 router.post('/', requirePermission('member:create'), invalidateCache, memberController.createMember.bind(memberController));
 router.get('/', requirePermission('member:read'), memberController.getMembers.bind(memberController));
 router.get('/stats', requirePermission('member:read'), memberController.getMemberStats.bind(memberController));

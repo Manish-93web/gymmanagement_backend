@@ -64,6 +64,7 @@ export interface IPayment extends Document {
         pdfUrl?: string;
         emailSent: boolean;
         emailSentAt?: Date;
+        isGSTInvoice: boolean;  // false = non-GST invoice (for gyms below ₹20L threshold)
     };
     metadata: {
         description: string;
@@ -162,6 +163,7 @@ const PaymentSchema: Schema = new Schema(
             pdfUrl: { type: String },
             emailSent: { type: Boolean, default: false },
             emailSentAt: { type: Date },
+            isGSTInvoice: { type: Boolean, default: true },
         },
         metadata: {
             description: { type: String },

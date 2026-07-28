@@ -24,8 +24,8 @@ const auditLogFilterSchema = z.object({
     startDate: z.string().optional(),
     endDate: z.string().optional(),
     status: z.enum(['success', 'failure']).optional(),
-    page: z.number().int().positive().optional(),
-    limit: z.number().int().positive().max(100).optional(),
+    page: z.coerce.number().int().positive().optional(),
+    limit: z.coerce.number().int().positive().max(100).optional(),
 });
 
 class SecurityController {

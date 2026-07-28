@@ -39,6 +39,14 @@ export interface ILead extends Document {
         reason: string;
         competitor?: string;
     };
+    callHistory?: {
+        calledAt: Date;
+        duration?: number;
+        outcome: 'answered' | 'no_answer' | 'voicemail' | 'busy';
+        notes?: string;
+        recordingUrl?: string;
+        performedBy: mongoose.Types.ObjectId;
+    }[];
     tags: string[];
     notes: string;
     createdAt: Date;
@@ -102,6 +110,20 @@ const LeadSchema: Schema = new Schema(
         notes: { type: String },
         nextFollowUpDate: { type: Date, index: true },
         lastContactDate: { type: Date },
+        callHistory: [
+            {
+                calledAt: { type: Date, required: true },
+                duration: { type: Number },
+                outcome: {
+                    type: String,
+                    enum: ['answered', 'no_answer', 'voicemail', 'busy'],
+                    required: true,
+                },
+                notes: { type: String },
+                recordingUrl: { type: String },
+                performedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+            },
+        ],
     },
     { timestamps: true }
 );

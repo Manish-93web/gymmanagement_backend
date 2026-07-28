@@ -68,6 +68,70 @@ import uploadRoutes from './routes/upload.routes';
 import crmWebhookRoutes from './routes/crm-webhook.routes';
 import scheduledReportRoutes from './routes/scheduled-report.routes';
 import esslAdmsRoutes from './routes/essl-adms.routes';
+import financeRoutes from './routes/finance.routes';
+import wearableRoutes from './routes/wearable.routes';
+import healthRiskRoutes from './routes/health-risk.routes';
+import videoLibraryRoutes from './routes/video-library.routes';
+import gymProfileRoutes from './routes/gym-profile.routes';
+import fitnessEventsRoutes from './routes/fitness-events.routes';
+import eventPartnershipsRoutes from './routes/event-partnerships.routes';
+import equipmentRoutes from './routes/equipment.routes';
+import corporateRoutes from './routes/corporate.routes';
+import marketplaceRoutes from './routes/marketplace.routes';
+import bodyCompositionRoutes from './routes/body-composition.routes';
+import whiteLabelRoutes from './routes/white-label.routes';
+import membershipTransferRoutes from './routes/membership-transfer.routes';
+import conditionProtocolsRoutes from './routes/condition-protocols.routes';
+import stepChallengesRoutes from './routes/step-challenges.routes';
+import progressiveChallengesRoutes from './routes/progressive-challenges.routes';
+import healthArticlesRoutes from './routes/health-articles.routes';
+import wellnessPlansRoutes from './routes/wellness-plans.routes';
+import eatingOutRoutes from './routes/eating-out.routes';
+import dynamicPricingRoutes from './routes/dynamic-pricing.routes';
+import eapRoutes from './routes/eap.routes';
+import formSessionsRoutes from './routes/form-sessions.routes';
+import pharmacyVouchersRoutes from './routes/pharmacy-vouchers.routes';
+import abhaRoutes from './routes/abha.routes';
+import insuranceRoutes from './routes/insurance.routes';
+import memberHealthProfileRoutes from './routes/member-health-profile.routes';
+import favouriteMealsRoutes from './routes/favourite-meals.routes';
+import whatsappDigestRoutes from './routes/whatsapp-digest.routes';
+import pointsExpiryRoutes from './routes/points-expiry.routes';
+import facilityBookingRoutes from './routes/facility-booking.routes';
+import scanEventsRoutes from './routes/scan-events.routes';
+import gymReviewsRoutes from './routes/gym-reviews.routes';
+import whatsappGroupsRoutes from './routes/whatsapp-groups.routes';
+import teleConsultationRoutes from './routes/tele-consultation.routes';
+import healthCheckupsRoutes from './routes/health-checkups.routes';
+import friendChallengesRoutes from './routes/friend-challenges.routes';
+import webStoriesRoutes from './routes/web-stories.routes';
+import gymQrRoutes from './routes/gym-qr.routes';
+import complaintsRoutes from './routes/complaints.routes';
+import creditNotesRoutes from './routes/credit-notes.routes';
+import couponRedemptionRoutes from './routes/coupon-redemption.routes';
+import trialConversionRoutes from './routes/trial-conversion.routes';
+import irregularMembersRoutes from './routes/irregular-members.routes';
+import websiteContentRoutes from './routes/website-content.routes';
+import habitChallengesRoutes from './routes/habit-challenges.routes';
+import bulkMemberOpsRoutes from './routes/bulk-member-ops.routes';
+import refundPolicyRoutes from './routes/refund-policy.routes';
+import wellnessCheckinRoutes from './routes/wellness-checkin.routes';
+import checkinEventsRoutes from './routes/checkin-events.routes';
+import memberEmergencyRoutes from './routes/member-emergency.routes';
+import memberSelfRenewalRoutes from './routes/member-self-renewal.routes';
+import challenge678Routes from './routes/challenge-678.routes';
+import refundRequestsRoutes from './routes/refund-requests.routes';
+import invoiceVoidRoutes from './routes/invoice-void.routes';
+import articleReadingRoutes from './routes/article-reading.routes';
+import trialClaimRoutes from './routes/trial-claim.routes';
+import trainerDashboardRoutes from './routes/trainer-dashboard.routes';
+import stepChallengeCronRoutes from './routes/step-challenge-cron.routes';
+import deviceManagementRoutes from './routes/device-management.routes';
+import pricingSimulatorRoutes from './routes/pricing-simulator.routes';
+import conditionFilterRoutes from './routes/condition-filter.routes';
+import gstBillingRoutes from './routes/gst-billing.routes';
+import cafeteriaRoutes from './routes/cafeteria.routes';
+import formAnalysisRoutes from './routes/form-analysis.routes';
 
 const app: Application = express();
 const httpServer = http.createServer(app);
@@ -127,18 +191,20 @@ app.use(
     })
 );
 
-// Rate limiting — IP-based global limiter
-const apiLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 300,
-    message: 'Too many requests from this IP, please try again later.',
-    standardHeaders: true,
-    legacyHeaders: false,
-});
-app.use('/api/', apiLimiter);
+// Rate limiting — skip in development to avoid false 429s during rapid page navigation
+if (process.env.NODE_ENV !== 'development') {
+    const apiLimiter = rateLimit({
+        windowMs: 15 * 60 * 1000,
+        max: 300,
+        message: 'Too many requests from this IP, please try again later.',
+        standardHeaders: true,
+        legacyHeaders: false,
+    });
+    app.use('/api/', apiLimiter);
 
-// Per-tenant rate limiter — 500 req/min per gym (prevents one tenant from starving others)
-app.use('/api/', tenantRateLimiter(500, 60));
+    // Per-tenant rate limiter — 500 req/min per gym (prevents one tenant from starving others)
+    app.use('/api/', tenantRateLimiter(500, 60));
+}
 
 // Request timeout middleware (30 seconds)
 app.use((_req: Request, res: Response, next: NextFunction) => {
@@ -270,6 +336,18 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/announcements', announcementRoutes);
 app.use('/api/inquiries', inquiryRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/finance', financeRoutes);
+app.use('/api/wearable', wearableRoutes);
+app.use('/api/health-risk', healthRiskRoutes);
+app.use('/api/content', videoLibraryRoutes);
+app.use('/api/gym-profile', gymProfileRoutes);
+app.use('/api/events', fitnessEventsRoutes);
+app.use('/api/event-partnerships', eventPartnershipsRoutes);
+app.use('/api/equipment', equipmentRoutes);
+app.use('/api/corporate', corporateRoutes);
+app.use('/api/marketplace', marketplaceRoutes);
+app.use('/api/body-composition', bodyCompositionRoutes);
+app.use('/api/white-label', whiteLabelRoutes);
 app.use('/api/nutrition', nutritionRoutes);
 app.use('/api/biometric', biometricRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
@@ -285,6 +363,58 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/crm-webhook', crmWebhookRoutes);
 app.use('/api/scheduled-reports', scheduledReportRoutes);
 app.use('/api', aiCrmRoutes); // handles /api/ai/* and /api/crm/* via ai-crm router
+app.use('/api/membership-transfers', membershipTransferRoutes);
+app.use('/api/condition-protocols', conditionProtocolsRoutes);
+app.use('/api/step-challenges', stepChallengesRoutes);
+app.use('/api/progressive-challenges', progressiveChallengesRoutes);
+app.use('/api/health-articles', healthArticlesRoutes);
+app.use('/api/wellness-plans', wellnessPlansRoutes);
+app.use('/api/eating-out', eatingOutRoutes);
+app.use('/api/dynamic-pricing', dynamicPricingRoutes);
+app.use('/api/eap', eapRoutes);
+app.use('/api/form-sessions', formSessionsRoutes);
+app.use('/api/pharmacy-vouchers', pharmacyVouchersRoutes);
+app.use('/api/abha', abhaRoutes);
+app.use('/api/insurance', insuranceRoutes);
+app.use('/api/member-health-profile', memberHealthProfileRoutes);
+app.use('/api/favourite-meals', favouriteMealsRoutes);
+app.use('/api/whatsapp-digest', whatsappDigestRoutes);
+app.use('/api/points-expiry', pointsExpiryRoutes);
+app.use('/api/facility-booking', facilityBookingRoutes);
+app.use('/api/scan-events', scanEventsRoutes);
+app.use('/api/gym-reviews', gymReviewsRoutes);
+app.use('/api/whatsapp-groups', whatsappGroupsRoutes);
+app.use('/api/tele-consultation', teleConsultationRoutes);
+app.use('/api/health-checkups', healthCheckupsRoutes);
+app.use('/api/friend-challenges', friendChallengesRoutes);
+app.use('/api/web-stories', webStoriesRoutes);
+app.use('/api/gym-qr', gymQrRoutes);
+app.use('/api/complaints', complaintsRoutes);
+app.use('/api/credit-notes', creditNotesRoutes);
+app.use('/api/coupon-redemption', couponRedemptionRoutes);
+app.use('/api/trial-conversion', trialConversionRoutes);
+app.use('/api/irregular-members', irregularMembersRoutes);
+app.use('/api/website-content', websiteContentRoutes);
+app.use('/api/habit-challenges', habitChallengesRoutes);
+app.use('/api/bulk-member-ops', bulkMemberOpsRoutes);
+app.use('/api/refund-policy', refundPolicyRoutes);
+app.use('/api/wellness-checkin', wellnessCheckinRoutes);
+app.use('/api/checkin-events', checkinEventsRoutes);
+app.use('/api/member-emergency', memberEmergencyRoutes);
+app.use('/api/member-self-renewal', memberSelfRenewalRoutes);
+app.use('/api/challenge-678', challenge678Routes);
+app.use('/api/refund-requests', refundRequestsRoutes);
+app.use('/api/invoice-void', invoiceVoidRoutes);
+app.use('/api/article-reading', articleReadingRoutes);
+app.use('/api/trial-claim', trialClaimRoutes);
+app.use('/api/trainer-dashboard', trainerDashboardRoutes);
+app.use('/api/step-challenge-cron', stepChallengeCronRoutes);
+app.use('/api/device-management', deviceManagementRoutes);
+app.use('/api/pricing-simulator', pricingSimulatorRoutes);
+app.use('/api/condition-filter', conditionFilterRoutes);
+app.use('/api/gst-billing', gstBillingRoutes);
+app.use('/api/cafeteria', cafeteriaRoutes);
+app.use('/api/form-analysis', formAnalysisRoutes);
 // Note: eSSL ADMS device endpoint is at /essl/iclock/* (public, before /api rate limiter)
 
 // 404 handler
@@ -356,7 +486,16 @@ const startServer = async () => {
         await import('./workers/biometric-autocheckout.worker');
         await import('./workers/biometric-healthcheck.worker');
         await import('./workers/biometric-sync.worker');
+        await import('./workers/step-challenge.worker');
         console.log('✅ Cron workers initialized');
+
+        try {
+            const { scheduleDailyDigest } = await import('./services/daily-whatsapp-digest.service');
+            scheduleDailyDigest();
+            console.log('✅ WhatsApp daily digest scheduler started');
+        } catch (err) {
+            console.warn('⚠️ WhatsApp digest scheduler init failed:', err);
+        }
 
     } catch (error) {
         console.error('❌ Service initialization failed:', error);

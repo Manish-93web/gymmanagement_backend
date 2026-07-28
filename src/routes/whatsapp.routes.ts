@@ -1,12 +1,37 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
+import OpenAI from 'openai';
 import whatsappController from '../controllers/whatsapp.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireAnyRole } from '../middleware/rbac.middleware';
 import { tenantContext } from '../middleware/tenant.middleware';
 import WhatsAppAutomationConfig from '../models/WhatsAppAutomationConfig.model';
+import WhatsAppBotConfig from '../models/WhatsAppBotConfig.model';
 import WhatsAppInbox from '../models/WhatsAppInbox.model';
 import Member from '../models/Member.model';
+
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+
+async function generateBotReply(
+  systemPrompt: string,
+  conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }>,
+  userMessage: string
+): Promise<string> {
+  if (!openai) {
+    return "Thank you for your message! Our team will get back to you shortly. 🙏";
+  }
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: systemPrompt },
+      ...conversationHistory,
+      { role: 'user', content: userMessage },
+    ],
+    max_tokens: 300,
+    temperature: 0.7,
+  });
+  return completion.choices[0]?.message?.content?.trim() ?? "Thank you for your message! Our team will get back to you shortly.";
+}
 
 const router = Router();
 
@@ -34,6 +59,9 @@ router.post('/webhook', async (req: Request, res: Response) => {
     const senderPhone = msg.from;
     const text = msg.text?.body || msg.type || '';
     const messageId = msg.id || `${senderPhone}_${Date.now()}`;
+
+    // Determine tenant from the receiving business phone number
+    const displayPhone = value?.metadata?.display_phone_number;
     const member = await Member.findOne({
       $or: [
         { mobile: senderPhone },
@@ -41,9 +69,10 @@ router.post('/webhook', async (req: Request, res: Response) => {
         { mobile: senderPhone.replace(/^\+91/, '') },
       ],
     });
+    const tenantId = member?.tenantId;
 
     await WhatsAppInbox.create({
-      tenantId: member?.tenantId,
+      tenantId,
       from: senderPhone,
       fromName: member ? `${member.firstName} ${member.lastName}`.trim() : undefined,
       memberId: member?._id,
@@ -52,6 +81,56 @@ router.post('/webhook', async (req: Request, res: Response) => {
       direction: 'inbound',
       receivedAt: new Date(Number(msg.timestamp) * 1000 || Date.now()),
     });
+
+    // ── AI Bot auto-reply ───────────────────────────────────────────────────
+    if (tenantId && text) {
+      setImmediate(async () => {
+        try {
+          const botCfg = await WhatsAppBotConfig.findOne({ tenantId }).lean();
+          if (!botCfg?.enabled) return;
+
+          // Check escalation keywords
+          const lowerText = text.toLowerCase();
+          const isEscalation = (botCfg.escalationKeywords || []).some(kw => lowerText.includes(kw.toLowerCase()));
+
+          let reply: string;
+          if (isEscalation) {
+            reply = botCfg.escalationMessage;
+          } else {
+            // Fetch recent conversation history for context
+            const recentMsgs = await WhatsAppInbox.find({ tenantId, from: senderPhone })
+              .sort({ receivedAt: -1 })
+              .limit(botCfg.maxContextMessages || 10)
+              .lean();
+            const history = recentMsgs
+              .reverse()
+              .slice(0, -1) // exclude the message we just stored
+              .map((m: any) => ({
+                role: (m.direction === 'inbound' ? 'user' : 'assistant') as 'user' | 'assistant',
+                content: m.botReply || m.message,
+              }));
+            reply = await generateBotReply(botCfg.systemPrompt, history, text);
+          }
+
+          // Store bot reply in inbox
+          await WhatsAppInbox.create({
+            tenantId,
+            from: senderPhone,
+            fromName: member ? `${member.firstName} ${member.lastName}`.trim() : undefined,
+            memberId: member?._id,
+            message: reply,
+            messageId: `bot_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+            direction: 'outbound',
+            status: 'replied',
+            receivedAt: new Date(),
+          });
+
+          // TODO: Send via Twilio / Meta Cloud API when credentials are set
+        } catch (botErr: any) {
+          console.error('[WhatsApp bot auto-reply]', botErr.message);
+        }
+      });
+    }
 
     res.sendStatus(200);
   } catch (err: any) {
@@ -426,6 +505,102 @@ router.delete('/inbox/:id', requireAnyRole('gym_owner', 'branch_manager', 'super
   try {
     await WhatsAppInbox.findByIdAndDelete(req.params.id);
     res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+// ─── AI Sales Bot config ───────────────────────────────────────────────────────
+
+// GET /bot/config
+router.get('/bot/config', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tenantId = req.tenantId!;
+    let cfg = await WhatsAppBotConfig.findOne({ tenantId }).lean();
+    if (!cfg) {
+      const created = await WhatsAppBotConfig.create({ tenantId });
+      cfg = created.toObject ? (created as any).toObject() : created;
+    }
+    res.json({ success: true, data: cfg });
+  } catch (err) { next(err); }
+});
+
+// PUT /bot/config
+router.put('/bot/config', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tenantId = req.tenantId!;
+    const userId = (req as any).user?._id;
+    const {
+      enabled, botName, systemPrompt, welcomeMessage, offHoursMessage,
+      offHoursEnabled, offHoursStart, offHoursEnd,
+      escalationKeywords, escalationMessage, maxContextMessages, language,
+    } = req.body;
+    const cfg = await WhatsAppBotConfig.findOneAndUpdate(
+      { tenantId },
+      {
+        $set: {
+          ...(enabled !== undefined && { enabled }),
+          ...(botName && { botName }),
+          ...(systemPrompt && { systemPrompt }),
+          ...(welcomeMessage && { welcomeMessage }),
+          ...(offHoursMessage && { offHoursMessage }),
+          ...(offHoursEnabled !== undefined && { offHoursEnabled }),
+          ...(offHoursStart && { offHoursStart }),
+          ...(offHoursEnd && { offHoursEnd }),
+          ...(escalationKeywords && { escalationKeywords }),
+          ...(escalationMessage && { escalationMessage }),
+          ...(maxContextMessages && { maxContextMessages }),
+          ...(language && { language }),
+          updatedBy: userId,
+        },
+      },
+      { new: true, upsert: true }
+    ).lean();
+    res.json({ success: true, data: cfg });
+  } catch (err) { next(err); }
+});
+
+// POST /bot/test — test the AI bot with a sample message
+router.post('/bot/test', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tenantId = req.tenantId!;
+    const { message, conversationHistory = [] } = req.body;
+    if (!message) { res.status(400).json({ success: false, message: 'message is required' }); return; }
+
+    const cfg = await WhatsAppBotConfig.findOne({ tenantId }).lean();
+    const systemPrompt = (cfg as any)?.systemPrompt ?? 'You are a gym sales assistant.';
+    const escalationKeywords: string[] = (cfg as any)?.escalationKeywords ?? [];
+
+    const lowerMsg = message.toLowerCase();
+    const isEscalation = escalationKeywords.some(kw => lowerMsg.includes(kw.toLowerCase()));
+
+    if (isEscalation) {
+      const reply = (cfg as any)?.escalationMessage ?? "I've flagged your message for a human agent.";
+      return res.json({ success: true, data: { reply, escalated: true } });
+    }
+
+    const history = (conversationHistory as Array<{ role: 'user' | 'assistant'; content: string }>)
+      .slice(-10)
+      .map(m => ({ role: m.role, content: m.content }));
+
+    const reply = await generateBotReply(systemPrompt, history, message);
+    return res.json({ success: true, data: { reply, escalated: false, hasOpenAI: !!openai } });
+  } catch (err) { next(err); }
+});
+
+// GET /bot/conversations — recent bot conversations (outbound bot messages)
+router.get('/bot/conversations', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tenantId = (req as any).user?.tenantId || req.tenantId;
+    const page = parseInt(String(req.query.page || '1'));
+    const limit = Math.min(parseInt(String(req.query.limit || '20')), 50);
+    const skip = (page - 1) * limit;
+    const total = await WhatsAppInbox.countDocuments({ tenantId, direction: 'inbound' });
+    const msgs = await WhatsAppInbox.find({ tenantId, direction: 'inbound' })
+      .sort({ receivedAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate('memberId', 'firstName lastName mobile')
+      .lean();
+    res.json({ success: true, data: { messages: msgs, total, page, pages: Math.ceil(total / limit) } });
   } catch (err) { next(err); }
 });
 

@@ -9,6 +9,13 @@ export interface IChallengeParticipant extends Document {
     status: 'active' | 'completed' | 'dropped';
     joinedAt: Date;
     completedAt?: Date;
+    // GAP 48: daily habit logs for monthly_habit type challenges
+    dailyLogs?: {
+        date: Date;
+        value: number;       // actual logged value (e.g. 2.1 litres, 8234 steps)
+        achieved: boolean;   // value >= dailyTarget
+    }[];
+    daysAchieved?: number;   // count of days where achieved = true
 }
 
 const schema = new Schema({
@@ -20,6 +27,12 @@ const schema = new Schema({
     status: { type: String, enum: ['active', 'completed', 'dropped'], default: 'active' },
     joinedAt: { type: Date, default: Date.now },
     completedAt: Date,
+    dailyLogs: [{
+        date:     { type: Date, required: true },
+        value:    { type: Number, required: true },
+        achieved: { type: Boolean, required: true },
+    }],
+    daysAchieved: { type: Number, default: 0 },
 }, { timestamps: true });
 
 schema.index({ challengeId: 1, memberId: 1 }, { unique: true });

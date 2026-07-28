@@ -2,6 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export type PlanType = 'time_based' | 'session_based' | 'hybrid';
 export type PlanDuration = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'half_yearly' | 'yearly';
+export type PlanCategory = 'standard' | 'digital_only';
 
 export interface IMembershipPlan extends Document {
     tenantId: mongoose.Types.ObjectId;
@@ -11,6 +12,7 @@ export interface IMembershipPlan extends Document {
     type: PlanType;
     duration: PlanDuration;
     durationValue: number;
+    planCategory: PlanCategory;
     pricing: {
         basePrice: number;
         taxRate: number;
@@ -38,6 +40,9 @@ export interface IMembershipPlan extends Document {
         maxFreezes?: number;
         freezeDuration?: number; // days
         branchTransferAllowed: boolean;
+        videoLibrary: boolean;
+        wearableSync: boolean;
+        healthCalculators: boolean;
     };
     addOns: {
         name: string;
@@ -73,6 +78,12 @@ const MembershipPlanSchema: Schema = new Schema(
             required: true,
         },
         durationValue: { type: Number, required: true },
+        planCategory: {
+            type: String,
+            enum: ['standard', 'digital_only'],
+            default: 'standard',
+            index: true,
+        },
         pricing: {
             basePrice: { type: Number, required: true },
             taxRate: { type: Number, default: 0 },
@@ -102,6 +113,9 @@ const MembershipPlanSchema: Schema = new Schema(
             maxFreezes: { type: Number, default: 2 },
             freezeDuration: { type: Number, default: 30 },
             branchTransferAllowed: { type: Boolean, default: false },
+            videoLibrary: { type: Boolean, default: false },
+            wearableSync: { type: Boolean, default: false },
+            healthCalculators: { type: Boolean, default: false },
         },
         addOns: [
             {
@@ -126,5 +140,6 @@ const MembershipPlanSchema: Schema = new Schema(
 MembershipPlanSchema.index({ tenantId: 1, isActive: 1 });
 MembershipPlanSchema.index({ tenantId: 1, branchId: 1, isActive: 1 });
 MembershipPlanSchema.index({ tenantId: 1, createdAt: -1 });
+MembershipPlanSchema.index({ tenantId: 1, planCategory: 1, isActive: 1 });
 
 export default mongoose.model<IMembershipPlan>('MembershipPlan', MembershipPlanSchema);

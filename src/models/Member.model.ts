@@ -44,6 +44,7 @@ export interface IMember extends Document {
     healthInfo: {
         fitnessLevel?: string;
         medicalHistory?: string;
+        dietaryPreference?: 'non_vegetarian' | 'vegetarian' | 'vegan' | 'jain' | 'sattvic';
         dietaryRestrictions?: string[];
         medicalConditions: string[];
         allergies: string[];
@@ -137,6 +138,12 @@ export interface IMember extends Document {
     walletBalance: number;
     lastCheckIn?: Date;
     sNo?: number;
+    bloodGroup?: 'A+' | 'A-' | 'B+' | 'B-' | 'O+' | 'O-' | 'AB+' | 'AB-' | 'unknown';
+    emergencyContact?: { name: string; phone: string; relationship?: string };
+    emergencyContactName?: string;
+    emergencyContactPhone?: string;
+    medicalNotes?: string;
+    allergies?: string;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -190,6 +197,10 @@ const MemberSchema: Schema = new Schema(
         },
         healthInfo: {
             medicalConditions: [{ type: String }],
+            dietaryPreference: {
+                type: String,
+                enum: ['non_vegetarian', 'vegetarian', 'vegan', 'jain', 'sattvic'],
+            },
             dietaryRestrictions: [{ type: String }],
             allergies: [{ type: String }],
             medications: [{ type: String }],
@@ -248,6 +259,7 @@ const MemberSchema: Schema = new Schema(
         },
         referredBy: { type: Schema.Types.ObjectId, ref: 'Member' },
         referralCode: { type: String, unique: true, sparse: true },
+        corporateClientId: { type: Schema.Types.ObjectId, ref: 'CorporateClient', default: null },
         tags: [{ type: String }],
         notes: { type: String },
         freezeHistory: [
@@ -299,6 +311,16 @@ const MemberSchema: Schema = new Schema(
         walletBalance: { type: Number, default: 0 },
         lastCheckIn: { type: Date },
         sNo: { type: Number, index: true },
+        bloodGroup: { type: String, enum: ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-', 'unknown'], default: 'unknown' },
+        emergencyContact: {
+            name: { type: String },
+            phone: { type: String },
+            relationship: { type: String },
+        },
+        emergencyContactName: { type: String },
+        emergencyContactPhone: { type: String },
+        medicalNotes: { type: String },
+        allergies: { type: String },
     },
     { timestamps: true }
 );

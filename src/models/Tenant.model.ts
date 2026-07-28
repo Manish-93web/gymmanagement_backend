@@ -116,9 +116,11 @@ export interface ITenant extends Document {
             active: boolean;
         };
     };
+    timezone: string;
     contactInfo: {
         email: string;
         phone: string;
+        countryDialCode?: string;
         address: string;
         city: string;
         state: string;
@@ -260,13 +262,15 @@ const TenantSchema: Schema = new Schema(
                 active: { type: Boolean, default: false },
             },
         },
+        timezone: { type: String, default: 'Asia/Kolkata' },
         contactInfo: {
             email: { type: String, required: true },
             phone: { type: String, required: true },
+            countryDialCode: { type: String, default: '+91' },
             address: { type: String },
             city: { type: String },
             state: { type: String },
-            country: { type: String },
+            country: { type: String, default: 'IN' },
             zipCode: { type: String },
         },
     },

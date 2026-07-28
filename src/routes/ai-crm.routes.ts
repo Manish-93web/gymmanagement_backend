@@ -35,6 +35,42 @@ router.delete('/crm/leads/:leadId', requireAnyRole('gym_owner', 'branch_manager'
 router.post('/crm/leads/:leadId/call-logs', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), aiCrmController.addCallLog.bind(aiCrmController));
 router.get('/crm/leads/:leadId/call-logs', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), aiCrmController.getCallLogs.bind(aiCrmController));
 
+// Global communication audit log — aggregates all followUps across leads
+router.get('/crm/logs', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+        const tenantId = (req as any).user?.tenantId;
+        const { type, search } = req.query;
+
+        const matchStage: any = { tenantId: new mongoose.Types.ObjectId(tenantId) };
+
+        const results = await Lead.aggregate([
+            { $match: matchStage },
+            { $unwind: { path: '$followUps', preserveNullAndEmptyArrays: false } },
+            ...(type ? [{ $match: { 'followUps.type': type } }] : []),
+            { $lookup: { from: 'users', localField: 'followUps.performedBy', foreignField: '_id', as: 'staffUser' } },
+            {
+                $project: {
+                    _id: '$followUps._id',
+                    leadId: '$_id',
+                    leadName: '$name',
+                    type: '$followUps.type',
+                    notes: '$followUps.notes',
+                    outcome: '$followUps.outcome',
+                    date: '$followUps.date',
+                    performedBy: { $ifNull: [{ $arrayElemAt: ['$staffUser.name', 0] }, 'Unknown'] },
+                },
+            },
+            ...(search ? [{ $match: { leadName: { $regex: search, $options: 'i' } } }] : []),
+            { $sort: { date: -1 } },
+            { $limit: 200 },
+        ]);
+
+        res.json({ success: true, data: { logs: results } });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 // Analytics: lead source breakdown
 router.get('/crm/analytics/lead-sources', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), async (req: Request, res: Response) => {
     try {

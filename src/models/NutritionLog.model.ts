@@ -15,7 +15,11 @@ export interface INutritionLog extends Document {
         carbs: number;
         fats: number;
         fiber?: number;
+        isVeg?: boolean;
+        isVegan?: boolean;
+        isJain?: boolean;
     }[];
+    dietaryPreference?: 'non_vegetarian' | 'vegetarian' | 'vegan' | 'jain' | 'sattvic';
     totalCalories: number;
     totalProtein: number;
     totalCarbs: number;
@@ -48,8 +52,15 @@ const NutritionLogSchema: Schema = new Schema(
                 carbs: { type: Number, required: true, default: 0 },
                 fats: { type: Number, required: true, default: 0 },
                 fiber: { type: Number, default: 0 },
+                isVeg:   { type: Boolean },
+                isVegan: { type: Boolean },
+                isJain:  { type: Boolean },
             },
         ],
+        dietaryPreference: {
+            type: String,
+            enum: ['non_vegetarian', 'vegetarian', 'vegan', 'jain', 'sattvic'],
+        },
         totalCalories: { type: Number, default: 0 },
         totalProtein: { type: Number, default: 0 },
         totalCarbs: { type: Number, default: 0 },
