@@ -27,6 +27,7 @@ class ClassController {
                 capacity,
                 pricing,
                 online,
+                videoConfig,
                 cancellationPolicy,
                 zoomMeetingId,
             } = req.body;
@@ -54,6 +55,7 @@ class ClassController {
                 capacity,
                 pricing,
                 online,
+                videoConfig,
                 cancellationPolicy,
                 zoomMeetingId,
             } as any);
@@ -258,9 +260,18 @@ class ClassController {
                 return res.status(400).json({ success: false, message: 'Branch context required' });
             }
 
-            const { classId, memberId, bookingType, paymentStatus } = req.body;
+            const { classId, bookingType, paymentStatus } = req.body;
+            let { memberId } = req.body;
 
             if (!classId) return res.status(400).json({ success: false, message: 'classId is required' });
+
+            // Self-booking: resolve memberId from the authenticated user when not supplied by caller
+            if (!memberId && req.user) {
+                const Member = require('../models/Member.model').default;
+                const member = await Member.findOne({ userId: req.user._id, tenantId });
+                if (member) memberId = member._id;
+            }
+
             if (!memberId) return res.status(400).json({ success: false, message: 'memberId is required' });
 
             const booking = await ClassService.createBooking({
@@ -290,6 +301,19 @@ class ClassController {
 
             const bookingId = String(req.params.bookingId);
             const { reason } = req.body;
+
+            // Ownership check: members may only cancel their own bookings
+            const userRole = (req.user as any).role ?? (req.user as any).userType ?? '';
+            if (['member', 'lead'].includes(userRole)) {
+                const Member = require('../models/Member.model').default;
+                const member = await Member.findOne({ userId: (req.user as any)._id ?? (req.user as any).id, tenantId });
+                if (member) {
+                    const existingBooking = await Booking.findOne({ _id: bookingId, tenantId }).select('memberId').lean();
+                    if (!existingBooking || (existingBooking as any).memberId?.toString() !== member._id?.toString()) {
+                        return res.status(403).json({ success: false, message: 'Not authorized to cancel this booking' });
+                    }
+                }
+            }
 
             const booking = await ClassService.cancelBooking(
                 bookingId,
@@ -409,7 +433,7 @@ class ClassController {
                 : new Date(from.getTime() + 7 * 24 * 60 * 60 * 1000);
 
             const filter: any = { isActive: true, tenantId };
-            if (type) filter.classType = type;
+            if (type) filter.type = type;
 
             const classes = await Class.find(filter).lean();
             const result: any[] = [];

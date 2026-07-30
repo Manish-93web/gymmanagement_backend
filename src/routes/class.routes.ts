@@ -163,6 +163,7 @@ router.post('/:classId/zoom', requireAnyRole('gym_owner', 'branch_manager', 'tra
             undefined;
 
         const vc = (cls as any)?.videoConfig ?? {};
+        const existingPassword: string = (cls as any)?.online?.password ?? '';
         const result = await videoService.createRoom(
             classId,
             topic || (cls as any)?.name || 'Gym Class',
@@ -172,10 +173,9 @@ router.post('/:classId/zoom', requireAnyRole('gym_owner', 'branch_manager', 'tra
                 defaultAudio: vc.defaultAudio !== false,
                 defaultVideo: vc.defaultVideo !== false,
                 trainerAutoScreen: !!vc.trainerAutoScreen,
+                password: existingPassword || undefined,
             },
         );
-
-        const existingPassword: string = (cls as any)?.online?.password ?? '';
         await ClassModel.findByIdAndUpdate(classId, {
             'online.isOnline': true,
             'online.platform': 'gymvideo',
@@ -199,9 +199,9 @@ router.post('/:classId/zoom', requireAnyRole('gym_owner', 'branch_manager', 'tra
                         recipientId: b.memberId?.toString() ?? '',
                         recipientType: 'member',
                         channel: 'push',
-                        message: `${className} is now LIVE!${pwdNote} Tap to join the session.`,
-                        subject: 'Class is Live Now!',
-                        data: { classId, meetingLink: result.joinUrl },
+                        message: `${className} is now LIVE! Join: ${result.joinUrl}${pwdNote}`,
+                        subject: `${className} is Live Now!`,
+                        data: { classId, meetingLink: result.joinUrl, type: 'class_live' },
                     }),
                 ),
             );
@@ -218,13 +218,35 @@ router.post('/:classId/zoom', requireAnyRole('gym_owner', 'branch_manager', 'tra
     }
 });
 
-router.delete('/:classId/zoom/:meetingId', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), async (req: Request, res: Response) => {
+router.delete('/:classId/zoom/:meetingId', requireAnyRole('gym_owner', 'branch_manager', 'trainer', 'super_admin'), async (req: Request, res: Response) => {
     try {
+        const { classId } = req.params;
+        const cls = await ClassModel.findById(classId).select('name').lean();
         await videoService.deleteRoom(req.params.meetingId);
-        await ClassModel.findByIdAndUpdate(req.params.classId, {
-            $unset: { 'online.meetingLink': 1, 'online.meetingId': 1, 'online.platform': 1 },
+        await ClassModel.findByIdAndUpdate(classId, {
+            $unset: { 'online.meetingLink': 1, 'online.meetingId': 1, 'online.platform': 1, 'online.hostUrl': 1 },
             'online.isOnline': false,
         });
+        // Notify booked members that the class has ended
+        try {
+            const bookings = await BookingModel.find({ classId, status: 'confirmed' })
+                .select('memberId tenantId branchId').lean();
+            const className = (cls as any)?.name ?? 'Your class';
+            await Promise.allSettled(
+                bookings.map((b: any) =>
+                    notificationService.sendNotification({
+                        tenantId: b.tenantId?.toString() ?? '',
+                        branchId: b.branchId?.toString() ?? '',
+                        recipientId: b.memberId?.toString() ?? '',
+                        recipientType: 'member',
+                        channel: 'push',
+                        message: `${className} has ended. Check the Recordings section for a replay.`,
+                        subject: `${className} — Session Ended`,
+                        data: { classId, type: 'class_ended' },
+                    }),
+                ),
+            );
+        } catch (_notifyErr) {}
         res.json({ success: true });
     } catch (err: any) {
         res.status(500).json({ success: false, message: err.message });

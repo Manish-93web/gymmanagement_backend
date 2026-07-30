@@ -86,7 +86,7 @@ export class ClassService {
         const filter: any = { isActive: true };
         if (tenantId) filter.tenantId = tenantId;
         if (branchId) filter.branchId = branchId;
-        if (classType) filter.classType = classType;
+        if (classType) filter.type = classType;
         if (trainerId) filter.trainerId = trainerId;
         if (search) {
             filter.$or = [

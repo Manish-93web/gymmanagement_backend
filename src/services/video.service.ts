@@ -1,11 +1,12 @@
 import { randomBytes } from 'crypto';
 
-const VIDEO_SERVER_URL = process.env.VIDEO_SERVER_URL || 'http://localhost:3030';
+const VIDEO_SERVER_URL = process.env.GYMVIDEO_SERVER_URL || process.env.VIDEO_SERVER_URL || 'http://localhost:3030';
 
 export interface VideoRoomConfig {
     defaultAudio?: boolean;
     defaultVideo?: boolean;
     trainerAutoScreen?: boolean;
+    password?: string;
 }
 
 class VideoService {
@@ -45,7 +46,7 @@ class VideoService {
             await fetch(`${VIDEO_SERVER_URL}/api/rooms`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ roomId, roomName: topic, classId, duration: durationMinutes, presenterName: trainerName }),
+                body: JSON.stringify({ roomId, roomName: topic, classId, duration: durationMinutes, presenterName: trainerName, channel_password: config?.password ?? '' }),
                 signal: AbortSignal.timeout(5000),
             });
         } catch (_err) {
@@ -62,6 +63,15 @@ class VideoService {
                 signal: AbortSignal.timeout(5000),
             });
         } catch (_err) {}
+    }
+
+    async getServerHealth(): Promise<{ online: boolean; serverUrl: string }> {
+        try {
+            const resp = await fetch(VIDEO_SERVER_URL, { signal: AbortSignal.timeout(3000) });
+            return { online: resp.ok || resp.status < 500, serverUrl: VIDEO_SERVER_URL };
+        } catch {
+            return { online: false, serverUrl: VIDEO_SERVER_URL };
+        }
     }
 }
 
