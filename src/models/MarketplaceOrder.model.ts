@@ -41,7 +41,7 @@ const MarketplaceOrderSchema = new Schema<IMarketplaceOrder>(
     tenantId:      { type: Schema.Types.ObjectId, required: true },
     memberId:      { type: Schema.Types.ObjectId, required: true },
     memberName:    { type: String, required: true },
-    orderNumber:   { type: String, required: true, unique: true },
+    orderNumber:   { type: String, required: true },
     status:        { type: String, enum: ['pending', 'confirmed', 'processing', 'ready_for_pickup', 'delivered', 'cancelled'], default: 'pending' },
     items:         { type: [OrderItemSchema], required: true },
     subtotal:      { type: Number, required: true },
@@ -59,6 +59,6 @@ const MarketplaceOrderSchema = new Schema<IMarketplaceOrder>(
 
 MarketplaceOrderSchema.index({ tenantId: 1, status: 1 });
 MarketplaceOrderSchema.index({ tenantId: 1, memberId: 1 });
-MarketplaceOrderSchema.index({ orderNumber: 1 });
+MarketplaceOrderSchema.index({ orderNumber: 1 }, { unique: true });
 
 export default mongoose.model<IMarketplaceOrder>('MarketplaceOrder', MarketplaceOrderSchema);

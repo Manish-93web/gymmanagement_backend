@@ -59,7 +59,7 @@ export interface IWhiteLabel extends Document {
 
 const WhiteLabelSchema = new Schema<IWhiteLabel>(
   {
-    tenantId:       { type: Schema.Types.ObjectId, required: true, unique: true },
+    tenantId:       { type: Schema.Types.ObjectId, required: true },
     appName:        { type: String, required: true },
     bundleId:       { type: String, required: true },
     packageName:    { type: String, required: true },
@@ -109,6 +109,6 @@ const WhiteLabelSchema = new Schema<IWhiteLabel>(
   { timestamps: true }
 );
 
-WhiteLabelSchema.index({ tenantId: 1 });
+WhiteLabelSchema.index({ tenantId: 1 }, { unique: true });
 
 export default mongoose.model<IWhiteLabel>('WhiteLabel', WhiteLabelSchema);

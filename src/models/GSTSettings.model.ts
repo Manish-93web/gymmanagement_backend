@@ -35,7 +35,7 @@ const HsnCodeMapSchema = new Schema(
 
 const GSTSettingsSchema: Schema = new Schema(
   {
-    tenantId:            { type: String, required: true, unique: true },
+    tenantId:            { type: String, required: true },
     gstin:               { type: String, default: '' },
     legalBusinessName:   { type: String, default: '' },
     registeredAddress:   { type: String, default: '' },

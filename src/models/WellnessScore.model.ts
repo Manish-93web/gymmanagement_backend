@@ -42,7 +42,7 @@ const WellnessScoreSchema = new Schema<IWellnessScore>(
     calculatedAt:      { type: Date, default: () => new Date() },
     sharedWithInsurer: { type: Boolean, default: false },
     insurerId:         { type: String },
-    shareToken:        { type: String, sparse: true },
+    shareToken:        { type: String },
   },
   { timestamps: true }
 );

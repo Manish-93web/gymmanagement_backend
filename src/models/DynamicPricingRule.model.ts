@@ -50,7 +50,7 @@ const PinnedDateSchema = new Schema(
 
 const DynamicPricingRuleSchema: Schema = new Schema(
     {
-        tenantId: { type: String, required: true, index: true },
+        tenantId: { type: String, required: true },
         branchId: { type: String },
         name: { type: String, required: true },
         isEnabled: { type: Boolean, default: true },

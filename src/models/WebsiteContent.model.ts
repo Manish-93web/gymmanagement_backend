@@ -115,7 +115,7 @@ const TestimonialSchema = new Schema<ITestimonial>(
 
 const WebsiteContentSchema = new Schema<IWebsiteContent>(
   {
-    tenantId:      { type: String, required: true, unique: true },
+    tenantId:      { type: String, required: true },
     // About
     aboutText:     { type: String, default: '' },
     tagline:       String,

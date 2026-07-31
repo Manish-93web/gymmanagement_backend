@@ -98,7 +98,7 @@ const GymProfileSchema = new Schema<IGymProfile>(
     facebook:        String,
     youtube:         String,
     isPublished:     { type: Boolean, default: false },
-    slug:            { type: String, unique: true, sparse: true },
+    slug:            { type: String },
     planHighlights:  { type: [String], default: [] },
     memberCount:     { type: Number, default: 0 },
     reviewCount:     { type: Number, default: 0 },
@@ -108,7 +108,7 @@ const GymProfileSchema = new Schema<IGymProfile>(
 );
 
 GymProfileSchema.index({ city: 1, isPublished: 1 });
-GymProfileSchema.index({ slug: 1 });
+GymProfileSchema.index({ slug: 1 }, { unique: true, sparse: true });
 GymProfileSchema.index({ 'coordinates.lat': 1, 'coordinates.lng': 1 });
 
 export default mongoose.model<IGymProfile>('GymProfile', GymProfileSchema);

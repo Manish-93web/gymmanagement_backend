@@ -24,7 +24,6 @@ const HealthDataExportSchema: Schema = new Schema(
         shareToken: {
             type: String,
             required: true,
-            unique: true,
             default: () => crypto.randomBytes(24).toString('hex'),
         },
         expiresAt: {

@@ -37,7 +37,7 @@ const RefundTierSchema = new Schema<IRefundTier>(
 
 const RefundPolicySchema = new Schema<IRefundPolicy>(
     {
-        tenantId: { type: String, required: true, unique: true, index: true },
+        tenantId: { type: String, required: true },
         isEnabled: { type: Boolean, default: true },
         processingFee: { type: Number, default: 750, min: 0 },
         processingFeeType: { type: String, enum: ['flat', 'percent'], default: 'flat' },

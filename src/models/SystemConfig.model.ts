@@ -57,7 +57,7 @@ export interface ISystemConfig extends Document {
 
 const SystemConfigSchema: Schema = new Schema(
     {
-        tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true, index: true },
+        tenantId: { type: Schema.Types.ObjectId, ref: 'Tenant', required: true },
         general: {
             siteName: { type: String, required: true },
             siteUrl: { type: String, required: true },
