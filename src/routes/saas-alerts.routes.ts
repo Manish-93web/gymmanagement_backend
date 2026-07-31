@@ -8,15 +8,21 @@ const router = Router();
 
 router.use(authenticate);
 
+const isPlatformRole = (role: string) => role === 'super_admin' || role === 'platform_admin';
+
 // GET /api/saas-alerts — get alerts for current user's audience
-router.get('/', tenantContext, async (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response, next) => {
+    if (isPlatformRole((req as any).user?.role)) return next();
+    tenantContext(req, res, next);
+}, async (req: Request, res: Response) => {
     try {
-        const tenantId = (req as any).tenantId;
         const user = (req as any).user;
         const { unread, limit = '20', page = '1' } = req.query;
 
-        const audience = user.role === 'super_admin' ? 'super_admin' : 'gym_owner';
-        const filter: any = { tenantId, audience };
+        const isPlatform = isPlatformRole(user.role);
+        const audience = isPlatform ? 'super_admin' : 'gym_owner';
+        const filter: any = { audience };
+        if (!isPlatform) filter.tenantId = (req as any).tenantId;
         if (unread === 'true') filter.isRead = false;
 
         const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
@@ -36,11 +42,17 @@ router.get('/', tenantContext, async (req: Request, res: Response) => {
 });
 
 // PATCH /api/saas-alerts/:id/read — mark alert as read
-router.patch('/:id/read', tenantContext, async (req: Request, res: Response) => {
+router.patch('/:id/read', async (req: Request, res: Response, next) => {
+    if (isPlatformRole((req as any).user?.role)) return next();
+    tenantContext(req, res, next);
+}, async (req: Request, res: Response) => {
     try {
-        const tenantId = (req as any).tenantId;
+        const user = (req as any).user;
+        const matchFilter: any = { _id: req.params.id };
+        if (!isPlatformRole(user.role)) matchFilter.tenantId = (req as any).tenantId;
+
         const alert = await SaaSAlert.findOneAndUpdate(
-            { _id: req.params.id, tenantId },
+            matchFilter,
             { isRead: true, readAt: new Date() },
             { new: true }
         );
@@ -52,12 +64,18 @@ router.patch('/:id/read', tenantContext, async (req: Request, res: Response) => 
 });
 
 // PATCH /api/saas-alerts/read-all — mark all alerts as read
-router.patch('/read-all', tenantContext, async (req: Request, res: Response) => {
+router.patch('/read-all', async (req: Request, res: Response, next) => {
+    if (isPlatformRole((req as any).user?.role)) return next();
+    tenantContext(req, res, next);
+}, async (req: Request, res: Response) => {
     try {
-        const tenantId = (req as any).tenantId;
         const user = (req as any).user;
-        const audience = user.role === 'super_admin' ? 'super_admin' : 'gym_owner';
-        await SaaSAlert.updateMany({ tenantId, audience, isRead: false }, { isRead: true, readAt: new Date() });
+        const isPlatform = isPlatformRole(user.role);
+        const audience = isPlatform ? 'super_admin' : 'gym_owner';
+        const matchFilter: any = { audience, isRead: false };
+        if (!isPlatform) matchFilter.tenantId = (req as any).tenantId;
+
+        await SaaSAlert.updateMany(matchFilter, { isRead: true, readAt: new Date() });
         res.json({ success: true, message: 'All alerts marked as read' });
     } catch (err: any) {
         res.status(500).json({ success: false, message: err.message });
@@ -65,7 +83,7 @@ router.patch('/read-all', tenantContext, async (req: Request, res: Response) => 
 });
 
 // POST /api/saas-alerts — create alert (super_admin only)
-router.post('/', requireAnyRole('super_admin'), async (req: Request, res: Response) => {
+router.post('/', requireAnyRole('super_admin', 'platform_admin'), async (req: Request, res: Response) => {
     try {
         const alert = await SaaSAlert.create(req.body);
         res.status(201).json({ success: true, data: alert });

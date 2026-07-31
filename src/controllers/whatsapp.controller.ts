@@ -161,6 +161,10 @@ class WhatsAppController {
     // GET /api/whatsapp/logs
     async getLogs(req: Request, res: Response, next: NextFunction) {
         try {
+            // platform_admin / super_admin have no tenant — return empty list
+            if (req.user?.role === 'platform_admin' || req.user?.role === 'super_admin') {
+                return res.json({ success: true, data: { logs: [], pagination: { total: 0, page: 1, pages: 0 } } });
+            }
             const tenantId = req.tenantId;
             const { memberId, page = '1', limit = '20' } = req.query as Record<string, string>;
             const filter: any = { tenantId };

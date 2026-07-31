@@ -109,6 +109,11 @@ export class TenantController {
     // Get current tenant (for logged-in users)
     async getCurrentTenant(req: Request, res: Response): Promise<void> {
         try {
+            // platform_admin / super_admin have no tenant — return null gracefully
+            if (req.user?.role === 'platform_admin' || req.user?.role === 'super_admin') {
+                res.json({ success: true, data: null });
+                return;
+            }
             if (!req.tenantId) {
                 res.status(400).json({
                     status: 'error',

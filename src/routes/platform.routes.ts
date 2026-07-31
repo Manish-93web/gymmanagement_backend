@@ -35,7 +35,7 @@ import { requireRole } from '../middleware/role.middleware';
 const router = express.Router();
 
 // Apply auth and strict role check for ALL routes
-router.use(authenticate, requireRole('super_admin'));
+router.use(authenticate, requireRole('super_admin', 'platform_admin'));
 
 router.get('/tenants', getAllTenants);
 router.get('/tenants/:tenantId', getTenantById);

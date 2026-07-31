@@ -69,6 +69,14 @@ export class NotificationController {
 
     async getNotifications(req: Request, res: Response, next: NextFunction) {
         try {
+            // platform_admin / super_admin have no tenant — return empty list
+            if (req.user?.role === 'platform_admin' || req.user?.role === 'super_admin') {
+                return res.status(200).json({
+                    success: true,
+                    data: { notifications: [], total: 0, unread: 0 },
+                    total: 0,
+                });
+            }
             const tenantId = req.user?.tenantId?.toString() || '';
             const { recipientId, status, channel, page, limit } = req.query;
 

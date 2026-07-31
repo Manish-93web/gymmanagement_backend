@@ -20,8 +20,8 @@ export const tenantContext = async (
         return;
     }
 
-    // Skip for super admin
-    if (req.user.role === 'super_admin') {
+    // Skip for super admin and platform admin (they have no tenant)
+    if (req.user.role === 'super_admin' || req.user.role === 'platform_admin') {
         next();
         return;
     }

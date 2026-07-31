@@ -4,6 +4,19 @@ import nutritionController from '../controllers/nutrition.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { tenantContext } from '../middleware/tenant.middleware';
 
+// ─── NutritionFavourite Model (inline) ────────────────────────────────────────
+const NutritionFavouriteModel: any = mongoose.models['NutritionFavourite'] || mongoose.model('NutritionFavourite', new mongoose.Schema({
+    tenantId: { type: String, required: true },
+    memberId: { type: mongoose.Schema.Types.ObjectId, required: true },
+    name:     { type: String, required: true },
+    calories: { type: Number, default: 0 },
+    protein:  { type: Number, default: 0 },
+    carbs:    { type: Number, default: 0 },
+    fats:     { type: Number, default: 0 },
+    emoji:    { type: String, default: '' },
+    mealTime: { type: String, default: '' },
+}, { timestamps: true, collection: 'nutrition_favourites' }));
+
 // ─── Hydration Log Model (inline) ─────────────────────────────────────────────
 const HydrationLogModel: any = mongoose.models['HydrationLog'] || mongoose.model('HydrationLog', new mongoose.Schema({
     tenantId: { type: String, required: true },
@@ -220,6 +233,45 @@ router.post('/consumption', nutritionController.logConsumption.bind(nutritionCon
 
 // Custom food creation
 router.post('/foods', nutritionController.createCustomFood.bind(nutritionController));
+
+// ─── Meal Favourites ───────────────────────────────────────────────────────────
+router.get('/favourites', async (req: Request, res: Response) => {
+    try {
+        const tenantId = (req as any).tenantId;
+        const memberId = (req as any).user?._id;
+        const favourites = await NutritionFavouriteModel.find({ tenantId, memberId })
+            .sort({ createdAt: -1 })
+            .limit(20)
+            .lean();
+        res.json({ success: true, data: favourites });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+router.post('/favourites', async (req: Request, res: Response) => {
+    try {
+        const tenantId = (req as any).tenantId;
+        const memberId = (req as any).user?._id;
+        const { name, calories, protein, carbs, fats, emoji, mealTime } = req.body;
+        const favourite = await NutritionFavouriteModel.create({ tenantId, memberId, name, calories, protein, carbs, fats, emoji, mealTime });
+        res.status(201).json({ success: true, data: favourite });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+router.delete('/favourites/:id', async (req: Request, res: Response) => {
+    try {
+        const tenantId = (req as any).tenantId;
+        const memberId = (req as any).user?._id;
+        const deleted = await NutritionFavouriteModel.findOneAndDelete({ _id: req.params.id, tenantId, memberId });
+        if (!deleted) return res.status(404).json({ success: false, message: 'Favourite not found' });
+        res.json({ success: true, message: 'Removed from favourites' });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
 
 // ─── Hydration Tracking ────────────────────────────────────────────────────────
 router.post('/hydration/log', async (req: Request, res: Response) => {

@@ -5,7 +5,7 @@ import { requireAnyRole } from '../middleware/rbac.middleware';
 
 const router = Router();
 router.use(authenticate);
-router.use(requireAnyRole('super_admin'));
+router.use(requireAnyRole('super_admin', 'platform_admin'));
 
 router.get('/gyms', adminController.getGyms.bind(adminController));
 router.get('/gyms/:gymId', adminController.getGym.bind(adminController));
