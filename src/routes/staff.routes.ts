@@ -26,7 +26,7 @@ router.get('/stats', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'
 router.post('/clock-in', async (req: Request, res: Response) => {
   try {
     const rawTenantId = (req as any).tenantId || (req as any).user?.tenantId?.toString();
-    const rawStaffId = req.body.staffId || (req as any).user?._id?.toString();
+    const rawStaffId = req.body?.staffId || (req as any).user?._id?.toString();
     if (!rawTenantId) return res.status(400).json({ success: false, message: 'Tenant not found. Please log out and log back in.' });
     if (!rawStaffId) return res.status(400).json({ success: false, message: 'Staff ID is required.' });
 
@@ -77,7 +77,7 @@ router.post('/clock-in', async (req: Request, res: Response) => {
 router.post('/clock-out', async (req: Request, res: Response) => {
   try {
     const rawTenantId = (req as any).tenantId || (req as any).user?.tenantId?.toString();
-    const rawStaffId = req.body.staffId || (req as any).user?._id?.toString();
+    const rawStaffId = req.body?.staffId || (req as any).user?._id?.toString();
     if (!rawTenantId) return res.status(400).json({ success: false, message: 'Tenant not found. Please log out and log back in.' });
     if (!rawStaffId) return res.status(400).json({ success: false, message: 'Staff ID is required.' });
 

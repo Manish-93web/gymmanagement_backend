@@ -21,26 +21,10 @@ router.post('/bookings/:bookingId/cancel', requireAnyRole('gym_owner', 'branch_m
 router.post('/bookings/:bookingId/attendance', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'trainer', 'super_admin'), classController.markAttendance.bind(classController));
 router.get('/bookings/member/:memberId', authenticate, classController.getMemberBookings.bind(classController));
 
-// GymFlow Video platform health check — pings DoconCall server and returns status
-router.get('/gymvideo/health', authenticate, async (req: Request, res: Response) => {
-    const serverUrl: string = (process.env.GYMVIDEO_SERVER_URL ?? 'http://localhost:3030').replace(/\/$/, '');
-    try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3000);
-        try {
-            const resp = await fetch(serverUrl, { signal: controller.signal as any });
-            clearTimeout(timeout);
-            res.json({
-                success: true,
-                data: { online: true, serverUrl, httpStatus: resp.status },
-            });
-        } catch (_fetchErr: any) {
-            clearTimeout(timeout);
-            res.json({ success: true, data: { online: false, serverUrl, error: 'Connection refused or timeout' } });
-        }
-    } catch (err: any) {
-        res.status(500).json({ success: false, message: err.message });
-    }
+// GymFlow Video platform health check — signaling is built into this backend
+router.get('/gymvideo/health', authenticate, async (_req: Request, res: Response) => {
+    const frontendUrl: string = (process.env.GYMVIDEO_FRONTEND_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3001').replace(/\/$/, '');
+    res.json({ success: true, data: { online: true, serverUrl: frontendUrl } });
 });
 
 // Class CRUD routes

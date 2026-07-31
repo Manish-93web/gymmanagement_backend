@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import Trainer from '../models/Trainer.model';
 import User from '../models/User.model';
+import Branch from '../models/Branch.model';
 import Class from '../models/Class.model';
 
 class TrainerController {
@@ -14,24 +15,73 @@ class TrainerController {
             }
 
             const {
-                userId,
-                specializations = [],
+                userId: bodyUserId,
+                firstName,
+                lastName,
+                email,
+                mobile,
+                specializations: bodySpecs,
+                specialization,
                 availability = [],
                 certifications = [],
                 experience,
                 pricing,
                 revenueSharing,
-                branchId,
+                branchId: bodyBranchId,
             } = req.body;
 
-            if (!userId) {
-                return res.status(400).json({ success: false, message: 'userId is required' });
-            }
+            const specializations: string[] = bodySpecs?.length
+                ? bodySpecs
+                : specialization
+                    ? [specialization]
+                    : [];
 
-            // Verify user exists and belongs to this tenant
-            const user = await User.findOne({ _id: userId, tenantId });
-            if (!user) {
-                return res.status(404).json({ success: false, message: 'User not found' });
+            let userId = bodyUserId;
+            let user: any;
+
+            if (!userId) {
+                // Onboard mode: create a User account for the new trainer
+                if (!firstName || !email) {
+                    return res.status(400).json({ success: false, message: 'firstName and email are required to onboard a new trainer' });
+                }
+
+                // Resolve branch
+                let resolvedBranch = bodyBranchId || req.branchId;
+                if (!resolvedBranch) {
+                    const branch = await Branch.findOne({ tenantId }).select('_id').lean();
+                    resolvedBranch = (branch as any)?._id?.toString();
+                }
+                if (!resolvedBranch) {
+                    return res.status(400).json({ success: false, message: 'No branch found for this gym. Please create a branch first.' });
+                }
+
+                // Reuse existing user if email already registered under this tenant
+                const existing = await User.findOne({ email: email.toLowerCase(), tenantId });
+                if (existing) {
+                    user = existing;
+                    userId = existing._id.toString();
+                } else {
+                    const tenantSuffix = tenantId.toString().slice(-6);
+                    const placeholderMobile = mobile || `0000${tenantSuffix}`;
+                    user = await (User as any).create({
+                        tenantId,
+                        branchId: resolvedBranch,
+                        role: 'trainer',
+                        email: email.toLowerCase(),
+                        mobile: placeholderMobile,
+                        password: 'Trainer@123',
+                        firstName,
+                        lastName: lastName || '',
+                        isActive: true,
+                    });
+                    userId = user._id.toString();
+                }
+            } else {
+                // Attach mode: find existing user
+                user = await User.findOne({ _id: userId, tenantId });
+                if (!user) {
+                    return res.status(404).json({ success: false, message: 'User not found' });
+                }
             }
 
             // Check trainer record does not already exist for this userId
@@ -40,7 +90,7 @@ class TrainerController {
                 return res.status(409).json({ success: false, message: 'Trainer profile already exists for this user' });
             }
 
-            const resolvedBranchId = branchId || req.branchId || user.branchId;
+            const resolvedBranchId = bodyBranchId || req.branchId || user.branchId;
             if (!resolvedBranchId) {
                 return res.status(400).json({ success: false, message: 'branchId is required' });
             }
@@ -102,9 +152,19 @@ class TrainerController {
                 Trainer.countDocuments(filter),
             ]);
 
+            const enriched = trainers.map((t: any) => {
+                const obj = t.toObject ? t.toObject() : { ...t };
+                const u = obj.userId as any;
+                obj.firstName = u?.firstName ?? '';
+                obj.lastName = u?.lastName ?? '';
+                obj.email = u?.email ?? '';
+                obj.name = `${obj.firstName} ${obj.lastName}`.trim() || obj.email || '—';
+                return obj;
+            });
+
             return res.json({
                 success: true,
-                data: trainers,
+                data: enriched,
                 pagination: {
                     total,
                     page: parseInt(page as string),
@@ -132,7 +192,14 @@ class TrainerController {
                 return res.status(404).json({ success: false, message: 'Trainer not found' });
             }
 
-            return res.json({ success: true, data: trainer });
+            const trainerObj = (trainer as any).toObject ? (trainer as any).toObject() : trainer;
+            const u = trainerObj.userId as any;
+            trainerObj.firstName = u?.firstName ?? '';
+            trainerObj.lastName = u?.lastName ?? '';
+            trainerObj.email = u?.email ?? '';
+            trainerObj.name = `${trainerObj.firstName} ${trainerObj.lastName}`.trim() || trainerObj.email || '—';
+
+            return res.json({ success: true, data: trainerObj });
         } catch (error: any) {
             return res.status(500).json({ success: false, message: error.message });
         }
@@ -153,6 +220,7 @@ class TrainerController {
                 'availability',
                 'pricing',
                 'revenueSharing',
+                'salary',
                 'isActive',
             ];
 

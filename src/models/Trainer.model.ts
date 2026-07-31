@@ -5,6 +5,10 @@ export interface ITrainer extends Document {
     branchId: mongoose.Types.ObjectId;
     userId: mongoose.Types.ObjectId;
     specializations: string[];
+    salary: {
+        base: number;
+        type: 'fixed' | 'revenue_share' | 'hybrid';
+    };
     certifications: {
         name: string;
         issuedBy: string;
@@ -108,6 +112,10 @@ const TrainerSchema: Schema = new Schema(
                     validityDays: { type: Number, required: true },
                 },
             ],
+        },
+        salary: {
+            base: { type: Number, default: 0 },
+            type: { type: String, enum: ['fixed', 'revenue_share', 'hybrid'], default: 'fixed' },
         },
         revenueSharing: {
             enabled: { type: Boolean, default: false },
