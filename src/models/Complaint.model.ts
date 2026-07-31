@@ -119,31 +119,25 @@ const CounterSchema = new Schema({ _id: String, seq: { type: Number, default: 0 
 const Counter = mongoose.models.ComplaintCounter || mongoose.model('ComplaintCounter', CounterSchema);
 
 // Pre-save hook: auto-generate ticketNumber + compute slaDeadline
-ComplaintSchema.pre('save', async function (next) {
-  try {
-    // Generate ticketNumber only on new documents
-    if (this.isNew && !this.ticketNumber) {
-      const year = new Date().getFullYear();
-      const counterId = `complaint_${year}`;
-      const counter = await Counter.findByIdAndUpdate(
-        counterId,
-        { $inc: { seq: 1 } },
-        { upsert: true, new: true }
-      );
-      const seq = String(counter.seq).padStart(4, '0');
-      this.ticketNumber = `CMP-${year}${seq}`;
-    }
+ComplaintSchema.pre('save', async function () {
+  // Generate ticketNumber only on new documents
+  if (this.isNew && !this.ticketNumber) {
+    const year = new Date().getFullYear();
+    const counterId = `complaint_${year}`;
+    const counter = await Counter.findByIdAndUpdate(
+      counterId,
+      { $inc: { seq: 1 } },
+      { upsert: true, new: true }
+    );
+    const seq = String(counter.seq).padStart(4, '0');
+    this.ticketNumber = `CMP-${year}${seq}`;
+  }
 
-    // Compute slaDeadline on new documents or if priority changed
-    if (this.isNew || this.isModified('priority')) {
-      const hours = SLA_HOURS[this.priority] ?? 24;
-      const base = this.createdAt ? new Date(this.createdAt) : new Date();
-      this.slaDeadline = new Date(base.getTime() + hours * 60 * 60 * 1000);
-    }
-
-    next();
-  } catch (err: any) {
-    next(err);
+  // Compute slaDeadline on new documents or if priority changed
+  if (this.isNew || this.isModified('priority')) {
+    const hours = SLA_HOURS[this.priority] ?? 24;
+    const base = this.createdAt ? new Date(this.createdAt) : new Date();
+    this.slaDeadline = new Date(base.getTime() + hours * 60 * 60 * 1000);
   }
 });
 

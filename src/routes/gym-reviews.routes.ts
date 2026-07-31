@@ -105,7 +105,7 @@ router.get('/my', async (req: Request, res: Response, next: NextFunction) => {
     const userId = (req as any).user?._id;
     const member = await Member.findOne({ userId, tenantId: String(tenantId) }).lean();
     if (!member) return res.json({ success: true, data: null });
-    const review = await GymReview.findOne({ tenantId: String(tenantId), memberId: member._id }).lean();
+    const review = await GymReview.findOne({ tenantId: String(tenantId), memberId: member._id as any }).lean();
     return res.json({ success: true, data: review ?? null });
   } catch (err) { next(err); }
 });
@@ -118,7 +118,7 @@ router.put('/my', async (req: Request, res: Response, next: NextFunction) => {
     const member = await Member.findOne({ userId, tenantId: String(tenantId) }).lean();
     if (!member) return res.status(404).json({ success: false, message: 'Member profile not found' });
 
-    const review = await GymReview.findOne({ tenantId: String(tenantId), memberId: member._id });
+    const review = await GymReview.findOne({ tenantId: String(tenantId), memberId: member._id as any });
     if (!review) return res.status(404).json({ success: false, message: 'No review found to update' });
     if (review.status === 'hidden') {
       return res.status(403).json({ success: false, message: 'Hidden reviews cannot be edited' });
@@ -177,7 +177,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     }
 
     // Check existing review
-    const existing = await GymReview.findOne({ tenantId: String(tenantId), memberId: member._id });
+    const existing = await GymReview.findOne({ tenantId: String(tenantId), memberId: member._id as any });
     if (existing && existing.status === 'approved') {
       return res.status(409).json({ success: false, message: 'You have already submitted a review for this gym' });
     }
@@ -220,7 +220,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
 
     const review = await GymReview.create({
       tenantId: String(tenantId),
-      memberId: member._id,
+      memberId: member._id as any,
       rating,
       title,
       body,

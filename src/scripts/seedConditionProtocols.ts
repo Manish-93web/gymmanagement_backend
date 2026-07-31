@@ -362,11 +362,11 @@ const seedConditionProtocols = async () => {
 
     for (const protocol of PROTOCOLS) {
       const result = await ConditionProtocol.findOneAndUpdate(
-        { condition: protocol.condition, tenantId: null },
+        { condition: protocol.condition, tenantId: null } as any,
         { $set: { ...protocol, tenantId: null } },
         { upsert: true, new: true, setDefaultsOnInsert: true }
-      );
-      if (result.createdAt?.getTime() === result.updatedAt?.getTime()) {
+      ) as any;
+      if (result?.createdAt?.getTime() === result?.updatedAt?.getTime()) {
         created++;
       } else {
         updated++;

@@ -17,7 +17,7 @@ const router = Router();
 // ─── Barcode lookup via Open Food Facts ───────────────────────────────────────
 router.get('/foods/barcode/:code', authenticate, async (req: Request, res: Response) => {
     try {
-        const { code } = req.params;
+        const code = req.params.code as string;
         if (!code || !/^\d{6,14}$/.test(code)) {
             res.status(400).json({ success: false, message: 'Invalid barcode format' });
             return;

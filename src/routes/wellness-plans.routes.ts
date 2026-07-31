@@ -258,7 +258,7 @@ router.post(
     async (req: Request, res: Response) => {
         try {
             const tenantId = (req as any).tenantId;
-            const { planId } = req.params;
+            const planId = req.params.planId as string;
             const { memberId } = req.body;
 
             if (!memberId) {

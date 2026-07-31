@@ -27,7 +27,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
 });
 
 // POST /api/event-partnerships — create (admin only)
-router.post('/', authenticate, requireRole(['admin', 'superadmin']), async (req: Request, res: Response) => {
+router.post('/', authenticate, requireRole('admin', 'super_admin'), async (req: Request, res: Response) => {
   try {
     const tenantId = (req as any).user?.tenantId;
     const partnership = await EventPartnership.create({ ...req.body, tenantId });
@@ -38,7 +38,7 @@ router.post('/', authenticate, requireRole(['admin', 'superadmin']), async (req:
 });
 
 // PUT /api/event-partnerships/:id — update (admin only)
-router.put('/:id', authenticate, requireRole(['admin', 'superadmin']), async (req: Request, res: Response) => {
+router.put('/:id', authenticate, requireRole('admin', 'super_admin'), async (req: Request, res: Response) => {
   try {
     const tenantId = (req as any).user?.tenantId;
     const partnership = await EventPartnership.findOneAndUpdate(
@@ -54,7 +54,7 @@ router.put('/:id', authenticate, requireRole(['admin', 'superadmin']), async (re
 });
 
 // DELETE /api/event-partnerships/:id — delete (admin only)
-router.delete('/:id', authenticate, requireRole(['admin', 'superadmin']), async (req: Request, res: Response) => {
+router.delete('/:id', authenticate, requireRole('admin', 'super_admin'), async (req: Request, res: Response) => {
   try {
     const tenantId = (req as any).user?.tenantId;
     const partnership = await EventPartnership.findOneAndUpdate(

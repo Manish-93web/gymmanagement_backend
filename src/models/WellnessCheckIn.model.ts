@@ -50,7 +50,7 @@ WellnessCheckInSchema.index({ tenantId: 1, memberId: 1, dateStr: 1 }, { unique: 
 WellnessCheckInSchema.index({ tenantId: 1, memberId: 1, date: -1 });
 
 // Auto-calculate overallScore and mood before save
-WellnessCheckInSchema.pre('save', function (next) {
+WellnessCheckInSchema.pre('save', function () {
   const core = [
     this.energyLevel,
     this.wellbeingScore,
@@ -66,8 +66,6 @@ WellnessCheckInSchema.pre('save', function (next) {
   else if (avg < 3.5) this.mood = 'okay';
   else if (avg < 4.5) this.mood = 'good';
   else                this.mood = 'great';
-
-  next();
 });
 
 export default mongoose.model<IWellnessCheckIn>('WellnessCheckIn', WellnessCheckInSchema);

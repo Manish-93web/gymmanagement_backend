@@ -163,7 +163,7 @@ router.get(
     async (req: Request, res: Response): Promise<void> => {
         try {
             const tenantId = (req as any).tenantId ?? (req as any).user?.tenantId?.toString();
-            const { memberId } = req.params;
+            const memberId = req.params.memberId as string;
 
             if (!tenantId) {
                 res.status(400).json({ success: false, message: 'Tenant context missing' });

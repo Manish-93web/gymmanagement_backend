@@ -187,7 +187,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 router.get('/:idOrSlug', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const tenantId = (req as any).tenantId || (req as any).user?.tenantId;
-    const { idOrSlug } = req.params;
+    const idOrSlug = req.params.idOrSlug as string;
 
     const isId = /^[a-f\d]{24}$/i.test(idOrSlug);
     const query = isId

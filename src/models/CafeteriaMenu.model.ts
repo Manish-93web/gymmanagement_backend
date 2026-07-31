@@ -123,17 +123,12 @@ const CafeteriaOrderSchema: Schema = new Schema(
 );
 
 // Auto-generate order number before save
-CafeteriaOrderSchema.pre('save', async function (next) {
-  if (!this.isNew) return next();
-  try {
-    const now = new Date();
-    const yyyymmdd = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const count = await CafeteriaOrder.countDocuments({ tenantId: this.tenantId });
-    this.orderNumber = `CAF-${yyyymmdd}-${String(count + 1).padStart(3, '0')}`;
-    next();
-  } catch (err: any) {
-    next(err);
-  }
+CafeteriaOrderSchema.pre('save', async function () {
+  if (!this.isNew) return;
+  const now = new Date();
+  const yyyymmdd = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  const count = await (this.constructor as typeof mongoose.Model).countDocuments({ tenantId: this.tenantId as string });
+  this.orderNumber = `CAF-${yyyymmdd}-${String(count + 1).padStart(3, '0')}`;
 });
 
 CafeteriaOrderSchema.index({ tenantId: 1, createdAt: -1 });

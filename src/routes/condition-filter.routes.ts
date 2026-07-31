@@ -137,7 +137,7 @@ router.get(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const tenantId = (req as any).tenantId;
-      const { memberId } = req.params;
+      const memberId = req.params.memberId as string;
 
       const conditions = await getMemberConditions(memberId, tenantId);
 

@@ -359,13 +359,13 @@ router.get(
     async (req: Request, res: Response) => {
         try {
             const tenantId = (req as any).tenantId;
-            const { memberId } = req.params;
+            const memberId = req.params.memberId as string;
 
             const transfers = await MembershipTransfer.find({
-                tenantId,
+                tenantId: String(tenantId),
                 $or: [
-                    { fromMemberId: new mongoose.Types.ObjectId(memberId) },
-                    { toMemberId: new mongoose.Types.ObjectId(memberId) },
+                    { fromMemberId: memberId },
+                    { toMemberId: memberId },
                 ],
             })
                 .sort({ createdAt: -1 })

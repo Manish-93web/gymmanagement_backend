@@ -125,7 +125,7 @@ router.delete('/:classId', requireAnyRole('gym_owner', 'branch_manager', 'super_
 router.post('/:classId/zoom', requireAnyRole('gym_owner', 'branch_manager', 'trainer', 'super_admin'), async (req: Request, res: Response) => {
     try {
         const { topic } = req.body;
-        const classId = req.params.classId;
+        const classId = req.params.classId as string;
 
         // Fetch class with trainer info, session duration, and existing online config (e.g. password)
         const cls = await ClassModel.findById(classId)
@@ -204,9 +204,9 @@ router.post('/:classId/zoom', requireAnyRole('gym_owner', 'branch_manager', 'tra
 
 router.delete('/:classId/zoom/:meetingId', requireAnyRole('gym_owner', 'branch_manager', 'trainer', 'super_admin'), async (req: Request, res: Response) => {
     try {
-        const { classId } = req.params;
+        const classId = req.params.classId as string;
         const cls = await ClassModel.findById(classId).select('name').lean();
-        await videoService.deleteRoom(req.params.meetingId);
+        await videoService.deleteRoom(req.params.meetingId as string);
         await ClassModel.findByIdAndUpdate(classId, {
             $unset: { 'online.meetingLink': 1, 'online.meetingId': 1, 'online.platform': 1, 'online.hostUrl': 1 },
             'online.isOnline': false,

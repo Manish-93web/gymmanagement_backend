@@ -58,25 +58,20 @@ CreditNoteSchema.index({ tenantId: 1, originalInvoiceId: 1 });
 CreditNoteSchema.index({ tenantId: 1, status: 1 });
 
 // Auto-generate creditNoteNumber before save
-CreditNoteSchema.pre('save', async function (next) {
-    if (this.creditNoteNumber) return next();
+CreditNoteSchema.pre('save', async function () {
+    if (this.creditNoteNumber) return;
 
-    try {
-        const year = new Date().getFullYear();
-        const prefix = `CN-${year}-`;
+    const year = new Date().getFullYear();
+    const prefix = `CN-${year}-`;
 
-        // Count existing credit notes for this tenant in this year to derive sequence
-        const count = await (this.constructor as typeof mongoose.Model).countDocuments({
-            tenantId: this.tenantId,
-            creditNoteNumber: { $regex: `^${prefix}` },
-        });
+    // Count existing credit notes for this tenant in this year to derive sequence
+    const count = await (this.constructor as typeof mongoose.Model).countDocuments({
+        tenantId: this.tenantId,
+        creditNoteNumber: { $regex: `^${prefix}` },
+    });
 
-        const seq = String(count + 1).padStart(4, '0');
-        this.creditNoteNumber = `${prefix}${seq}`;
-        next();
-    } catch (err: any) {
-        next(err);
-    }
+    const seq = String(count + 1).padStart(4, '0');
+    this.creditNoteNumber = `${prefix}${seq}`;
 });
 
 export default mongoose.model<ICreditNote>('CreditNote', CreditNoteSchema);

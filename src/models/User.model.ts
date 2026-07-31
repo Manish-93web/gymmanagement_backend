@@ -10,7 +10,10 @@ export type UserRole =
     | 'member'
     | 'accountant'
     | 'auditor'
-    | 'franchise_admin';
+    | 'franchise_admin'
+    | 'staff_reception'
+    | 'admin'
+    | 'platform_admin';
 
 export interface IUser extends Document {
     tenantId?: mongoose.Types.ObjectId;

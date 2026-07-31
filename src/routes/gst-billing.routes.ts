@@ -116,7 +116,7 @@ router.get(
       const GSTSettings = require('../models/GSTSettings.model').default;
       const Payment = require('../models/Payment.model').default;
       const tenantId = getTenantId(req);
-      const { invoiceId } = req.params;
+      const invoiceId = req.params.invoiceId as string;
 
       const [settings, invoice] = await Promise.all([
         GSTSettings.findOne({ tenantId }).lean(),

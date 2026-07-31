@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-export type BookingStatus = 'confirmed' | 'waitlist' | 'cancelled' | 'completed' | 'no_show';
+export type BookingStatus = 'confirmed' | 'waitlist' | 'cancelled' | 'completed' | 'no_show' | 'attended';
 
 export interface IBooking extends Document {
     tenantId: mongoose.Types.ObjectId;

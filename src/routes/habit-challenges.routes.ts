@@ -147,7 +147,7 @@ router.post('/join/:templateId', async (req: Request, res: Response, next: NextF
     const memberId = (req as any).user?._id?.toString();
     if (!memberId) return res.status(401).json({ success: false, message: 'Unauthorised' });
 
-    const { templateId } = req.params;
+    const templateId = req.params.templateId as string;
     const template = HABIT_CHALLENGE_TEMPLATES.find((t) => t.id === templateId);
     if (!template) return res.status(404).json({ success: false, message: 'Challenge template not found' });
 

@@ -174,7 +174,7 @@ router.post('/testimonial', async (req: Request, res: Response, next: NextFuncti
 router.patch('/testimonial/:id/approve', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const tenantId = (req as any).tenantId as string;
-    const { id }   = req.params;
+    const id = req.params.id as string;
     const { isApproved } = req.body;
     const content = await WebsiteContent.findOneAndUpdate(
       { tenantId, 'testimonials._id': new mongoose.Types.ObjectId(id) },
@@ -190,7 +190,7 @@ router.patch('/testimonial/:id/approve', async (req: Request, res: Response, nex
 router.delete('/testimonial/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const tenantId = (req as any).tenantId as string;
-    const { id }   = req.params;
+    const id = req.params.id as string;
     const content = await WebsiteContent.findOneAndUpdate(
       { tenantId },
       { $pull: { testimonials: { _id: new mongoose.Types.ObjectId(id) } } },

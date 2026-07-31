@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export interface IEquipment extends Document {
+export interface IEquipment extends Omit<Document, 'model'> {
   tenantId: mongoose.Types.ObjectId;
   name: string;
   category: 'cardio' | 'strength' | 'functional' | 'stretching' | 'accessories' | 'recovery' | 'other';

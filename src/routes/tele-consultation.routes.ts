@@ -263,7 +263,7 @@ router.put(
     try {
       const tenantId = (req as any).tenantId;
       const userId = (req as any).user._id;
-      const { id } = req.params;
+      const id = req.params.id as string;
 
       if (!mongoose.Types.ObjectId.isValid(id)) {
         return res.status(400).json({ success: false, message: 'Invalid consultation ID' });
@@ -303,7 +303,7 @@ router.put(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const tenantId = (req as any).tenantId;
-      const { id } = req.params;
+      const id = req.params.id as string;
       const { prescriptionNotes, followUpDate } = req.body;
 
       if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -333,7 +333,7 @@ router.post(
     try {
       const tenantId = (req as any).tenantId;
       const userId = (req as any).user._id;
-      const { id } = req.params;
+      const id = req.params.id as string;
       const { rating, feedback } = req.body;
 
       if (!mongoose.Types.ObjectId.isValid(id)) {

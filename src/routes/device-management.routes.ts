@@ -422,7 +422,7 @@ router.post(
     requireAnyRole('gym_owner', 'super_admin'),
     async (req: Request, res: Response): Promise<void> => {
         try {
-            const { userId } = req.params;
+            const userId = req.params.userId as string;
             const { allow = true } = req.body;
 
             try {

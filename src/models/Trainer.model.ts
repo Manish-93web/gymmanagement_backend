@@ -3,6 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface ITrainer extends Document {
     tenantId: mongoose.Types.ObjectId;
     branchId: mongoose.Types.ObjectId;
+    branches?: mongoose.Types.ObjectId[];
     userId: mongoose.Types.ObjectId;
     specializations: string[];
     salary: {

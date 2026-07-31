@@ -68,6 +68,15 @@ const rolePermissions: Record<UserRole, string[]> = {
         'franchise:*',
         'report:*',
     ],
+    staff_reception: [
+        'member:read',
+        'member:create',
+        'attendance:*',
+        'booking:*',
+        'class:read',
+    ],
+    admin: ['*'],
+    platform_admin: ['*'],
 };
 
 // Check if user has required permission

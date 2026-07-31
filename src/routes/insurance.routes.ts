@@ -52,7 +52,7 @@ router.post(
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const tenantId = (req as any).tenantId
-      const { memberId } = req.params
+      const memberId = req.params.memberId as string
 
       if (!mongoose.Types.ObjectId.isValid(memberId)) {
         return res.status(400).json({ success: false, message: 'Invalid memberId' })

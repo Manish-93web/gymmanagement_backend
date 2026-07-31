@@ -226,7 +226,7 @@ router.get('/exercise-standards', async (req: Request, res: Response) => {
 
 // ─── GET /exercise-standards/:exerciseId — Full standard for one exercise ─────
 router.get('/exercise-standards/:exerciseId', async (req: Request, res: Response) => {
-  const standard = EXERCISE_STANDARDS[req.params.exerciseId];
+  const standard = EXERCISE_STANDARDS[req.params.exerciseId as string];
   if (!standard) return res.status(404).json({ success: false, message: 'Exercise not found' });
   res.json({ success: true, data: { id: req.params.exerciseId, ...standard } });
 });

@@ -45,10 +45,10 @@ router.get('/', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_ad
       },
     ]);
 
-    const countMap = new Map(
+    const countMap = new Map<string, { count: number; lastVisit: Date | null }>(
       attendanceCounts.map((a: any) => [
         a._id.toString(),
-        { count: a.count, lastVisit: a.lastVisit },
+        { count: a.count as number, lastVisit: a.lastVisit as Date | null },
       ])
     );
 
@@ -138,8 +138,8 @@ router.get('/stats', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'sup
       },
     ]);
 
-    const countMap = new Map(
-      attendanceCounts.map((a: any) => [a._id.toString(), a.count])
+    const countMap = new Map<string, number>(
+      attendanceCounts.map((a: any) => [a._id.toString(), a.count as number])
     );
 
     let irregularCount = 0;
@@ -218,8 +218,8 @@ router.get('/segments', requireAnyRole('gym_owner', 'branch_manager', 'staff', '
       },
     ]);
 
-    const countMap = new Map(
-      attendanceCounts.map((a: any) => [a._id.toString(), a.count])
+    const countMap = new Map<string, number>(
+      attendanceCounts.map((a: any) => [a._id.toString(), a.count as number])
     );
 
     let zeroVisits = 0;

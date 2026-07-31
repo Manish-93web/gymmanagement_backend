@@ -200,7 +200,7 @@ router.get('/automation/birthday-config', async (req: Request, res: Response, ne
         let config = await WhatsAppAutomationConfig.findOne({ tenantId }).lean();
         if (!config) {
             config = await WhatsAppAutomationConfig.create({ tenantId });
-            config = config.toObject ? (config as any).toObject() : config;
+            config = (config as any).toObject?.() ?? config;
         }
         res.json({ success: true, data: (config as any).birthday });
     } catch (error) { next(error); }
@@ -240,7 +240,7 @@ router.get('/automation/festivals', async (req: Request, res: Response, next: Ne
         let config = await WhatsAppAutomationConfig.findOne({ tenantId }).lean();
         if (!config) {
             const created = await WhatsAppAutomationConfig.create({ tenantId });
-            config = created.toObject ? (created as any).toObject() : created;
+            config = (created as any).toObject?.() ?? created;
         }
         res.json({ success: true, data: (config as any).festivals });
     } catch (error) { next(error); }
@@ -517,7 +517,7 @@ router.get('/bot/config', async (req: Request, res: Response, next: NextFunction
     let cfg = await WhatsAppBotConfig.findOne({ tenantId }).lean();
     if (!cfg) {
       const created = await WhatsAppBotConfig.create({ tenantId });
-      cfg = created.toObject ? (created as any).toObject() : created;
+      cfg = (created as any).toObject?.() ?? created;
     }
     res.json({ success: true, data: cfg });
   } catch (err) { next(err); }

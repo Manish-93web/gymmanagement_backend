@@ -56,11 +56,12 @@ router.post('/:trainerId/commissions', requireAnyRole('gym_owner', 'branch_manag
             res.status(400).json({ success: false, message: 'type, amount, description required' });
             return;
         }
-        const trainer = await TrainerModel.findOne({ _id: req.params.trainerId, tenantId: (req as any).tenantId });
+        const trainerId = req.params.trainerId as string;
+        const trainer = await TrainerModel.findOne({ _id: trainerId, tenantId: (req as any).tenantId });
         if (!trainer) { res.status(404).json({ success: false, message: 'Trainer not found' }); return; }
         const now = new Date();
         const log = await CommissionLog.create({
-            trainerId: req.params.trainerId,
+            trainerId,
             tenantId: (req as any).tenantId,
             branchId: trainer.branchId ?? trainer.branches?.[0],
             type, amount, baseAmount: baseAmount ?? 0,

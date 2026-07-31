@@ -65,24 +65,19 @@ const RefundRequestSchema = new Schema<IRefundRequest>(
 );
 
 // Auto-generate requestNumber before save
-RefundRequestSchema.pre('save', async function (next) {
-    if (this.requestNumber) return next();
+RefundRequestSchema.pre('save', async function () {
+    if (this.requestNumber) return;
 
-    try {
-        const year = new Date().getFullYear();
-        const prefix = `RR-${year}-`;
+    const year = new Date().getFullYear();
+    const prefix = `RR-${year}-`;
 
-        const count = await (this.constructor as typeof mongoose.Model).countDocuments({
-            tenantId: this.tenantId,
-            requestNumber: { $regex: `^${prefix}` },
-        });
+    const count = await (this.constructor as typeof mongoose.Model).countDocuments({
+        tenantId: this.tenantId,
+        requestNumber: { $regex: `^${prefix}` },
+    });
 
-        const seq = String(count + 1).padStart(4, '0');
-        this.requestNumber = `${prefix}${seq}`;
-        next();
-    } catch (err: any) {
-        next(err);
-    }
+    const seq = String(count + 1).padStart(4, '0');
+    this.requestNumber = `${prefix}${seq}`;
 });
 
 // Indexes

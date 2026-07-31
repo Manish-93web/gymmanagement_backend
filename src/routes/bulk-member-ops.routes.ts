@@ -297,9 +297,9 @@ router.post('/bulk-renewal-reminder', async (req: Request, res: Response) => {
                         userId: (member as any).userId,
                         title: 'Membership Renewal Reminder',
                         message: personalizedMsg,
-                        type: 'renewal_reminder',
+                        type: 'renewal_reminder' as any,
                         isRead: false,
-                    });
+                    } as any);
                 } catch {
                     // Notification model may not accept all fields — non-critical
                 }

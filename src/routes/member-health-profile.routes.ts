@@ -26,7 +26,7 @@ router.get('/blood-group-stats', async (req: Request, res: Response, next: NextF
                 $match: {
                     tenantId: new mongoose.Types.ObjectId(tenantId),
                     status: 'active',
-                    bloodGroup: { $exists: true, $ne: null, $ne: '' },
+                    bloodGroup: { $exists: true, $nin: [null, ''] },
                 },
             },
             { $group: { _id: '$bloodGroup', count: { $sum: 1 } } },
