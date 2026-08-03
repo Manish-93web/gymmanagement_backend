@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
 
 // Frontend URL where the video room page lives (Next.js, port 3001)
-const FRONTEND_URL = process.env.GYMVIDEO_FRONTEND_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001';
+const FRONTEND_URL = process.env.GYMVIDEO_FRONTEND_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.FRONTEND_URL || 'http://localhost:3001';
 
 export interface VideoRoomConfig {
     defaultAudio?: boolean;
