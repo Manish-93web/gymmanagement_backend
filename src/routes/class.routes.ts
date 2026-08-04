@@ -23,8 +23,8 @@ router.get('/bookings/member/:memberId', authenticate, classController.getMember
 
 // GymFlow Video platform health check — signaling is built into this backend
 router.get('/gymvideo/health', authenticate, async (_req: Request, res: Response) => {
-    const frontendUrl: string = (process.env.GYMVIDEO_FRONTEND_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3001').replace(/\/$/, '');
-    res.json({ success: true, data: { online: true, serverUrl: frontendUrl } });
+    const health = await videoService.getServerHealth();
+    res.json({ success: true, data: { online: health.online, serverUrl: health.serverUrl.replace(/\/$/, '') } });
 });
 
 // Class CRUD routes
