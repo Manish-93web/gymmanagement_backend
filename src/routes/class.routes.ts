@@ -13,6 +13,7 @@ router.use(authenticate);
 
 // Static routes first (must be before /:classId param routes)
 router.get('/categories', authenticate, classController.getCategories.bind(classController));
+router.post('/categories', requireAnyRole('gym_owner', 'branch_manager', 'trainer', 'super_admin'), classController.createCategory.bind(classController));
 router.get('/my-bookings', authenticate, classController.getMyBookings.bind(classController));
 router.get('/me/bookings', authenticate, classController.getMyBookings.bind(classController));
 router.get('/occurrences', authenticate, classController.getAllOccurrences.bind(classController));
@@ -34,6 +35,54 @@ router.get('/', authenticate, classController.getClasses.bind(classController));
 // Parameterized routes (after static routes)
 router.get('/:classId/bookings', authenticate, classController.getClassBookings.bind(classController));
 router.get('/:classId/occurrences', authenticate, classController.getClassOccurrences.bind(classController));
+
+// Waitlist — notify a waitlisted member that a spot may be opening up
+router.post('/:classId/waitlist/:bookingId/notify', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'trainer', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+        const { classId, bookingId } = req.params;
+        const booking = await BookingModel.findOne({ _id: bookingId, classId, status: 'waitlist' }).lean();
+        if (!booking) { res.status(404).json({ success: false, message: 'Waitlist entry not found' }); return; }
+
+        const cls = await ClassModel.findById(classId).select('name').lean();
+        const className = (cls as any)?.name ?? 'the class';
+
+        try {
+            await notificationService.sendNotification({
+                tenantId: (booking as any).tenantId?.toString() ?? '',
+                branchId: (booking as any).branchId?.toString() ?? '',
+                recipientId: (booking as any).memberId?.toString() ?? '',
+                recipientType: 'member',
+                channel: 'push',
+                message: `A spot may be opening up in ${className}. Stay ready — you'll be confirmed automatically if one frees up.`,
+                subject: `Waitlist Update — ${className}`,
+                data: { classId, bookingId, type: 'waitlist_notify' },
+            });
+        } catch (_notifyErr) {}
+
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Waitlist — manually promote a waitlisted booking straight to confirmed
+router.post('/:classId/waitlist/:bookingId/promote', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'trainer', 'super_admin'), async (req: Request, res: Response) => {
+    try {
+        const { classId, bookingId } = req.params;
+        const booking = await BookingModel.findOne({ _id: bookingId, classId, status: 'waitlist' });
+        if (!booking) { res.status(404).json({ success: false, message: 'Waitlist entry not found' }); return; }
+
+        booking.status = 'confirmed';
+        booking.set('waitlistPosition', undefined);
+        await booking.save();
+
+        await ClassModel.findByIdAndUpdate(classId, { $inc: { 'capacity.current': 1 } });
+
+        res.json({ success: true, data: booking });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
 
 // Video status — returns whether the class has an active gymvideo room
 router.get('/:classId/video-status', authenticate, async (req: Request, res: Response) => {
@@ -128,15 +177,22 @@ router.post('/:classId/zoom', requireAnyRole('gym_owner', 'branch_manager', 'tra
         const classId = req.params.classId as string;
 
         // Fetch class with trainer info, session duration, and existing online config (e.g. password)
+        // Trainer.firstName/lastName don't exist on the Trainer model — the
+        // name lives on the linked User document, so populate through it.
         const cls = await ClassModel.findById(classId)
             .select('name schedule trainerId online videoConfig')
-            .populate<{ trainerId: { firstName?: string; lastName?: string } | null }>('trainerId', 'firstName lastName')
+            .populate<{ trainerId: { userId?: { firstName?: string; lastName?: string } } | null }>({
+                path: 'trainerId',
+                select: 'userId',
+                populate: { path: 'userId', select: 'firstName lastName' },
+            })
             .lean();
 
         const durationMinutes: number = (cls as any)?.schedule?.duration ?? 60;
-        const trainer = (cls as any)?.trainerId as { firstName?: string; lastName?: string } | null;
-        const trainerFromClass = trainer
-            ? `${trainer.firstName ?? ''} ${trainer.lastName ?? ''}`.trim()
+        const trainer = (cls as any)?.trainerId as { userId?: { firstName?: string; lastName?: string } } | null;
+        const trainerUser = trainer?.userId;
+        const trainerFromClass = trainerUser
+            ? `${trainerUser.firstName ?? ''} ${trainerUser.lastName ?? ''}`.trim()
             : '';
 
         // Fall back to the requesting user's name (e.g. gym owner starting the room)

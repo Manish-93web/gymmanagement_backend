@@ -342,7 +342,7 @@ router.post(
 // ─── GET /dynamic-pricing/snapshots ───────────────────────────────────────────
 router.get(
     '/snapshots',
-    requireAnyRole('gym_owner', 'branch_manager'),
+    requireAnyRole('gym_owner', 'branch_manager', 'member'),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
             const tenantId = (req as any).tenantId;
@@ -544,7 +544,22 @@ router.get(
                 .limit(50)
                 .lean();
 
-            return res.json({ success: true, data: underbooked });
+            // Attach a suggested (discounted) price for each low-demand slot using
+            // the off-peak discount from its applicable pricing rule, to help fill demand.
+            const ruleNames = [...new Set(underbooked.map((s: any) => s.ruleName).filter(Boolean))];
+            const rules = ruleNames.length
+                ? await DynamicPricingRule.find({ tenantId, name: { $in: ruleNames } }).lean()
+                : [];
+            const ruleByName = new Map(rules.map((r: any) => [r.name, r]));
+
+            const withSuggestions = underbooked.map((slot: any) => {
+                const rule = ruleByName.get(slot.ruleName);
+                const discount = rule?.offPeakDiscount ?? 0.8;
+                const suggestedPrice = Math.min(slot.computedPrice, Math.round(slot.basePrice * discount));
+                return { ...slot, suggestedPrice };
+            });
+
+            return res.json({ success: true, data: withSuggestions });
         } catch (err) {
             next(err);
         }

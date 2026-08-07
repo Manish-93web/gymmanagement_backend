@@ -116,10 +116,31 @@ router.post('/join', async (req: Request, res: Response, next: NextFunction) => 
     const month3StartDate = addDays(startDate, 60);
     const endDate = addDays(startDate, 90);
 
+    // NOTE: Challenge678.model's MonthProgressSchema requires mealLogTarget
+    // (no default) plus the other pillar-2/3 fields. Omitting them here made
+    // every Challenge678.create() call below throw a Mongoose ValidationError,
+    // so nobody could ever join the challenge — populate them explicitly,
+    // mirroring the workout targets for meals and the schema default (2) for
+    // consultations.
     const monthProgress = [
-      { month: 1 as const, target: 6 as const, achieved: 0, isComplete: false, workoutDates: [] },
-      { month: 2 as const, target: 7 as const, achieved: 0, isComplete: false, workoutDates: [] },
-      { month: 3 as const, target: 8 as const, achieved: 0, isComplete: false, workoutDates: [] },
+      {
+        month: 1 as const, target: 6 as const, achieved: 0, isComplete: false, workoutDates: [],
+        mealLogTarget: 6 as const, mealLogsAchieved: 0, mealLogDates: [], mealPillarComplete: false,
+        consultationTarget: 2 as const, consultationsAchieved: 0, consultationDates: [], consultationPillarComplete: false,
+        allPillarsComplete: false,
+      },
+      {
+        month: 2 as const, target: 7 as const, achieved: 0, isComplete: false, workoutDates: [],
+        mealLogTarget: 7 as const, mealLogsAchieved: 0, mealLogDates: [], mealPillarComplete: false,
+        consultationTarget: 2 as const, consultationsAchieved: 0, consultationDates: [], consultationPillarComplete: false,
+        allPillarsComplete: false,
+      },
+      {
+        month: 3 as const, target: 8 as const, achieved: 0, isComplete: false, workoutDates: [],
+        mealLogTarget: 8 as const, mealLogsAchieved: 0, mealLogDates: [], mealPillarComplete: false,
+        consultationTarget: 2 as const, consultationsAchieved: 0, consultationDates: [], consultationPillarComplete: false,
+        allPillarsComplete: false,
+      },
     ];
 
     const challenge = await Challenge678.create({

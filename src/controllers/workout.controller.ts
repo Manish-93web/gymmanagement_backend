@@ -2,6 +2,7 @@
 import workoutService from '../services/workout.service';
 import WorkoutLog from '../models/WorkoutLog.model';
 import Workout from '../models/Workout.model';
+import { getOwnMemberId } from '../utils/memberOwnership';
 
 export class WorkoutController {
     // Get all workouts
@@ -49,8 +50,18 @@ export class WorkoutController {
             const tenantId = isSuperAdmin ? req.body.tenantId : req.user?.tenantId?.toString();
             const branchId = isSuperAdmin ? req.body.branchId : req.user?.branchId?.toString();
 
+            let memberId = req.body.memberId;
+            if (req.user?.role === 'member') {
+                // Self-authored workout: always attribute to the caller's own Member
+                // record, ignoring any memberId the client tries to send.
+                const ownMemberId = await getOwnMemberId(req);
+                if (!ownMemberId) return res.status(403).json({ success: false, message: 'No linked member record' });
+                memberId = ownMemberId;
+            }
+
             const workout = await workoutService.createWorkout({
                 ...req.body,
+                memberId,
                 tenantId,
                 branchId
             });
@@ -66,8 +77,16 @@ export class WorkoutController {
         try {
             const { id } = req.params as Record<string, string>;
             const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
+
+            let ownershipFilter: Record<string, any> = {};
+            if (req.user?.role === 'member') {
+                const ownMemberId = await getOwnMemberId(req);
+                if (!ownMemberId) return res.status(403).json({ success: false, message: 'No linked member record' });
+                ownershipFilter = { memberId: ownMemberId };
+            }
+
             const workout = await Workout.findOneAndUpdate(
-                { _id: id, ...(tenantId ? { tenantId } : {}) },
+                { _id: id, ...(tenantId ? { tenantId } : {}), ...ownershipFilter },
                 { $set: req.body },
                 { new: true, runValidators: true }
             );
@@ -81,7 +100,15 @@ export class WorkoutController {
         try {
             const { id } = req.params as Record<string, string>;
             const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
-            const workout = await Workout.findOneAndDelete({ _id: id, ...(tenantId ? { tenantId } : {}) });
+
+            let ownershipFilter: Record<string, any> = {};
+            if (req.user?.role === 'member') {
+                const ownMemberId = await getOwnMemberId(req);
+                if (!ownMemberId) return res.status(403).json({ success: false, message: 'No linked member record' });
+                ownershipFilter = { memberId: ownMemberId };
+            }
+
+            const workout = await Workout.findOneAndDelete({ _id: id, ...(tenantId ? { tenantId } : {}), ...ownershipFilter });
             if (!workout) return res.status(404).json({ success: false, message: 'Workout not found' });
             res.status(200).json({ success: true, message: 'Workout deleted' });
         } catch (error) { next(error); }

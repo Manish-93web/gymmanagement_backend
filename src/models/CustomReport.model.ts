@@ -3,7 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface ICustomReport extends Document {
     name: string;
     description?: string;
-    dataSource: 'members' | 'payments' | 'attendance' | 'classes' | 'users';
+    dataSource: 'members' | 'payments' | 'attendance' | 'classes' | 'users' | 'leads';
     filters: {
         field: string;
         operator: string;
@@ -37,7 +37,7 @@ const CustomReportSchema = new Schema<ICustomReport>(
         dataSource: {
             type: String,
             required: true,
-            enum: ['members', 'payments', 'attendance', 'classes', 'users'],
+            enum: ['members', 'payments', 'attendance', 'classes', 'users', 'leads'],
         },
         filters: [
             {

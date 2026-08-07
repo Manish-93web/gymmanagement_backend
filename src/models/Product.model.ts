@@ -8,6 +8,7 @@ export interface IProduct extends Document {
     category: 'supplement' | 'apparel' | 'equipment' | 'accessory' | 'other';
     sku: string;
     barcode?: string;
+    emoji?: string;
     pricing: {
         cost: number;
         sellingPrice: number;
@@ -45,6 +46,7 @@ const ProductSchema: Schema = new Schema(
         },
         sku: { type: String, required: true, unique: true },
         barcode: { type: String, unique: true, sparse: true },
+        emoji: { type: String },
         pricing: {
             cost: { type: Number, required: true },
             sellingPrice: { type: Number, required: true },

@@ -33,6 +33,8 @@ export const getInactivityStats = async (req: Request, res: Response) => {
         const totalActive = members.length;
         const retentionRate = totalActive > 0 ? ((totalActive - critical) / totalActive) * 100 : 100;
 
+        const winbackActive = await WinbackCampaign.countDocuments({ ...(tenantId ? { tenantId } : {}), status: 'sending' });
+
         res.status(200).json({
             success: true,
             data: {
@@ -41,6 +43,7 @@ export const getInactivityStats = async (req: Request, res: Response) => {
                 churnedCount: 0, // Need churn definition
                 totalInactive: critical + high + medium,
                 retentionRate: Math.round(retentionRate),
+                winbackActive,
                 riskLevels: { low, medium, high, critical }
             }
         });

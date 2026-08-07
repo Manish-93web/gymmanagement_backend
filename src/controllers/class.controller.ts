@@ -76,6 +76,22 @@ class ClassController {
         }
     }
 
+    // POST /categories
+    async createCategory(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant context required' });
+
+            const { name, description, color } = req.body;
+            if (!name?.trim()) return res.status(400).json({ success: false, message: 'name is required' });
+
+            const category = await ClassService.createCategory(tenantId, name, description, color);
+            return res.status(201).json({ success: true, data: category });
+        } catch (error) {
+            return next(error);
+        }
+    }
+
     // GET /
     async getClasses(req: Request, res: Response, next: NextFunction) {
         try {
@@ -435,7 +451,23 @@ class ClassController {
             const filter: any = { isActive: true, tenantId };
             if (type) filter.type = type;
 
-            const classes = await Class.find(filter).lean();
+            // Trainer.firstName/lastName don't exist on the Trainer model —
+            // the name lives on the linked User document, so populate through it.
+            const classes = await Class.find(filter)
+                .populate({
+                    path: 'trainerId',
+                    select: 'specializations userId',
+                    populate: { path: 'userId', select: 'firstName lastName' },
+                })
+                .lean();
+
+            classes.forEach((c: any) => {
+                if (c.trainerId && typeof c.trainerId === 'object') {
+                    const u = c.trainerId.userId;
+                    c.trainerId.firstName = u?.firstName ?? '';
+                    c.trainerId.lastName = u?.lastName ?? '';
+                }
+            });
             const result: any[] = [];
 
             for (const classDoc of classes) {

@@ -285,12 +285,16 @@ router.post('/:id/verify-today', async (req: Request, res: Response, next: NextF
 
     await participation.save();
 
+    const justCompleted = participation.status === 'completed';
+
     return res.json({
       success: true,
       data: {
         achieved,
         achievedDays: participation.achievedDays,
         status: participation.status,
+        completed: justCompleted,
+        pointsEarned: justCompleted ? template.rewardPoints : 0,
         calendarData: participation.calendarData,
       },
     });

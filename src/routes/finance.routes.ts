@@ -22,6 +22,9 @@ router.get('/dashboard', requireAnyRole('gym_owner', 'branch_manager', 'accounta
         const tid = tenantId(req);
         const now = new Date();
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        // Rolling 30-day window for "Monthly Revenue" so recent payments from just
+        // before the 1st of the month still show up instead of reading as ₹0.
+        const thirtyDaysAgo = new Date(startOfDay(now).getTime() - 29 * 24 * 60 * 60 * 1000);
         const todayStart = startOfDay(now);
 
         // Import Payment model dynamically to avoid circular deps
@@ -30,11 +33,11 @@ router.get('/dashboard', requireAnyRole('gym_owner', 'branch_manager', 'accounta
         const [todayRevResult, monthRevResult, totalExpenses, pendingPayments] = await Promise.all([
             Payment.aggregate([
                 { $match: { tenantId: tid, status: 'completed', createdAt: { $gte: todayStart, $lte: endOfDay(now) } } },
-                { $group: { _id: null, total: { $sum: '$amount' } } },
+                { $group: { _id: null, total: { $sum: '$amount.total' } } },
             ]),
             Payment.aggregate([
-                { $match: { tenantId: tid, status: 'completed', createdAt: { $gte: monthStart } } },
-                { $group: { _id: null, total: { $sum: '$amount' } } },
+                { $match: { tenantId: tid, status: 'completed', createdAt: { $gte: thirtyDaysAgo } } },
+                { $group: { _id: null, total: { $sum: '$amount.total' } } },
             ]),
             Expense.aggregate([
                 { $match: { tenantId: tid, date: { $gte: monthStart } } },
@@ -42,7 +45,7 @@ router.get('/dashboard', requireAnyRole('gym_owner', 'branch_manager', 'accounta
             ]),
             Payment.aggregate([
                 { $match: { tenantId: tid, status: { $in: ['pending', 'failed'] } } },
-                { $group: { _id: null, total: { $sum: '$amount' }, count: { $sum: 1 } } },
+                { $group: { _id: null, total: { $sum: '$amount.total' }, count: { $sum: 1 } } },
             ]),
         ]);
 
@@ -62,8 +65,8 @@ router.get('/dashboard', requireAnyRole('gym_owner', 'branch_manager', 'accounta
             _id: p._id,
             description: `${p.memberId?.firstName ?? ''} ${p.memberId?.lastName ?? ''}`.trim() || 'Unknown Member',
             date: p.createdAt,
-            amount: p.amount,
-            method: p.paymentMethod ?? 'cash',
+            amount: p.amount?.total ?? p.amount,
+            method: p.method ?? 'cash',
             type: 'revenue' as const,
         }));
 

@@ -6,6 +6,30 @@ import ChallengeService from './challenge.service';
 import RewardPointsService from './reward-points.service';
 import logger from '../config/logger';
 
+// Point thresholds for the member-facing level ladder — mirrors the
+// bronze/silver/gold/platinum/diamond tiers already used for badges.
+const LEVEL_TIERS = [
+    { name: 'Bronze', min: 0 },
+    { name: 'Silver', min: 1000 },
+    { name: 'Gold', min: 3000 },
+    { name: 'Platinum', min: 7000 },
+    { name: 'Diamond', min: 15000 },
+] as const;
+
+function computeLevelInfo(totalPoints: number) {
+    let currentIndex = 0;
+    for (let i = 0; i < LEVEL_TIERS.length; i++) {
+        if (totalPoints >= LEVEL_TIERS[i].min) currentIndex = i;
+    }
+    const current = LEVEL_TIERS[currentIndex];
+    const next = LEVEL_TIERS[currentIndex + 1];
+    return {
+        levelName: current.name,
+        nextLevelPoints: next ? next.min : current.min,
+        pointsToNextLevel: next ? Math.max(0, next.min - totalPoints) : 0,
+    };
+}
+
 class GamificationDashboardService {
     /**
      * Get complete gamification dashboard for member
@@ -37,10 +61,13 @@ class GamificationDashboardService {
             member.tenantId.toString()
         );
         const nextBadges = allBadges.filter((b) => !b.earned).slice(0, 3);
+        const totalPoints = member.gamification?.totalPoints || 0;
+        const levelInfo = computeLevelInfo(totalPoints);
 
         return {
             overview: {
-                totalPoints: member.gamification?.totalPoints || 0,
+                totalPoints,
+                ...levelInfo,
                 currentStreak: member.gamification?.currentStreak || 0,
                 longestStreak: member.gamification?.longestStreak || 0,
                 badgesEarned: badges.length,

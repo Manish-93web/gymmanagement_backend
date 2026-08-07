@@ -4,6 +4,23 @@ import { requireAnyRole } from '../middleware/rbac.middleware';
 import { tenantContext } from '../middleware/tenant.middleware';
 import VideoContent from '../models/VideoContent.model';
 import WellnessLog from '../models/WellnessLog.model';
+import Member from '../models/Member.model';
+
+/**
+ * Resolve the Member._id for the authenticated user. The mobile app has no
+ * way to know its own Member document id (only the User id), so wellness
+ * endpoints resolve it server-side the same way tele-consultation.routes.ts
+ * does via `Member.findOne({ userId, tenantId })`.
+ */
+async function resolveSelfMemberId(req: Request): Promise<string | null> {
+  const explicit = req.query.memberId || req.body?.memberId;
+  if (explicit) return String(explicit);
+  const tenantId = (req as any).user?.tenantId || req.tenantId;
+  const userId = (req as any).user?._id;
+  if (!userId) return null;
+  const member = await Member.findOne({ userId, tenantId }).select('_id').lean();
+  return member?._id ? String(member._id) : null;
+}
 
 const router = Router();
 router.use(authenticate, tenantContext);
@@ -121,12 +138,14 @@ router.get('/categories', async (req: Request, res: Response, next: NextFunction
 router.get('/wellness/logs', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const tenantId = (req as any).user?.tenantId || req.tenantId;
-    const memberId = req.query.memberId || (req as any).user?.memberId;
+    const memberId = await resolveSelfMemberId(req);
+    if (!memberId) {
+      return res.json({ success: true, data: { logs: [], weeklyAvg: { mood: 0, energyLevel: 0, stressLevel: 0, sleepQuality: 0 } } });
+    }
     const days = parseInt(String(req.query.days || '30'));
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    const filter: any = { tenantId, date: { $gte: since } };
-    if (memberId) filter.memberId = memberId;
+    const filter: any = { tenantId, date: { $gte: since }, memberId };
 
     const logs = await WellnessLog.find(filter)
       .sort({ date: -1 })
@@ -155,7 +174,7 @@ router.get('/wellness/logs', async (req: Request, res: Response, next: NextFunct
 router.post('/wellness/logs', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const tenantId = (req as any).user?.tenantId || req.tenantId;
-    const memberId = req.body.memberId || (req as any).user?.memberId;
+    const memberId = await resolveSelfMemberId(req);
     if (!memberId) return res.status(400).json({ success: false, message: 'memberId is required' });
 
     const { mood, energyLevel, stressLevel, sleepQuality, sleepHours, notes, activitiesDone, gratitudeEntry, affirmation, videoWatched } = req.body;

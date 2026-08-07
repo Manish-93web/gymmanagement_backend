@@ -52,6 +52,8 @@ export interface ICampaign extends Document {
         revenue: number;
     };
     createdBy: mongoose.Types.ObjectId;
+    sentAt?: Date;
+    completedAt?: Date;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -115,6 +117,8 @@ const CampaignSchema: Schema = new Schema(
             revenue: { type: Number, default: 0 },
         },
         createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        sentAt: { type: Date },
+        completedAt: { type: Date },
     },
     { timestamps: true }
 );

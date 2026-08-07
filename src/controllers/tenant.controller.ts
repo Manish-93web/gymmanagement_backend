@@ -29,6 +29,8 @@ const updateTenantSchema = z.object({
     name: z.string().min(1).optional(),
     email: z.string().email().optional(),
     mobile: z.string().min(10).max(15).optional(),
+    address: z.string().optional(),
+    timezone: z.string().optional(),
     branding: z.object({
         logo: z.string().optional(),
         primaryColor: z.string().optional(),

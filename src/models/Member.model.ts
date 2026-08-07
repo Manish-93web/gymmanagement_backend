@@ -139,6 +139,7 @@ export interface IMember extends Document {
     lastCheckIn?: Date;
     sNo?: number;
     bloodGroup?: 'A+' | 'A-' | 'B+' | 'B-' | 'O+' | 'O-' | 'AB+' | 'AB-' | 'unknown';
+    abhaId?: string;
     emergencyContact?: { name: string; phone: string; relationship?: string };
     emergencyContactName?: string;
     emergencyContactPhone?: string;
@@ -312,6 +313,7 @@ const MemberSchema: Schema = new Schema(
         lastCheckIn: { type: Date },
         sNo: { type: Number, index: true },
         bloodGroup: { type: String, enum: ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-', 'unknown'], default: 'unknown' },
+        abhaId: { type: String },
         emergencyContact: {
             name: { type: String },
             phone: { type: String },

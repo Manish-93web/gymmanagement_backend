@@ -257,6 +257,7 @@ export class AuthController {
                         tenantId: req.user.tenantId,
                         isMobileVerified: req.user.isMobileVerified,
                         themePreference: req.user.themePreference,
+                        createdAt: req.user.createdAt,
                     },
                     tenant: await Tenant.findById(req.user.tenantId),
                 },

@@ -45,7 +45,7 @@ export class InquiryController {
                 (req.query.tenantId as string | undefined) ||
                 (req.body.tenantId as string | undefined);
 
-            const { name, phone, notes, branchId } = req.body;
+            const { name, phone, email, source, interestedPlan, budget, goals, assignTo, notes, branchId } = req.body;
 
             if (!name || !phone) {
                 res.status(400).json({ success: false, message: 'Name and phone are required' });
@@ -62,11 +62,17 @@ export class InquiryController {
 
             const inquiry = await Inquiry.create({
                 tenantId,
-                branchId: branchId || undefined,
-                name:     name.trim(),
-                phone:    phone.trim(),
-                notes:    notes || '',
-                status:   'new',
+                branchId:       branchId || undefined,
+                name:           name.trim(),
+                phone:          phone.trim(),
+                email:          email || undefined,
+                source:         source || undefined,
+                interestedPlan: interestedPlan || undefined,
+                budget:         budget || undefined,
+                goals:          goals || undefined,
+                assignTo:       assignTo || undefined,
+                notes:          notes || '',
+                status:         'new',
             });
 
             res.status(201).json({
@@ -109,6 +115,32 @@ export class InquiryController {
         }
     }
 
+    // GET /:id — fetch a single inquiry
+    async getInquiryById(req: Request, res: Response): Promise<void> {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) { NO_TENANT(res); return; }
+
+            const id = req.params.id as string;
+
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                res.status(400).json({ success: false, message: 'Invalid inquiry ID' });
+                return;
+            }
+
+            const inquiry = await Inquiry.findOne({ _id: id, tenantId });
+
+            if (!inquiry) {
+                res.status(404).json({ success: false, message: 'Inquiry not found' });
+                return;
+            }
+
+            res.status(200).json({ success: true, data: inquiry });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to fetch inquiry' });
+        }
+    }
+
     // PUT /:id — update status / notes
     async updateInquiry(req: Request, res: Response): Promise<void> {
         try {
@@ -122,10 +154,18 @@ export class InquiryController {
                 return;
             }
 
-            const { status, notes } = req.body;
+            const { name, phone, email, source, interestedPlan, budget, goals, assignTo, status, notes } = req.body;
             const update: Record<string, any> = {};
-            if (status) update.status = status;
-            if (notes  !== undefined) update.notes  = notes;
+            if (name           !== undefined) update.name           = name;
+            if (phone          !== undefined) update.phone          = phone;
+            if (email          !== undefined) update.email          = email;
+            if (source         !== undefined) update.source         = source;
+            if (interestedPlan !== undefined) update.interestedPlan = interestedPlan;
+            if (budget         !== undefined) update.budget         = budget;
+            if (goals          !== undefined) update.goals          = goals;
+            if (assignTo       !== undefined) update.assignTo       = assignTo;
+            if (status         !== undefined) update.status         = status;
+            if (notes          !== undefined) update.notes          = notes;
 
             const inquiry = await Inquiry.findOneAndUpdate(
                 { _id: id, tenantId },
@@ -261,6 +301,168 @@ export class InquiryController {
             });
         } catch (error: any) {
             res.status(500).json({ success: false, message: error.message || 'Failed to convert inquiry' });
+        }
+    }
+
+    // GET /:id/follow-ups — list follow-up history for an inquiry
+    async getFollowUps(req: Request, res: Response): Promise<void> {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) { NO_TENANT(res); return; }
+
+            const id = req.params.id as string;
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                res.status(400).json({ success: false, message: 'Invalid inquiry ID' });
+                return;
+            }
+
+            const inquiry = await Inquiry.findOne({ _id: id, tenantId });
+            if (!inquiry) {
+                res.status(404).json({ success: false, message: 'Inquiry not found' });
+                return;
+            }
+
+            res.status(200).json({ success: true, data: inquiry.followUps });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to fetch follow-ups' });
+        }
+    }
+
+    // POST /:id/follow-ups — record a new follow-up
+    async addFollowUp(req: Request, res: Response): Promise<void> {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) { NO_TENANT(res); return; }
+
+            const id = req.params.id as string;
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                res.status(400).json({ success: false, message: 'Invalid inquiry ID' });
+                return;
+            }
+
+            const { date, time, type, notes, outcome } = req.body;
+            if (!date || !type) {
+                res.status(400).json({ success: false, message: 'Date and type are required' });
+                return;
+            }
+
+            const inquiry = await Inquiry.findOne({ _id: id, tenantId });
+            if (!inquiry) {
+                res.status(404).json({ success: false, message: 'Inquiry not found' });
+                return;
+            }
+
+            inquiry.followUps.push({ date, time, type, notes, outcome, completed: false } as any);
+            await inquiry.save();
+
+            res.status(201).json({
+                success: true,
+                message: 'Follow-up recorded',
+                data: inquiry.followUps[inquiry.followUps.length - 1],
+            });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to record follow-up' });
+        }
+    }
+
+    // PATCH /:id/follow-ups/:followUpId — update a follow-up (e.g. mark completed)
+    async updateFollowUp(req: Request, res: Response): Promise<void> {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) { NO_TENANT(res); return; }
+
+            const id = req.params.id as string;
+            const followUpId = req.params.followUpId as string;
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                res.status(400).json({ success: false, message: 'Invalid inquiry ID' });
+                return;
+            }
+
+            const inquiry = await Inquiry.findOne({ _id: id, tenantId });
+            if (!inquiry) {
+                res.status(404).json({ success: false, message: 'Inquiry not found' });
+                return;
+            }
+
+            const followUp = (inquiry.followUps as any).id(followUpId);
+            if (!followUp) {
+                res.status(404).json({ success: false, message: 'Follow-up not found' });
+                return;
+            }
+
+            const { completed, notes, outcome } = req.body;
+            if (completed !== undefined) followUp.completed = completed;
+            if (notes     !== undefined) followUp.notes     = notes;
+            if (outcome   !== undefined) followUp.outcome   = outcome;
+
+            await inquiry.save();
+
+            res.status(200).json({ success: true, message: 'Follow-up updated', data: followUp });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to update follow-up' });
+        }
+    }
+
+    // GET /:id/notes — list note entries for an inquiry
+    async getNotes(req: Request, res: Response): Promise<void> {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) { NO_TENANT(res); return; }
+
+            const id = req.params.id as string;
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                res.status(400).json({ success: false, message: 'Invalid inquiry ID' });
+                return;
+            }
+
+            const inquiry = await Inquiry.findOne({ _id: id, tenantId });
+            if (!inquiry) {
+                res.status(404).json({ success: false, message: 'Inquiry not found' });
+                return;
+            }
+
+            res.status(200).json({ success: true, data: inquiry.noteEntries });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to fetch notes' });
+        }
+    }
+
+    // POST /:id/notes — add a note entry
+    async addNote(req: Request, res: Response): Promise<void> {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) { NO_TENANT(res); return; }
+
+            const id = req.params.id as string;
+            if (!mongoose.Types.ObjectId.isValid(id)) {
+                res.status(400).json({ success: false, message: 'Invalid inquiry ID' });
+                return;
+            }
+
+            const { note } = req.body;
+            if (!note || !String(note).trim()) {
+                res.status(400).json({ success: false, message: 'Note text is required' });
+                return;
+            }
+
+            const inquiry = await Inquiry.findOne({ _id: id, tenantId });
+            if (!inquiry) {
+                res.status(404).json({ success: false, message: 'Inquiry not found' });
+                return;
+            }
+
+            const staffName = req.user ? `${req.user.firstName} ${req.user.lastName}`.trim() : undefined;
+
+            inquiry.noteEntries.push({ note: String(note).trim(), staffName } as any);
+            await inquiry.save();
+
+            res.status(201).json({
+                success: true,
+                message: 'Note added',
+                data: inquiry.noteEntries[inquiry.noteEntries.length - 1],
+            });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message || 'Failed to add note' });
         }
     }
 }

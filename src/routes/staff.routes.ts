@@ -336,6 +336,7 @@ router.put('/deduction-settings', requireAnyRole('gym_owner', 'branch_manager', 
 
 router.get('/:id', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), staffController.getStaffMember);
 router.put('/:id', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), staffController.updateStaffMember);
+router.delete('/:id', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), staffController.deleteStaffMember);
 router.patch('/:id/status', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), staffController.updateStaffStatus);
 
 export default router;

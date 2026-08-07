@@ -27,6 +27,7 @@ class TrainerController {
                 experience,
                 pricing,
                 revenueSharing,
+                salary,
                 branchId: bodyBranchId,
             } = req.body;
 
@@ -104,6 +105,7 @@ class TrainerController {
                 experience: experience || { years: 0 },
                 availability,
                 pricing: pricing || { hourlyRate: 0, sessionPackages: [] },
+                salary: salary || { base: 0, type: 'fixed' },
                 revenueSharing: revenueSharing || { enabled: false, percentage: 0 },
                 ratings: { average: 0, totalReviews: 0, reviews: [] },
                 kpis: {
@@ -136,11 +138,21 @@ class TrainerController {
                 return res.status(400).json({ success: false, message: 'Tenant context required' });
             }
 
-            const { branchId, isActive, page = '1', limit = '20' } = req.query;
+            const { branchId, isActive, search, specialization, page = '1', limit = '20' } = req.query;
             const filter: Record<string, any> = { tenantId };
 
             if (branchId) filter.branchId = branchId;
             if (isActive !== undefined) filter.isActive = isActive === 'true';
+            if (specialization) filter.specializations = specialization;
+            if (search && typeof search === 'string' && search.trim()) {
+                const regex = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+                const matchingUsers = await User.find({
+                    tenantId,
+                    role: 'trainer',
+                    $or: [{ firstName: regex }, { lastName: regex }, { email: regex }],
+                }).select('_id').lean();
+                filter.userId = { $in: matchingUsers.map((u: any) => u._id) };
+            }
 
             const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
             const [trainers, total] = await Promise.all([
@@ -155,10 +167,15 @@ class TrainerController {
             const enriched = trainers.map((t: any) => {
                 const obj = t.toObject ? t.toObject() : { ...t };
                 const u = obj.userId as any;
+                obj.id = String(obj._id);
                 obj.firstName = u?.firstName ?? '';
                 obj.lastName = u?.lastName ?? '';
                 obj.email = u?.email ?? '';
+                obj.phone = u?.mobile ?? '';
                 obj.name = `${obj.firstName} ${obj.lastName}`.trim() || obj.email || '—';
+                obj.rating = obj.ratings?.average ?? 0;
+                obj.clientCount = obj.kpis?.totalClients ?? 0;
+                obj.clientsCount = obj.kpis?.totalClients ?? 0;
                 return obj;
             });
 
@@ -186,7 +203,8 @@ class TrainerController {
             }
 
             const trainer = await Trainer.findOne({ _id: req.params.trainerId, tenantId })
-                .populate('userId', 'firstName lastName email mobile avatar profilePicture specializations');
+                .populate('userId', 'firstName lastName email mobile avatar profilePicture specializations')
+                .populate('ratings.reviews.memberId', 'firstName lastName');
 
             if (!trainer) {
                 return res.status(404).json({ success: false, message: 'Trainer not found' });
@@ -194,10 +212,16 @@ class TrainerController {
 
             const trainerObj = (trainer as any).toObject ? (trainer as any).toObject() : trainer;
             const u = trainerObj.userId as any;
+            trainerObj.id = String(trainerObj._id);
             trainerObj.firstName = u?.firstName ?? '';
             trainerObj.lastName = u?.lastName ?? '';
             trainerObj.email = u?.email ?? '';
+            trainerObj.phone = u?.mobile ?? '';
             trainerObj.name = `${trainerObj.firstName} ${trainerObj.lastName}`.trim() || trainerObj.email || '—';
+            trainerObj.hourlyRate = trainerObj.pricing?.hourlyRate ?? 0;
+            trainerObj.rating = trainerObj.ratings?.average ?? 0;
+            trainerObj.reviewsCount = trainerObj.ratings?.totalReviews ?? 0;
+            trainerObj.clientsCount = trainerObj.kpis?.totalClients ?? 0;
 
             return res.json({ success: true, data: trainerObj });
         } catch (error: any) {
@@ -231,7 +255,7 @@ class TrainerController {
                 }
             }
 
-            const trainer = await Trainer.findOneAndUpdate(
+            let trainer = await Trainer.findOneAndUpdate(
                 { _id: req.params.trainerId, tenantId },
                 { $set: updates },
                 { new: true, runValidators: true }
@@ -241,7 +265,31 @@ class TrainerController {
                 return res.status(404).json({ success: false, message: 'Trainer not found' });
             }
 
-            return res.json({ success: true, data: trainer });
+            // Identity fields (name/email/phone) live on the linked User account,
+            // not the Trainer document — sync them there when provided.
+            const { firstName, lastName, email, mobile } = req.body;
+            const userUpdates: Record<string, any> = {};
+            if (firstName !== undefined) userUpdates.firstName = firstName;
+            if (lastName !== undefined) userUpdates.lastName = lastName;
+            if (email !== undefined) userUpdates.email = email;
+            if (mobile !== undefined) userUpdates.mobile = mobile;
+
+            if (Object.keys(userUpdates).length > 0 && trainer.userId) {
+                const linkedUserId = (trainer.userId as any)._id ?? trainer.userId;
+                await User.findByIdAndUpdate(linkedUserId, { $set: userUpdates });
+                trainer = await Trainer.findById(trainer._id).populate('userId', 'firstName lastName email mobile');
+            }
+
+            const trainerObj: any = (trainer as any).toObject ? (trainer as any).toObject() : trainer;
+            const u = trainerObj.userId as any;
+            trainerObj.id = String(trainerObj._id);
+            trainerObj.firstName = u?.firstName ?? '';
+            trainerObj.lastName = u?.lastName ?? '';
+            trainerObj.email = u?.email ?? '';
+            trainerObj.phone = u?.mobile ?? '';
+            trainerObj.name = `${trainerObj.firstName} ${trainerObj.lastName}`.trim() || trainerObj.email || '—';
+
+            return res.json({ success: true, data: trainerObj });
         } catch (error: any) {
             return res.status(500).json({ success: false, message: error.message });
         }

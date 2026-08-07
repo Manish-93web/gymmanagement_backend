@@ -243,6 +243,35 @@ router.post('/:id/join', async (req: Request, res: Response, next: NextFunction)
   } catch (err) { next(err); }
 });
 
+// ── POST /:id/leave ───────────────────────────────────────────────────────────
+router.post('/:id/leave', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const tenantId = (req as any).tenantId;
+    const { memberId } = req.body;
+
+    if (!memberId) {
+      return res.status(400).json({ success: false, message: 'memberId is required' });
+    }
+
+    const challenge = await ProgressiveChallenge.findOne({ _id: req.params.id, tenantId });
+    if (!challenge) {
+      return res.status(404).json({ success: false, message: 'Challenge not found' });
+    }
+
+    const pIdx = challenge.participants.findIndex(
+      p => String(p.memberId) === String(memberId)
+    );
+    if (pIdx === -1) {
+      return res.status(400).json({ success: false, message: 'Not enrolled in this challenge' });
+    }
+
+    challenge.participants.splice(pIdx, 1);
+    await challenge.save();
+
+    return res.json({ success: true, data: { message: 'Left challenge successfully' } });
+  } catch (err) { next(err); }
+});
+
 // ── POST /:id/sync-progress ───────────────────────────────────────────────────
 router.post('/:id/sync-progress', async (req: Request, res: Response, next: NextFunction) => {
   try {

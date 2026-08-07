@@ -31,6 +31,11 @@ router.get(
 );
 
 router.get(
+    '/scheduled',
+    notificationController.getScheduledNotifications.bind(notificationController)
+);
+
+router.get(
     '/:notificationId',
     notificationController.getNotificationById.bind(notificationController)
 );

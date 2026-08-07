@@ -1,9 +1,12 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
+import mongoose from 'mongoose';
 import Branch from '../models/Branch.model';
 import Tenant from '../models/Tenant.model';
 import Member from '../models/Member.model';
 import Attendance from '../models/Attendance.model';
+import Payment from '../models/Payment.model';
+import Class from '../models/Class.model';
 import { authenticate } from '../middleware/auth.middleware';
 import { tenantContext } from '../middleware/tenant.middleware';
 import { requireAnyRole } from '../middleware/rbac.middleware';
@@ -96,7 +99,7 @@ router.get('/', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), as
                 Member.countDocuments({ tenantId, branchId, status: { $in: ['active', 'trial'] } }),
                 Attendance.countDocuments({ tenantId, branchId, checkInTime: { $gte: todayStart } }),
             ]);
-            const capacity: number = b.capacity?.total ?? 0;
+            const capacity: number = b.capacity?.maxMembers ?? 0;
             const utilization = capacity > 0 ? Math.min(100, Math.round((memberCount / capacity) * 100)) : 0;
             return { ...b, memberCount, todayAttendance, utilization };
         }));
@@ -107,13 +110,52 @@ router.get('/', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), as
     }
 });
 
-// GET /api/branches/:id
+// GET /api/branches/:id — includes computed memberCount / monthlyRevenue / totalClasses / attendanceRate and populated manager info
 router.get('/:id', async (req: Request, res: Response) => {
     try {
         const tenantId = (req as any).tenantId;
-        const branch = await Branch.findOne({ _id: req.params.id, tenantId }).lean();
+        const branch: any = await Branch.findOne({ _id: req.params.id, tenantId })
+            .populate('managerId', 'firstName lastName email')
+            .lean();
         if (!branch) return res.status(404).json({ success: false, message: 'Branch not found' });
-        res.json({ success: true, data: branch });
+
+        const branchId = branch._id.toString();
+        const lastMonth = new Date();
+        lastMonth.setDate(lastMonth.getDate() - 30);
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+
+        const [memberCount, revenueAgg, totalClasses, todayAttendance] = await Promise.all([
+            Member.countDocuments({ tenantId, branchId, status: { $in: ['active', 'trial'] } }),
+            Payment.aggregate([
+                {
+                    $match: {
+                        tenantId: new mongoose.Types.ObjectId(tenantId),
+                        branchId: new mongoose.Types.ObjectId(branchId),
+                        status: 'completed',
+                        paidAt: { $gte: lastMonth },
+                    },
+                },
+                { $group: { _id: null, total: { $sum: '$amount.total' } } },
+            ]),
+            Class.countDocuments({ tenantId, branchId, isActive: true }),
+            Attendance.countDocuments({ tenantId, branchId, checkInTime: { $gte: todayStart } }),
+        ]);
+
+        // Attendance rate = today's check-ins as % of active members — consumed by mobile
+        // BranchDetailScreen's "Attendance" stat, same formula as analytics.service.ts.
+        const attendanceRate = memberCount > 0 ? Math.round((todayAttendance / memberCount) * 100) : 0;
+
+        res.json({
+            success: true,
+            data: {
+                ...branch,
+                memberCount,
+                monthlyRevenue: revenueAgg[0]?.total || 0,
+                totalClasses,
+                attendanceRate,
+            },
+        });
     } catch (err: any) {
         res.status(500).json({ success: false, message: err.message });
     }

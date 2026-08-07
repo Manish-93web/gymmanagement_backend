@@ -67,6 +67,7 @@ import saasAlertsRoutes from './routes/saas-alerts.routes';
 import uploadRoutes from './routes/upload.routes';
 import crmWebhookRoutes from './routes/crm-webhook.routes';
 import scheduledReportRoutes from './routes/scheduled-report.routes';
+import reportRoutes from './routes/report.routes';
 import esslAdmsRoutes from './routes/essl-adms.routes';
 import financeRoutes from './routes/finance.routes';
 import wearableRoutes from './routes/wearable.routes';
@@ -362,6 +363,7 @@ app.use('/api/saas-alerts', saasAlertsRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/crm-webhook', crmWebhookRoutes);
 app.use('/api/scheduled-reports', scheduledReportRoutes);
+app.use('/api/reports', reportRoutes);
 app.use('/api', aiCrmRoutes); // handles /api/ai/* and /api/crm/* via ai-crm router
 app.use('/api/membership-transfers', membershipTransferRoutes);
 app.use('/api/condition-protocols', conditionProtocolsRoutes);

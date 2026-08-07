@@ -306,7 +306,7 @@ export class PaymentService {
         const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
 
-        const [stats, totalRevResult, monthlyRevResult, prevMonthRevResult] = await Promise.all([
+        const [stats, totalRevResult, monthlyRevResult, prevMonthRevResult, gstResult, quarterlyResult] = await Promise.all([
             Payment.aggregate([
                 { $match: filter },
                 { $group: { _id: '$status', count: { $sum: 1 }, totalAmount: { $sum: '$amount.total' } } },
@@ -323,6 +323,31 @@ export class PaymentService {
                 { $match: { ...filter, status: 'completed', createdAt: { $gte: prevMonthStart, $lte: prevMonthEnd } } },
                 { $group: { _id: null, total: { $sum: '$amount.total' } } },
             ]),
+            // GST collected = sum of tax charged on completed payments; taxable revenue backs out
+            // the tax portion so we can derive a blended effective GST rate for display.
+            Payment.aggregate([
+                { $match: { ...filter, status: 'completed' } },
+                {
+                    $group: {
+                        _id: null,
+                        gstCollected: { $sum: '$amount.taxAmount' },
+                        taxableRevenue: { $sum: { $subtract: ['$amount.total', { $ifNull: ['$amount.taxAmount', 0] }] } },
+                    },
+                },
+            ]),
+            // Quarterly revenue + GST breakdown (last 8 quarters) for tax reporting.
+            Payment.aggregate([
+                { $match: { ...filter, status: 'completed' } },
+                {
+                    $group: {
+                        _id: { year: { $year: '$createdAt' }, quarter: { $ceil: { $divide: [{ $month: '$createdAt' }, 3] } } },
+                        revenue: { $sum: '$amount.total' },
+                        gst: { $sum: '$amount.taxAmount' },
+                    },
+                },
+                { $sort: { '_id.year': 1, '_id.quarter': 1 } },
+                { $limit: 8 },
+            ]),
         ]);
 
         const total = await Payment.countDocuments(filter);
@@ -338,6 +363,21 @@ export class PaymentService {
             ? Math.round(((monthlyRevenue - prevMonthRevenue) / prevMonthRevenue) * 100)
             : (monthlyRevenue > 0 ? 100 : 0);
 
+        const gstCollected = gstResult[0]?.gstCollected || 0;
+        const taxableRevenue = gstResult[0]?.taxableRevenue || 0;
+        // GST payable assumes no input tax credit is tracked in this system — collected tax
+        // is remitted in full. Effective rate is derived from actual collected/taxable amounts,
+        // falling back to the standard 18% GST slab when there's no revenue to derive it from.
+        const gstPayable = gstCollected;
+        const gstRate = taxableRevenue > 0 ? Math.round((gstCollected / taxableRevenue) * 100) : 18;
+
+        const QUARTER_LABELS = ['Q1', 'Q2', 'Q3', 'Q4'];
+        const quarters = quarterlyResult.map((q: any) => ({
+            quarter: `${QUARTER_LABELS[q._id.quarter - 1]} ${q._id.year}`,
+            revenue: q.revenue || 0,
+            gst: q.gst || 0,
+        }));
+
         return {
             total,
             totalRevenue,
@@ -346,6 +386,10 @@ export class PaymentService {
             failedPayments:  byStatus['failed']?.count  || 0,
             growth,
             byStatus,
+            gstCollected,
+            gstPayable,
+            gstRate,
+            quarters,
         };
     }
 }

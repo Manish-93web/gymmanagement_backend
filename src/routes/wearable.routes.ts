@@ -3,9 +3,24 @@ import { authenticate } from '../middleware/auth.middleware';
 import { requireAnyRole } from '../middleware/rbac.middleware';
 import { tenantContext } from '../middleware/tenant.middleware';
 import WearableData from '../models/WearableData.model';
+import Member from '../models/Member.model';
 
 const router = Router();
 router.use(authenticate, tenantContext);
+
+// The mobile app has no way to know its own Member._id (only the User id),
+// so it addresses "my own data" with the literal 'me'. Resolve that to the
+// real Member document the same way tele-consultation.routes.ts does.
+router.param('memberId', async (req: Request, res: Response, next: NextFunction, memberId: string) => {
+  if (memberId !== 'me') return next();
+  try {
+    const tenantId = (req as any).user?.tenantId || req.tenantId;
+    const member = await Member.findOne({ userId: (req as any).user?._id, tenantId }).select('_id').lean();
+    if (!member) return res.status(404).json({ success: false, message: 'Member profile not found for current user' });
+    req.params.memberId = String(member._id);
+    next();
+  } catch (err) { next(err); }
+});
 
 // GET /wearable/member/:memberId — get wearable profile + recent entries
 router.get('/member/:memberId', async (req: Request, res: Response, next: NextFunction) => {

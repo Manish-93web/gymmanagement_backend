@@ -125,7 +125,11 @@ export const createStaffMember = async (req: Request, res: Response) => {
 
         const newStaff = await User.create({
             email,
-            password, // Password will be hashed by User model pre-save hook
+            // The Add Staff form does not collect a password (staff set their own on
+            // first login); fall back to a placeholder, matching the trainer onboarding
+            // flow in trainer.controller.ts. Password is hashed by the User model's
+            // pre-save hook either way.
+            password: password || 'Staff@123',
             role,
             tenantId,
             ...otherData,
@@ -168,6 +172,29 @@ export const updateStaffMember = async (req: Request, res: Response) => {
         res.status(200).json({ success: true, data: staff, message: 'Staff member updated successfully' });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Error updating staff member', error: (error as Error).message });
+    }
+};
+
+export const deleteStaffMember = async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId;
+
+        const query: any = { _id: id };
+        if (tenantId) query.tenantId = tenantId;
+
+        // Soft-delete, consistent with member.controller.ts's deleteMember: deactivate
+        // rather than remove the account, since staff records are referenced by
+        // attendance/payroll history.
+        const staff = await User.findOneAndUpdate(query, { isActive: false }, { new: true }).select('-password');
+
+        if (!staff) {
+            return res.status(404).json({ success: false, message: 'Staff member not found' });
+        }
+
+        res.status(200).json({ success: true, data: staff, message: 'Staff member deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error deleting staff member', error: (error as Error).message });
     }
 };
 

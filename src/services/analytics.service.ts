@@ -68,10 +68,66 @@ export class AnalyticsService {
             { $sort: { '_id.year': 1, '_id.month': 1 } },
         ]);
 
+        // Revenue by payment method (cash/upi/card/online) — consumed by mobile RevenueAnalyticsScreen
+        const revenueByMethod = await Payment.aggregate([
+            { $match: aggFilter },
+            { $group: { _id: '$method', total: { $sum: '$amount.total' }, count: { $sum: 1 } } },
+        ]);
+        const byMethod = { cash: 0, upi: 0, card: 0, online: 0 } as Record<string, number>;
+        revenueByMethod.forEach((m: any) => {
+            const amt = m.total || 0;
+            if (m._id === 'cash') byMethod.cash += amt;
+            else if (m._id === 'upi') byMethod.upi += amt;
+            else if (m._id === 'card') byMethod.card += amt;
+            else byMethod.online += amt; // net_banking, wallet, razorpay, stripe
+        });
+
+        // Revenue by membership plan — consumed by mobile RevenueAnalyticsScreen
+        const byPlan = await Payment.aggregate([
+            { $match: { ...aggFilter, planId: { $exists: true, $ne: null } } },
+            { $group: { _id: '$planId', revenue: { $sum: '$amount.total' }, count: { $sum: 1 } } },
+            { $lookup: { from: 'membershipplans', localField: '_id', foreignField: '_id', as: 'plan' } },
+            { $unwind: { path: '$plan', preserveNullAndEmptyArrays: true } },
+            { $project: { _id: 0, plan: { $ifNull: ['$plan.name', 'Other'] }, revenue: 1, count: 1 } },
+            { $sort: { revenue: -1 } },
+        ]);
+
+        // Monthly revenue trend with readable labels — consumed by mobile RevenueAnalyticsScreen
+        const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const monthly = revenueByMonth.map((m: any) => ({
+            month: `${MONTH_NAMES[m._id.month - 1]} ${m._id.year}`,
+            revenue: m.total,
+        }));
+
+        // Growth vs the immediately preceding period of equal length — consumed by mobile
+        // RevenueAnalyticsScreen's "+X% vs last <period>" badge. Only computable when the
+        // caller supplied (or the controller derived) an explicit date range.
+        let growth: number | null = null;
+        if (startDate && endDate) {
+            const rangeMs = endDate.getTime() - startDate.getTime();
+            const prevFilter: any = { tenantId: tObjId, status: 'completed' };
+            if (branchId) prevFilter.branchId = new mongoose.Types.ObjectId(branchId);
+            prevFilter.paidAt = { $gte: new Date(startDate.getTime() - rangeMs), $lt: startDate };
+
+            const prevTotalAgg = await Payment.aggregate([
+                { $match: prevFilter },
+                { $group: { _id: null, total: { $sum: '$amount.total' } } },
+            ]);
+            const prevTotal = prevTotalAgg[0]?.total || 0;
+            const currentTotal = totalRevenue[0]?.total || 0;
+            growth = prevTotal > 0
+                ? parseFloat((((currentTotal - prevTotal) / prevTotal) * 100).toFixed(1))
+                : (currentTotal > 0 ? 100 : 0);
+        }
+
         return {
             totalRevenue: totalRevenue[0]?.total || 0,
             byType: revenueByType,
             byMonth: revenueByMonth,
+            byMethod,
+            byPlan,
+            monthly,
+            growth,
         };
     }
 
@@ -215,9 +271,22 @@ export class AnalyticsService {
             ? (utilization.reduce((sum, u) => sum + parseFloat(u.utilizationRate), 0) / utilization.length).toFixed(2)
             : '0';
 
+        // Cancelled classes in the same window — consumed by mobile ClassAnalyticsScreen's
+        // "Cancellations" stat. Not restricted to isActive since a cancelled class is often
+        // also deactivated.
+        const cancelFilter: any = { tenantId, isCancelled: true };
+        if (branchId) cancelFilter.branchId = branchId;
+        if (startDate || endDate) {
+            cancelFilter['schedule.startDate'] = {};
+            if (startDate) cancelFilter['schedule.startDate'].$gte = startDate;
+            if (endDate) cancelFilter['schedule.startDate'].$lte = endDate;
+        }
+        const cancellations = await Class.countDocuments(cancelFilter);
+
         return {
             totalClasses: classes.length,
             averageUtilization: parseFloat(avgUtilizationStr),
+            cancellations,
             classes: utilization,
         };
     }
@@ -300,6 +369,7 @@ export class AnalyticsService {
             subRevenueResult,
             topTrainerDocs,
             classesByCategory,
+            classCapacityAgg,
         ] = await Promise.all([
             Member.countDocuments(filter),
             Member.countDocuments({ ...filter, status: 'active' }),
@@ -320,6 +390,10 @@ export class AnalyticsService {
             Payment.aggregate([{ $match: { ...aggFilter, status: 'completed', paymentType: 'subscription' } }, { $group: { _id: null, total: { $sum: '$amount.total' } } }]),
             Trainer.find({ ...filter, isActive: true }).populate('userId', 'firstName lastName').lean(),
             Class.aggregate([{ $match: aggFilter }, { $group: { _id: '$category', count: { $sum: 1 } } }]),
+            Class.aggregate([
+                { $match: { ...aggFilter, isActive: true } },
+                { $group: { _id: null, totalCapacity: { $sum: '$capacity.max' }, totalEnrolled: { $sum: '$capacity.current' } } },
+            ]),
         ]);
 
         const thisMonthRev = monthlyRevResult[0]?.total || 0;
@@ -333,6 +407,14 @@ export class AnalyticsService {
 
         const retentionRate = totalMembers > 0 ? parseFloat(((activeMembers / totalMembers) * 100).toFixed(1)) : 0;
         const churnRate = totalMembers > 0 ? parseFloat((((archivedMembers + expiredMembers) / totalMembers) * 100).toFixed(1)) : 0;
+
+        // Attendance rate (today's check-ins as % of active members) — consumed by mobile AnalyticsDashboardScreen
+        const attendanceRate = activeMembers > 0 ? Math.round((todayAttendance / activeMembers) * 100) : 0;
+
+        // Class utilization (enrolled / capacity across all active classes) — consumed by mobile AnalyticsDashboardScreen
+        const totalCapacity = classCapacityAgg[0]?.totalCapacity || 0;
+        const totalEnrolled = classCapacityAgg[0]?.totalEnrolled || 0;
+        const classUtilization = totalCapacity > 0 ? Math.round((totalEnrolled / totalCapacity) * 100) : 0;
 
         const topTrainers = topTrainerDocs.slice(0, 6).map((t: any) => {
             const u = t.userId as any;
@@ -378,6 +460,13 @@ export class AnalyticsService {
             engagement: {
                 appUsageStats: classesByCategory.map((c: any) => ({ feature: c._id || 'general', count: c.count })),
                 activeThisMonth: activeMembers,
+            },
+            attendance: {
+                rate: attendanceRate,
+                today: todayAttendance,
+            },
+            classes: {
+                utilization: classUtilization,
             },
             topTrainers,
         };

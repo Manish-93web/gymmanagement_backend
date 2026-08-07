@@ -95,10 +95,8 @@ export class WorkoutService {
         if (tenantId) filter.tenantId = tenantId;
         if (category) filter.category = category;
         if (muscleGroup) {
-            filter.$or = [
-                { 'muscleGroups.primary': muscleGroup },
-                { 'muscleGroups.secondary': muscleGroup },
-            ];
+            // Exercise.model stores muscleGroups as a flat string[], not a { primary, secondary } object
+            filter.muscleGroups = muscleGroup;
         }
         if (difficulty) filter.difficulty = difficulty;
         if (equipment) filter.equipment = equipment;

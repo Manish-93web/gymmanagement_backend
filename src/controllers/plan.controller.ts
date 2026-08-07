@@ -28,6 +28,7 @@ class PlanController {
                 maxMembers,
                 branchId,
                 referralBonus,
+                isActive,
             } = req.body;
 
             // Required field validation
@@ -79,7 +80,7 @@ class PlanController {
                 isFamilyPlan: isFamilyPlan ?? false,
                 maxFamilyMembers,
                 familyDiscount,
-                isActive: true,
+                isActive: isActive ?? true,
                 validFrom: validFrom ? new Date(validFrom) : undefined,
                 validUntil: validUntil ? new Date(validUntil) : undefined,
                 maxMembers,

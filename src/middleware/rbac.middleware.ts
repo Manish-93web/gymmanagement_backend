@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { UserRole } from '../models/User.model';
+import Member from '../models/Member.model';
 
 // Permission matrix - maps roles to their allowed permissions
 const rolePermissions: Record<UserRole, string[]> = {
@@ -136,6 +137,63 @@ export const requirePermission = (permission: string) => {
         }
 
         next();
+    };
+};
+
+// Middleware to check permission, OR allow a 'member' caller acting on their own
+// linked Member record (e.g. /members/:memberId/health, /measurements, /transformation).
+// Prevents the unsafe alternative of granting 'member' a blanket permission, which
+// would let any member read/update every other member's record.
+export const requireSelfMemberOrPermission = (permission: string) => {
+    return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        if (!req.user) {
+            res.status(401).json({ error: 'Authentication required' });
+            return;
+        }
+
+        if (hasPermission(req.user.role, permission)) {
+            next();
+            return;
+        }
+
+        if (req.user.role === 'member') {
+            const memberId = req.params.memberId;
+            const member = memberId
+                ? await Member.findOne({ _id: memberId, tenantId: req.tenantId }).select('userId')
+                : null;
+
+            if (member && member.userId && member.userId.toString() === req.user._id.toString()) {
+                next();
+                return;
+            }
+        }
+
+        res.status(403).json({ error: 'Insufficient permissions' });
+    };
+};
+
+// Middleware for member-directory search: staff keep their normal blanket permission,
+// while a 'member' caller is only let through with an explicit search term (never a
+// full-list browse), so the controller can return a minimal, non-sensitive field set.
+export const requireMemberSearchOrPermission = (permission: string) => {
+    return (req: Request, res: Response, next: NextFunction): void => {
+        if (!req.user) {
+            res.status(401).json({ error: 'Authentication required' });
+            return;
+        }
+
+        if (hasPermission(req.user.role, permission)) {
+            next();
+            return;
+        }
+
+        const search = req.query.search;
+        if (req.user.role === 'member' && typeof search === 'string' && search.trim().length >= 2) {
+            next();
+            return;
+        }
+
+        res.status(403).json({ error: 'Insufficient permissions' });
     };
 };
 

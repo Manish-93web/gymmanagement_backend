@@ -13,6 +13,7 @@ router.post('/', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_a
 router.get('/stats', requireAnyRole('gym_owner', 'branch_manager', 'accountant', 'super_admin'), subscriptionController.getSubscriptionStats.bind(subscriptionController));
 router.get('/member/:memberId', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'accountant', 'member', 'super_admin'), subscriptionController.getMemberSubscriptions.bind(subscriptionController));
 router.get('/:id', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'accountant', 'super_admin'), subscriptionController.getSubscription.bind(subscriptionController));
+router.put('/:id', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), subscriptionController.updateSubscription.bind(subscriptionController));
 router.get('/:id/history', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), subscriptionController.getSubscriptionHistory.bind(subscriptionController));
 router.post('/:id/cancel', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), subscriptionController.cancelSubscription.bind(subscriptionController));
 router.post('/:id/freeze', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), subscriptionController.freezeSubscription.bind(subscriptionController));

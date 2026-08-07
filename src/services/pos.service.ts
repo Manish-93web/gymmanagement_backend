@@ -10,6 +10,7 @@ export interface CreateProductDTO {
     category: 'supplement' | 'equipment' | 'apparel' | 'accessory' | 'other';
     sku: string;
     barcode?: string;
+    emoji?: string;
     pricing: {
         cost: number;
         sellingPrice: number;
@@ -214,6 +215,15 @@ export class POSService {
         } finally {
             session.endSession();
         }
+    }
+
+    // Get sale by ID
+    async getSaleById(saleId: string, tenantId: string | undefined): Promise<ISale | null> {
+        const filter: any = { _id: saleId };
+        if (tenantId) filter.tenantId = tenantId;
+        return await Sale.findOne(filter)
+            .populate('soldBy', 'firstName lastName')
+            .populate('customerId', 'firstName lastName membershipNumber');
     }
 
     // Get sales

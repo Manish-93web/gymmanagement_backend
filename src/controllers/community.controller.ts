@@ -42,6 +42,7 @@ export class CommunityController {
      */
     async getGroups(req: Request, res: Response) {
         try {
+            const user = (req as any).user;
             const tenantId = (req as any).tenantId;
             const { type, category, branchId } = req.query;
 
@@ -51,9 +52,56 @@ export class CommunityController {
                 branchId: branchId as string,
             });
 
+            const joinedIds = await communityGroupService.getJoinedGroupIds(
+                user._id,
+                groups.map((g: any) => g._id.toString())
+            );
+            const groupsWithJoined = groups.map((g: any) => ({
+                ...g.toObject(),
+                isJoined: joinedIds.has(g._id.toString()),
+            }));
+
             res.status(200).json({
                 success: true,
-                data: groups,
+                data: groupsWithJoined,
+            });
+        } catch (error: any) {
+            res.status(500).json({
+                success: false,
+                message: error.message,
+            });
+        }
+    }
+
+    /**
+     * Get a single group's detail: info, members, recent posts, and the current
+     * user's membership status.
+     */
+    async getGroupDetail(req: Request, res: Response) {
+        try {
+            const user = (req as any).user;
+            const tenantId = (req as any).tenantId;
+            const { groupId } = req.params as Record<string, string>;
+
+            const group = await communityGroupService.getGroupById(groupId);
+            if (!group) {
+                return res.status(404).json({ success: false, message: 'Group not found' });
+            }
+
+            const [members, feed, isJoined] = await Promise.all([
+                communityGroupService.getGroupMembers(groupId),
+                socialFeedService.getFeed(tenantId, user._id, { groupId }, 1, 20),
+                communityGroupService.isGroupMember(groupId, user._id),
+            ]);
+
+            res.status(200).json({
+                success: true,
+                data: {
+                    group,
+                    members,
+                    posts: feed.posts,
+                    isJoined,
+                },
             });
         } catch (error: any) {
             res.status(500).json({

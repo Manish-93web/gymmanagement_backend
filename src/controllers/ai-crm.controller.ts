@@ -376,14 +376,20 @@ export class AIAndCRMController {
             const tenantId = req.user?.tenantId?.toString() || '';
             const Lead = (await import('../models/Lead.model')).default;
             const User = (await import('../models/User.model')).default;
+            const CallLog = (await import('../models/CallLog.model')).default;
+            const mongooseLib = (await import('mongoose')).default;
 
             const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-            const [leadsByStaff, conversionsByStaff] = await Promise.all([
+            const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+            const endOfToday = new Date(); endOfToday.setHours(23, 59, 59, 999);
+            const [leadsByStaff, conversionsByStaff, callsToday, followUpsToday] = await Promise.all([
                 Lead.aggregate([
-                    { $match: { tenantId: new (await import('mongoose')).default.Types.ObjectId(tenantId), createdAt: { $gte: thirtyDaysAgo } } },
+                    { $match: { tenantId: new mongooseLib.Types.ObjectId(tenantId), createdAt: { $gte: thirtyDaysAgo } } },
                     { $group: { _id: '$assignedTo', total: { $sum: 1 }, converted: { $sum: { $cond: [{ $eq: ['$status', 'converted'] }, 1, 0] } }, revenue: { $sum: { $ifNull: ['$conversion.revenue', 0] } } } },
                 ]),
                 Lead.countDocuments({ tenantId, status: 'converted', createdAt: { $gte: thirtyDaysAgo } }),
+                CallLog.countDocuments({ tenantId, startTime: { $gte: startOfToday, $lte: endOfToday } }),
+                Lead.countDocuments({ tenantId, nextFollowUpDate: { $gte: startOfToday, $lte: endOfToday } }),
             ]);
 
             const staffIds = leadsByStaff.map((l: any) => l._id).filter(Boolean);
@@ -419,7 +425,8 @@ export class AIAndCRMController {
                 data: {
                     leaderboard,
                     summary: { avgConvRate: `${avgRate}%`, totalYield: `₹${(totalRevenue / 100000).toFixed(1)}L`, activeMissions: leaderboard.length },
-                    velocity: { callToVisit: 45, winback: 18, retention: 92 },
+                    callsToday,
+                    followUpsToday,
                 },
             });
         } catch (error) { return next(error); }

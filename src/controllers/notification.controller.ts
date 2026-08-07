@@ -104,9 +104,8 @@ export class NotificationController {
             const { notificationId } = req.params;
             const tenantId = req.user?.tenantId?.toString() || '';
 
-            // Note: Service doesn't have getNotificationById, using getNotifications with filter
-            const result = await NotificationService.getNotifications(tenantId, undefined, undefined, undefined, 1, 1);
-            const notification = result.notifications.find(n => n._id.toString() === notificationId);
+            const Notification = (await import('../models/Notification.model')).default;
+            const notification = await Notification.findOne({ _id: notificationId, tenantId });
 
             if (!notification) {
                 return res.status(404).json({
@@ -118,6 +117,20 @@ export class NotificationController {
             return res.status(200).json({
                 success: true,
                 data: notification,
+            });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async getScheduledNotifications(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.user?.tenantId?.toString() || '';
+            const scheduled = await NotificationService.getScheduledNotifications(tenantId);
+
+            return res.status(200).json({
+                success: true,
+                data: scheduled,
             });
         } catch (error) {
             next(error);

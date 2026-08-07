@@ -2,6 +2,8 @@
 import { z } from 'zod';
 import WorkoutService from '../services/workout.service';
 import DietService from '../services/diet.service';
+import Exercise from '../models/Exercise.model';
+import { getOwnMemberId } from '../utils/memberOwnership';
 
 const logWorkoutSchema = z.object({
     memberId: z.string(),
@@ -59,6 +61,73 @@ const createDietPlanSchema = z.object({
 });
 
 export class FitnessController {
+    // Exercise library endpoints
+    async getExercises(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { category, muscleGroup, difficulty, equipment, search, page, limit } = req.query;
+            const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
+
+            const result = await WorkoutService.getExercises(
+                tenantId,
+                category as string,
+                muscleGroup as string,
+                difficulty as string,
+                equipment as string,
+                search as string,
+                page ? parseInt(page as string) : 1,
+                limit ? parseInt(limit as string) : 50
+            );
+
+            res.status(200).json({ success: true, data: result.exercises, total: result.total });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async getExerciseById(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { id } = req.params as Record<string, string>;
+            const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
+
+            const exercise = await WorkoutService.getExerciseById(id, tenantId);
+            if (!exercise) {
+                return res.status(404).json({ success: false, message: 'Exercise not found' });
+            }
+
+            res.status(200).json({ success: true, data: exercise });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    // Create exercise (library entry) — matches Exercise.model schema directly:
+    // flat muscleGroups string[] and lowercase category/difficulty enums.
+    async createExercise(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.user?.tenantId?.toString();
+            const { name, muscleGroups, category, equipment, difficulty, instructions } = req.body;
+
+            if (!name || !Array.isArray(muscleGroups) || muscleGroups.length === 0) {
+                return res.status(400).json({ success: false, message: 'name and muscleGroups are required' });
+            }
+
+            const exercise = await Exercise.create({
+                tenantId,
+                name,
+                category: String(category || 'strength').toLowerCase(),
+                muscleGroups,
+                equipment: Array.isArray(equipment) ? equipment : [],
+                difficulty: String(difficulty || 'beginner').toLowerCase(),
+                instructions: Array.isArray(instructions) ? instructions : [],
+                createdBy: req.user?._id,
+            });
+
+            res.status(201).json({ success: true, data: exercise });
+        } catch (error) {
+            next(error);
+        }
+    }
+
     // Workout endpoints
     async logWorkout(req: Request, res: Response, next: NextFunction) {
         try {
@@ -244,8 +313,16 @@ export class FitnessController {
         try {
             const { dietPlanId } = req.params as Record<string, string>;
             const tenantId = req.user?.tenantId?.toString() || '';
+
+            let ownershipFilter: Record<string, any> = {};
+            if (req.user?.role === 'member') {
+                const ownMemberId = await getOwnMemberId(req);
+                if (!ownMemberId) return res.status(403).json({ success: false, message: 'No linked member record' });
+                ownershipFilter = { memberId: ownMemberId };
+            }
+
             const DietPlan = (await import('../models/DietPlan.model')).default;
-            const result = await DietPlan.findOneAndDelete({ _id: dietPlanId, tenantId });
+            const result = await DietPlan.findOneAndDelete({ _id: dietPlanId, tenantId, ...ownershipFilter });
             if (!result) return res.status(404).json({ success: false, message: 'Diet plan not found' });
             res.status(200).json({ success: true, message: 'Diet plan deleted' });
         } catch (error) { next(error); }

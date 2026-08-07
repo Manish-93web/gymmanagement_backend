@@ -1,5 +1,6 @@
 import Class, { IClass, ClassType } from '../models/Class.model';
 import Booking, { IBooking } from '../models/Booking.model';
+import ClassCategory, { IClassCategory } from '../models/ClassCategory.model';
 import mongoose from 'mongoose';
 
 export interface CreateClassDTO {
@@ -48,13 +49,28 @@ export class ClassService {
     }
 
     // Get class by ID
-    async getClassById(classId: string, tenantId?: string): Promise<IClass | null> {
+    async getClassById(classId: string, tenantId?: string): Promise<any | null> {
         const query: any = { _id: classId };
         if (tenantId) query.tenantId = tenantId;
 
-        return await Class.findOne(query)
-            .populate('trainerId', 'firstName lastName specializations')
-            .populate('branchId', 'name');
+        // Trainer.firstName/lastName don't exist on the Trainer model itself —
+        // the name lives on the linked User document, so populate through it.
+        const classDoc: any = await Class.findOne(query)
+            .populate({
+                path: 'trainerId',
+                select: 'specializations userId',
+                populate: { path: 'userId', select: 'firstName lastName' },
+            })
+            .populate('branchId', 'name')
+            .lean();
+
+        if (classDoc?.trainerId && typeof classDoc.trainerId === 'object') {
+            const u = classDoc.trainerId.userId;
+            classDoc.trainerId.firstName = u?.firstName ?? '';
+            classDoc.trainerId.lastName = u?.lastName ?? '';
+        }
+
+        return classDoc;
     }
 
     // Update class
@@ -80,7 +96,7 @@ export class ClassService {
         search?: string,
         page: number = 1,
         limit: number = 20
-    ): Promise<{ classes: IClass[]; total: number }> {
+    ): Promise<{ classes: any[]; total: number }> {
         const skip = (page - 1) * limit;
 
         const filter: any = { isActive: true };
@@ -105,10 +121,23 @@ export class ClassService {
                 .skip(skip)
                 .limit(limit)
                 .sort({ 'schedule.startTime': 1 })
-                .populate('trainerId', 'firstName lastName specializations')
-                .populate('branchId', 'name'),
+                .populate({
+                    path: 'trainerId',
+                    select: 'specializations userId',
+                    populate: { path: 'userId', select: 'firstName lastName' },
+                })
+                .populate('branchId', 'name')
+                .lean(),
             Class.countDocuments(filter),
         ]);
+
+        (classes as any[]).forEach((c: any) => {
+            if (c.trainerId && typeof c.trainerId === 'object') {
+                const u = c.trainerId.userId;
+                c.trainerId.firstName = u?.firstName ?? '';
+                c.trainerId.lastName = u?.lastName ?? '';
+            }
+        });
 
         return { classes, total };
     }
@@ -238,18 +267,48 @@ export class ClassService {
         return updatedBooking;
     }
 
-    // Get distinct categories
+    // Get distinct categories — merges categories actually used by classes with
+    // any pre-created ClassCategory documents (so a brand-new category with no
+    // classes yet still shows up) and a baseline default list.
     async getCategories(tenantId?: string): Promise<string[]> {
         const defaults = ['yoga', 'crossfit', 'zumba', 'pilates', 'hiit', 'strength', 'cardio', 'boxing', 'cycling', 'swimming', 'other'];
         try {
             const query: any = { isActive: true };
             if (tenantId) query.tenantId = tenantId;
             const distinct: string[] = await Class.distinct('category', query);
-            const merged = [...new Set([...distinct.filter(Boolean).map((c: string) => c.toLowerCase()), ...defaults])];
+
+            const catQuery: any = {};
+            if (tenantId) catQuery.tenantId = tenantId;
+            const persisted: string[] = tenantId ? await ClassCategory.distinct('name', catQuery) : [];
+
+            const merged = [...new Set([
+                ...distinct.filter(Boolean).map((c: string) => c.toLowerCase()),
+                ...persisted.filter(Boolean).map((c: string) => c.toLowerCase()),
+                ...defaults,
+            ])];
             return merged.sort();
         } catch {
             return defaults;
         }
+    }
+
+    // Create (or update metadata on) a class category
+    async createCategory(tenantId: string, name: string, description?: string, color?: string): Promise<IClassCategory> {
+        const normalized = name.trim();
+        const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const existing = await ClassCategory.findOne({
+            tenantId,
+            name: { $regex: `^${escaped}$`, $options: 'i' },
+        });
+
+        if (existing) {
+            if (description !== undefined) existing.description = description;
+            if (color !== undefined) existing.color = color;
+            if (existing.isModified()) await existing.save();
+            return existing;
+        }
+
+        return await ClassCategory.create({ tenantId, name: normalized, description, color });
     }
 
     // Mark attendance

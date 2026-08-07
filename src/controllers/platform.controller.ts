@@ -147,19 +147,38 @@ export const getPlatformMetrics = async (req: Request, res: Response) => {
         const totalTenants = await Tenant.countDocuments();
         const activeTenants = await Tenant.countDocuments({ isActive: true });
         const totalUsers = await User.countDocuments();
+        const totalMembers = await Member.countDocuments();
 
         // Calculate Total Platform Revenue (MRR) from Subscriptions
         const subscriptions = await Subscription.find({ status: 'active' });
         // @ts-ignore
         const mrr = subscriptions.reduce((acc: number, sub) => acc + (sub.pricing?.totalAmount || 0), 0);
+        const arr = mrr * 12;
 
-        // Recent Signups (Last 30 days)
+        // Recent Signups (this calendar month, and last 30 days for back-compat)
+        const monthStart = new Date();
+        monthStart.setDate(1);
+        monthStart.setHours(0, 0, 0, 0);
         const thirtyDaysAgo = new Date();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-        const recentSignups = await Tenant.countDocuments({
-            createdAt: { $gte: thirtyDaysAgo },
-        });
+        const [newTenantsThisMonth, recentSignups] = await Promise.all([
+            Tenant.countDocuments({ createdAt: { $gte: monthStart } }),
+            Tenant.countDocuments({ createdAt: { $gte: thirtyDaysAgo } }),
+        ]);
+
+        const avgMembersPerGym = totalTenants > 0 ? Math.round(totalMembers / totalTenants) : 0;
+
+        // Recent tenant activity feed (used by the platform dashboard's activity list)
+        const recentTenants = await Tenant.find()
+            .select('name createdAt')
+            .sort({ createdAt: -1 })
+            .limit(5);
+        const recentActivity = recentTenants.map((t: any) => ({
+            id: t._id,
+            text: `${t.name} joined the platform`,
+            time: t.createdAt,
+        }));
 
         return res.status(200).json({
             success: true,
@@ -167,9 +186,14 @@ export const getPlatformMetrics = async (req: Request, res: Response) => {
                 totalTenants,
                 activeTenants,
                 totalUsers,
+                totalMembers,
                 mrr,
+                arr,
+                avgMembersPerGym,
+                newTenantsThisMonth,
                 recentSignups,
                 churnRate: 0, // Placeholder/To be implemented
+                recentActivity,
             },
         });
     } catch (error) {
@@ -784,6 +808,7 @@ export const getPlatformAnalytics = async (req: Request, res: Response) => {
         ];
 
         const openTickets = await SupportTicket.countDocuments({ status: { $in: ['open', 'in_progress'] } }).catch(() => 0);
+        const totalMembersAcrossTenants = await Member.countDocuments().catch(() => 0);
 
         return res.status(200).json({
             success: true,
@@ -809,6 +834,7 @@ export const getPlatformAnalytics = async (req: Request, res: Response) => {
                 trialToPaidConversion,
                 churnRate,
                 activeTenants,
+                totalMembers: totalMembersAcrossTenants,
                 planDistribution,
                 monthlyTrend,
                 signupsTrend,

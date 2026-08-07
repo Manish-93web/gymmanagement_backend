@@ -197,6 +197,18 @@ class CommunityGroupService {
     }
 
     /**
+     * Get the set of group IDs (from the given list) that a member has actively joined
+     */
+    async getJoinedGroupIds(memberId: string, groupIds: string[]) {
+        const memberships = await GroupMember.find({
+            groupId: { $in: groupIds },
+            memberId,
+            status: 'active',
+        }).select('groupId');
+        return new Set(memberships.map((m) => m.groupId.toString()));
+    }
+
+    /**
      * Get member's groups
      */
     async getMemberGroups(memberId: string) {
@@ -206,6 +218,21 @@ class CommunityGroupService {
         }).populate('groupId');
 
         return memberships.map((m: any) => m.groupId);
+    }
+
+    /**
+     * Get a single group by id
+     */
+    async getGroupById(groupId: string) {
+        return Group.findById(groupId).populate('createdBy', 'firstName lastName profilePicture');
+    }
+
+    /**
+     * Check whether a member is an active member of a group
+     */
+    async isGroupMember(groupId: string, memberId: string) {
+        const membership = await GroupMember.findOne({ groupId, memberId, status: 'active' });
+        return !!membership;
     }
 
     /**

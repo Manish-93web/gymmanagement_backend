@@ -7,6 +7,11 @@ const router = Router();
 
 router.use(authenticate);
 
+// Exercise library routes
+router.get('/exercises', fitnessController.getExercises.bind(fitnessController));
+router.get('/exercises/:id', fitnessController.getExerciseById.bind(fitnessController));
+router.post('/exercises', requireAnyRole('member', 'trainer', 'gym_owner', 'branch_manager', 'super_admin'), fitnessController.createExercise.bind(fitnessController));
+
 // Workout routes
 router.post('/workouts/log', requireAnyRole('member', 'trainer', 'super_admin'), fitnessController.logWorkout.bind(fitnessController));
 router.get('/workouts/member/:memberId', authenticate, fitnessController.getMemberWorkouts.bind(fitnessController));
@@ -19,7 +24,7 @@ router.post('/diet/plans', requireAnyRole('trainer', 'gym_owner', 'branch_manage
 router.get('/diet/plans/member/:memberId', authenticate, fitnessController.getMemberDietPlans.bind(fitnessController));
 router.get('/diet/plans/:dietPlanId', authenticate, fitnessController.getDietPlanById.bind(fitnessController));
 router.put('/diet/plans/:dietPlanId', requireAnyRole('trainer', 'gym_owner', 'branch_manager', 'super_admin'), fitnessController.updateDietPlan.bind(fitnessController));
-router.delete('/diet/plans/:dietPlanId', requireAnyRole('trainer', 'gym_owner', 'branch_manager', 'super_admin'), fitnessController.deleteDietPlan.bind(fitnessController));
+router.delete('/diet/plans/:dietPlanId', requireAnyRole('trainer', 'gym_owner', 'branch_manager', 'super_admin', 'member'), fitnessController.deleteDietPlan.bind(fitnessController));
 router.post('/diet/plans/:dietPlanId/compliance', requireAnyRole('member', 'trainer', 'super_admin'), fitnessController.logCompliance.bind(fitnessController));
 router.get('/diet/member/:memberId/stats', authenticate, fitnessController.getDietStats.bind(fitnessController));
 

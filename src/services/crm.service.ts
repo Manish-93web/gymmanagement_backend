@@ -52,7 +52,7 @@ export class CRMService {
 
     // Get lead by ID
     async getLeadById(leadId: string, tenantId: string): Promise<ILead | null> {
-        return await Lead.findOne({ _id: leadId, tenantId });
+        return await Lead.findOne({ _id: leadId, tenantId }).populate('assignedTo', 'firstName lastName');
     }
 
     // Update lead
@@ -206,6 +206,15 @@ export class CRMService {
 
         const total = await Lead.countDocuments(filter);
 
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const newLeadsThisWeek = await Lead.countDocuments({ ...filter, createdAt: { $gte: sevenDaysAgo } });
+
+        const pipelineValueAgg = await Lead.aggregate([
+            { $match: { ...filter, status: { $nin: ['converted', 'lost'] } } },
+            { $group: { _id: null, total: { $sum: { $ifNull: ['$budget', 0] } } } },
+        ]);
+        const pipelineValue = pipelineValueAgg[0]?.total || 0;
+
         const byStatus = await Lead.aggregate([
             { $match: filter },
             { $group: { _id: '$status', count: { $sum: 1 } } },
@@ -231,6 +240,8 @@ export class CRMService {
 
         return {
             total,
+            newLeadsThisWeek,
+            pipelineValue,
             byStatus: byStatus.reduce((acc: any, curr: any) => {
                 acc[curr._id] = curr.count;
                 return acc;

@@ -46,12 +46,22 @@ class BiometricController {
                 else logMap.set(key, { total: 0, processed: 0, unmatched: r.unmatched });
             }
 
+            // Today's confirmed check-ins per device (from Attendance, not raw logs)
+            const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+            const todayCounts = await Attendance.aggregate([
+                { $match: { tenantId: new mongoose.Types.ObjectId(tenantId as string), method: 'biometric', checkInTime: { $gte: todayStart }, deviceId: { $ne: null } } },
+                { $group: { _id: '$deviceId', count: { $sum: 1 } } },
+            ]);
+            const todayMap = new Map<string, number>();
+            for (const t of todayCounts) todayMap.set(String(t._id), t.count);
+
             const enriched = devices.map(d => {
                 const obj = d.toObject() as any;
                 const ls = logMap.get(d._id.toString()) || { total: 0, processed: 0, unmatched: 0 };
                 obj.totalRecordsFetched = ls.total;
                 obj.processedRecords    = ls.processed;
                 obj.unmatchedRecords    = ls.unmatched ?? 0;
+                obj.totalToday          = todayMap.get(d._id.toString()) ?? 0;
                 // Ensure reference-compatible field names are present in response
                 obj.deviceName  = obj.deviceName  || obj.name   || obj.deviceId;
                 obj.deviceBrand = obj.deviceBrand || obj.vendor || 'generic';
@@ -132,14 +142,20 @@ class BiometricController {
             const updates: any = {};
 
             // Scalar top-level fields
-            if (body.name        !== undefined) updates.name        = body.name;
-            if (body.deviceName  !== undefined) updates.name        = body.deviceName;
+            // NOTE: findOneAndUpdate bypasses the model's pre('save') legacy<->primary sync
+            // hook, so both the legacy alias and the primary (reference-compatible) field
+            // must be set together here or edits silently vanish from anywhere that reads
+            // the primary field (getDevices, getDiagnostic, etc.)
+            if (body.name        !== undefined) { updates.name        = body.name;        updates.deviceName  = body.name; }
+            if (body.deviceName  !== undefined) { updates.name        = body.deviceName;  updates.deviceName  = body.deviceName; }
+            if (body.model       !== undefined) updates.deviceModel = body.model;
+            if (body.deviceModel !== undefined) updates.deviceModel = body.deviceModel;
             if (body.location    !== undefined) updates.location    = body.location;
             if (body.isActive    !== undefined) updates.isActive    = body.isActive;
-            if (body.vendor      !== undefined) updates.vendor      = body.vendor;
-            if (body.deviceBrand !== undefined) updates.vendor      = body.deviceBrand;
-            if (body.type        !== undefined) updates.type        = body.type;
-            if (body.deviceType  !== undefined) updates.type        = body.deviceType;
+            if (body.vendor      !== undefined) { updates.vendor      = body.vendor;      updates.deviceBrand = body.vendor; }
+            if (body.deviceBrand !== undefined) { updates.vendor      = body.deviceBrand; updates.deviceBrand = body.deviceBrand; }
+            if (body.type        !== undefined) { updates.type        = body.type;        updates.deviceType  = body.type; }
+            if (body.deviceType  !== undefined) { updates.type        = body.deviceType;  updates.deviceType  = body.deviceType; }
             if (body.ipAddress   !== undefined) updates.ipAddress   = body.ipAddress;
             if (body.port        !== undefined) updates.port        = body.port;
             if (body.password    !== undefined) updates.password    = body.password;

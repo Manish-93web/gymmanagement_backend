@@ -53,7 +53,7 @@ router.get(
 // ─── POST /initiate ───────────────────────────────────────────────────────────
 router.post(
     '/initiate',
-    requireAnyRole('gym_owner', 'branch_manager', 'staff_reception', 'super_admin'),
+    requireAnyRole('gym_owner', 'branch_manager', 'staff_reception', 'member', 'super_admin'),
     async (req: Request, res: Response) => {
         try {
             const tenantId = (req as any).tenantId;

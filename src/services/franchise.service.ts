@@ -32,7 +32,7 @@ export class FranchiseService {
             {
                 $group: {
                     _id: '$branchId',
-                    totalRevenue: { $sum: '$totalAmount' },
+                    totalRevenue: { $sum: '$amount.total' },
                     transactionCount: { $sum: 1 }
                 }
             },
@@ -114,18 +114,30 @@ export class FranchiseService {
         const rankings = await Promise.all(branches.map(async (branch) => {
             const lastMonth = new Date();
             lastMonth.setMonth(lastMonth.getMonth() - 1);
+            const twoMonthsAgo = new Date();
+            twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
 
-            const [revenue, members, attendance] = await Promise.all([
+            const [revenue, members, attendance, prevRevenue] = await Promise.all([
                 Payment.aggregate([
                     { $match: { branchId: branch._id, status: 'completed', paidAt: { $gte: lastMonth } } },
-                    { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+                    { $group: { _id: null, total: { $sum: '$amount.total' } } }
                 ]),
                 Member.countDocuments({ branchId: branch._id, status: 'active' }),
-                Attendance.countDocuments({ branchId: branch._id, checkInTime: { $gte: lastMonth } })
+                Attendance.countDocuments({ branchId: branch._id, checkInTime: { $gte: lastMonth } }),
+                Payment.aggregate([
+                    { $match: { branchId: branch._id, status: 'completed', paidAt: { $gte: twoMonthsAgo, $lt: lastMonth } } },
+                    { $group: { _id: null, total: { $sum: '$amount.total' } } }
+                ]),
             ]);
 
+            const revenueTotal = revenue[0]?.total || 0;
+            const prevRevenueTotal = prevRevenue[0]?.total || 0;
+            const growth = prevRevenueTotal > 0
+                ? ((revenueTotal - prevRevenueTotal) / prevRevenueTotal) * 100
+                : 0;
+
             // Simple scoring logic (mocked complexity)
-            const revScore = (revenue[0]?.total || 0) / 1000;
+            const revScore = revenueTotal / 1000;
             const memScore = members / 10;
             const attScore = attendance / 50;
             const totalScore = revScore + memScore + attScore;
@@ -133,6 +145,10 @@ export class FranchiseService {
             return {
                 branchId: branch._id,
                 branchName: branch.name,
+                // Raw metrics — consumed directly by the mobile FranchiseDashboard screen
+                members,
+                revenue: revenueTotal,
+                growth: parseFloat(growth.toFixed(1)),
                 scores: {
                     revenue: revScore,
                     members: memScore,

@@ -19,7 +19,7 @@ class AttendanceController {
                 checkInMethod: bodyMethod, method: bodyMethodAlt, source: bodySource,
                 checkInTime: bodyCheckInTime, checkIn: bodyCheckIn,
                 checkOutTime: bodyCheckOutTime, checkOut: bodyCheckOut,
-                classId, trainerId, location,
+                classId, trainerId, location, notes,
             } = req.body;
             const checkInMethod = bodyMethod || bodyMethodAlt || bodySource || 'manual';
             const checkInTime = bodyCheckInTime || bodyCheckIn;
@@ -50,6 +50,7 @@ class AttendanceController {
                 classId,
                 trainerId,
                 location,
+                notes,
             });
 
             return res.status(201).json({ success: true, data: attendance });
@@ -219,25 +220,28 @@ class AttendanceController {
     // POST /qr/scan
     async scanQR(req: Request, res: Response, next: NextFunction) {
         try {
-            const { token, memberId, checkInMethod } = req.body;
+            const { token, memberId: bodyMemberId, checkInMethod } = req.body;
 
             if (!token) {
                 return res.status(400).json({ success: false, message: 'QR token is required' });
-            }
-            if (!memberId) {
-                return res.status(400).json({ success: false, message: 'memberId is required' });
             }
 
             const secret = process.env.JWT_SECRET || 'default_secret';
             let decoded: any;
             try {
-                decoded = jwt.verify(token, secret) as { tenantId: string; branchId?: string };
+                decoded = jwt.verify(token, secret) as { tenantId: string; branchId?: string; memberId?: string };
             } catch {
                 return res.status(400).json({ success: false, message: 'Invalid or expired QR code' });
             }
 
             const { tenantId, branchId } = decoded;
+            // Member-badge QR codes (generated via /qr/generate?memberId=…) already embed the
+            // member — fall back to that when the scanning client doesn't supply one separately.
+            const memberId = bodyMemberId || decoded.memberId;
 
+            if (!memberId) {
+                return res.status(400).json({ success: false, message: 'memberId is required' });
+            }
             if (!tenantId) {
                 return res.status(400).json({ success: false, message: 'Invalid QR token: missing tenant' });
             }
@@ -252,7 +256,31 @@ class AttendanceController {
                 checkInMethod: checkInMethod || 'qr_code',
             });
 
-            return res.status(201).json({ success: true, data: attendance });
+            // Enrich with member/membership info so the scanner UI can show a rich result card.
+            const member = await Member.findOne({ _id: memberId, tenantId })
+                .populate('planId', 'name')
+                .lean() as any;
+
+            const now = new Date();
+            const expiryDate = member?.membershipExpiry;
+            const daysRemaining = expiryDate
+                ? Math.ceil((new Date(expiryDate).getTime() - now.getTime()) / 86400000)
+                : 0;
+            const isExpired = expiryDate ? new Date(expiryDate).getTime() < now.getTime() : false;
+
+            return res.status(201).json({
+                success: true,
+                data: {
+                    ...(typeof (attendance as any).toObject === 'function' ? (attendance as any).toObject() : attendance),
+                    memberName: member ? `${member.firstName ?? ''} ${member.lastName ?? ''}`.trim() : undefined,
+                    membershipPlan: member?.planId?.name,
+                    expiryDate,
+                    daysRemaining,
+                    isExpired,
+                    photoUrl: member?.personalInfo?.profilePicture,
+                    message: isExpired ? 'Checked in — membership has expired, please renew' : 'Check-in successful!',
+                },
+            });
         } catch (error: any) {
             if (
                 error.message === 'Member not found' ||
@@ -505,8 +533,11 @@ class AttendanceController {
                     .skip(skip)
                     .limit(limitNum)
                     .sort({ checkInTime: -1 })
-                    .populate('memberId', 'firstName lastName membershipNumber avatar')
-                    .populate('deviceId', 'deviceName'),
+                    .populate('memberId', 'firstName lastName membershipNumber avatar'),
+                // Note: `deviceId` is stored as a plain String (the BiometricDevice's stringified
+                // _id), not a Mongoose ref, so it cannot be `.populate()`d — doing so silently
+                // nulls the field out (no ref/refPath means Mongoose falls back to looking the
+                // string up as an Attendance _id, which never matches).
                 Attendance.countDocuments(filter),
             ]);
 
@@ -609,6 +640,175 @@ class AttendanceController {
                     total,
                     currentlyIn,
                     date: todayStart,
+                },
+            });
+        } catch (error) {
+            return next(error);
+        }
+    }
+
+    // GET /:attendanceId — single attendance record with populated member/staff info
+    async getAttendanceById(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant context required' });
+
+            const attendanceId = String(req.params.attendanceId);
+            const attendance = await Attendance.findOne({ _id: attendanceId, tenantId })
+                .populate('memberId', 'firstName lastName mobile email membershipNumber')
+                .populate('recordedBy', 'firstName lastName');
+
+            if (!attendance) {
+                return res.status(404).json({ success: false, message: 'Attendance record not found' });
+            }
+
+            return res.status(200).json({ success: true, data: attendance });
+        } catch (error) {
+            return next(error);
+        }
+    }
+
+    // GET /summary — today/week/month rollups + top members + today's peak hours
+    async getAttendanceSummary(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant context required' });
+
+            const tid = new mongoose.Types.ObjectId(tenantId);
+            const isOwnerOrAdmin = req.user?.role === 'gym_owner' || req.user?.role === 'super_admin';
+            const baseFilter: any = { tenantId: tid };
+            if (req.branchId && !isOwnerOrAdmin) baseFilter.branchId = new mongoose.Types.ObjectId(req.branchId);
+
+            const now = new Date();
+            const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+            const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            const monthStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+            const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            const hourLabel = (h: number) => (h === 0 ? '12am' : h < 12 ? `${h}am` : h === 12 ? '12pm' : `${h - 12}pm`);
+
+            const [
+                todayTotal, todayUniqueIds, todayActive,
+                weekTotal, weekUniqueIds, weekByDay,
+                monthTotal, monthUniqueIds,
+                todayHourly,
+                topMembers,
+            ] = await Promise.all([
+                Attendance.countDocuments({ ...baseFilter, checkInTime: { $gte: todayStart } }),
+                Attendance.distinct('memberId', { ...baseFilter, checkInTime: { $gte: todayStart } }),
+                Attendance.countDocuments({ ...baseFilter, checkInTime: { $gte: todayStart }, checkOutTime: null }),
+                Attendance.countDocuments({ ...baseFilter, checkInTime: { $gte: weekStart } }),
+                Attendance.distinct('memberId', { ...baseFilter, checkInTime: { $gte: weekStart } }),
+                Attendance.aggregate([
+                    { $match: { ...baseFilter, checkInTime: { $gte: weekStart } } },
+                    { $group: { _id: { $dayOfWeek: '$checkInTime' }, count: { $sum: 1 } } },
+                ]),
+                Attendance.countDocuments({ ...baseFilter, checkInTime: { $gte: monthStart } }),
+                Attendance.distinct('memberId', { ...baseFilter, checkInTime: { $gte: monthStart } }),
+                Attendance.aggregate([
+                    { $match: { ...baseFilter, checkInTime: { $gte: todayStart } } },
+                    { $group: { _id: { $hour: '$checkInTime' }, count: { $sum: 1 } } },
+                    { $sort: { _id: 1 } },
+                ]),
+                Attendance.aggregate([
+                    { $match: { ...baseFilter, checkInTime: { $gte: monthStart } } },
+                    { $group: { _id: '$memberId', count: { $sum: 1 }, lastSeen: { $max: '$checkInTime' } } },
+                    { $sort: { count: -1 } },
+                    { $limit: 10 },
+                    { $lookup: { from: 'members', localField: '_id', foreignField: '_id', as: 'member' } },
+                    { $unwind: { path: '$member', preserveNullAndEmptyArrays: true } },
+                ]),
+            ]);
+
+            let peakDayLabel = '—';
+            if (weekByDay.length > 0) {
+                const top = weekByDay.reduce((max: any, d: any) => (d.count > max.count ? d : max), weekByDay[0]);
+                peakDayLabel = DAY_LABELS[(top._id ?? 1) - 1] ?? '—';
+            }
+
+            const daysSoFarThisMonth = Math.max(1, Math.ceil((now.getTime() - monthStart.getTime()) / 86400000));
+
+            return res.status(200).json({
+                success: true,
+                data: {
+                    today: { total: todayTotal, unique: todayUniqueIds.length, active: todayActive },
+                    week: { total: weekTotal, unique: weekUniqueIds.length, peakDay: peakDayLabel },
+                    month: { total: monthTotal, unique: monthUniqueIds.length, avgPerDay: monthTotal / daysSoFarThisMonth },
+                    memberBreakdown: topMembers.map((m: any) => ({
+                        memberId: String(m._id),
+                        name: m.member ? `${m.member.firstName ?? ''} ${m.member.lastName ?? ''}`.trim() : 'Member',
+                        count: m.count,
+                        lastSeen: m.lastSeen,
+                    })),
+                    peakHours: todayHourly.map((h: any) => ({ hour: hourLabel(h._id), count: h.count })),
+                },
+            });
+        } catch (error) {
+            return next(error);
+        }
+    }
+
+    // GET /report — check-in totals, daily breakdown and peak-hour distribution for a date range
+    async getAttendanceReport(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant context required' });
+
+            const tid = new mongoose.Types.ObjectId(tenantId);
+            const isOwnerOrAdmin = req.user?.role === 'gym_owner' || req.user?.role === 'super_admin';
+            const { startDate, endDate } = req.query;
+
+            const filter: any = { tenantId: tid };
+            if (req.branchId && !isOwnerOrAdmin) filter.branchId = new mongoose.Types.ObjectId(req.branchId);
+            if (startDate || endDate) {
+                filter.checkInTime = {};
+                if (startDate) filter.checkInTime.$gte = new Date(startDate as string);
+                if (endDate) filter.checkInTime.$lte = new Date(endDate as string);
+            }
+
+            const hourLabel = (h: number) => (h === 0 ? '12am' : h < 12 ? `${h}am` : h === 12 ? '12pm' : `${h - 12}pm`);
+
+            const [totalCheckIns, uniqueMemberIds, dailyAgg, hourlyAgg, avgDurationAgg] = await Promise.all([
+                Attendance.countDocuments(filter),
+                Attendance.distinct('memberId', filter),
+                Attendance.aggregate([
+                    { $match: filter },
+                    {
+                        $group: {
+                            _id: { $dateToString: { format: '%Y-%m-%d', date: '$checkInTime' } },
+                            count: { $sum: 1 },
+                            members: { $addToSet: '$memberId' },
+                        },
+                    },
+                    { $sort: { _id: 1 } },
+                ]),
+                Attendance.aggregate([
+                    { $match: filter },
+                    { $group: { _id: { $hour: '$checkInTime' }, count: { $sum: 1 } } },
+                    { $sort: { count: -1 } },
+                ]),
+                Attendance.aggregate([
+                    { $match: { ...filter, duration: { $exists: true, $ne: null } } },
+                    { $group: { _id: null, avg: { $avg: '$duration' } } },
+                ]),
+            ]);
+
+            const dailyTotals = dailyAgg.map((d: any) => ({ date: d._id, count: d.count, unique: (d.members ?? []).length }));
+            const peakHours = hourlyAgg.map((h: any) => ({ hour: hourLabel(h._id), count: h.count }));
+            const avgMinutes = avgDurationAgg[0]?.avg ?? 0;
+            const avgDuration = avgMinutes >= 60
+                ? `${Math.floor(avgMinutes / 60)}h ${Math.round(avgMinutes % 60)}m`
+                : `${Math.round(avgMinutes)}m`;
+
+            return res.status(200).json({
+                success: true,
+                data: {
+                    totalCheckIns,
+                    uniqueMembers: uniqueMemberIds.length,
+                    peakHour: peakHours[0]?.hour ?? '—',
+                    avgDuration,
+                    dailyTotals,
+                    peakHours,
                 },
             });
         } catch (error) {

@@ -7,18 +7,45 @@ import Branch from '../models/Branch.model';
 const NO_TENANT = (res: Response) =>
     res.status(400).json({ success: false, message: 'Tenant context required' });
 
+// Converts a coarse UI period selector ('week' | 'month' | 'quarter' | 'year') into a concrete
+// date range. Only used as a fallback when the caller does not supply explicit startDate/endDate,
+// so existing callers that never sent `period` are unaffected.
+function periodToRange(period?: string): { startDate?: Date; endDate?: Date } {
+    if (!period) return {};
+    const endDate = new Date();
+    const startDate = new Date();
+    switch (period) {
+        case 'week':
+            startDate.setDate(startDate.getDate() - 7);
+            break;
+        case 'month':
+            startDate.setMonth(startDate.getMonth() - 1);
+            break;
+        case 'quarter':
+            startDate.setMonth(startDate.getMonth() - 3);
+            break;
+        case 'year':
+            startDate.setFullYear(startDate.getFullYear() - 1);
+            break;
+        default:
+            return {};
+    }
+    return { startDate, endDate };
+}
+
 export class AnalyticsController {
     async getRevenueAnalytics(req: Request, res: Response, next: NextFunction) {
         try {
             const tenantId = req.tenantId;
             if (!tenantId) return NO_TENANT(res);
-            const { branchId, startDate, endDate } = req.query;
+            const { branchId, startDate, endDate, period } = req.query;
+            const fallbackRange = (!startDate && !endDate) ? periodToRange(period as string) : {};
 
             const analytics = await AnalyticsService.getRevenueAnalytics(
                 tenantId,
                 branchId as string,
-                startDate ? new Date(startDate as string) : undefined,
-                endDate ? new Date(endDate as string) : undefined
+                startDate ? new Date(startDate as string) : fallbackRange.startDate,
+                endDate ? new Date(endDate as string) : fallbackRange.endDate
             );
 
             return res.status(200).json({ success: true, data: analytics });

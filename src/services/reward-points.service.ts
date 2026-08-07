@@ -105,8 +105,10 @@ class RewardPointsService {
      * Get member redemptions
      */
     async getMemberRedemptions(memberId: string) {
+        // NOTE: 'itemId' is a plain virtual getter aliasing rewardId, not a
+        // populate-configured virtual — populate the real schema path instead.
         const redemptions = await RewardRedemption.find({ memberId })
-            .populate('itemId')
+            .populate('rewardId')
             .sort({ redeemedAt: -1 });
 
         return redemptions;

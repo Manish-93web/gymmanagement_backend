@@ -10,7 +10,7 @@ export interface IPostComment extends Document {
 
 const PostCommentSchema: Schema = new Schema({
     postId: { type: Schema.Types.ObjectId, ref: 'Post', required: true, index: true },
-    memberId: { type: Schema.Types.ObjectId, ref: 'Member', required: true, index: true },
+    memberId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     content: { type: String, required: true },
     likeCount: { type: Number, default: 0 },
 }, { timestamps: { createdAt: true, updatedAt: true } });

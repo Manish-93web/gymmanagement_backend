@@ -3,6 +3,7 @@ import Campaign from '../models/Campaign.model';
 import Coupon from '../models/Coupon.model';
 import Referral from '../models/Referral.model';
 import Member from '../models/Member.model';
+import CommunicationTemplate from '../models/CommunicationTemplate.model';
 import mongoose from 'mongoose';
 
 export class MarketingController {
@@ -26,16 +27,30 @@ export class MarketingController {
     async createCampaign(req: Request, res: Response, next: NextFunction) {
         try {
             const tenantId = req.user!.tenantId;
-            const { name, type, targetAudience, subject, content, scheduledAt, channels, description } = req.body;
+            const { name, type, targetAudience, subject, content, scheduledAt, channels, description, templateId } = req.body;
             if (!name || !type) return res.status(400).json({ success: false, message: 'name and type are required' });
+
+            // Mobile app's CreateCampaignScreen lets the user pick a saved template
+            // instead of typing content and sends templateId — resolve it into the
+            // actual subject/message so the campaign isn't created with blank content.
+            let finalSubject = subject;
+            let finalContent = content;
+            if (templateId && !finalContent) {
+                const template = await CommunicationTemplate.findOne({ _id: templateId, tenantId });
+                if (template) {
+                    finalSubject = finalSubject || template.subject;
+                    finalContent = template.content;
+                }
+            }
+
             const campaign = await Campaign.create({
                 name,
                 type: type || 'email',
                 description: description || '',
                 targetAudience: targetAudience || {},
                 content: {
-                    subject: subject,
-                    message: content || '',
+                    subject: finalSubject,
+                    message: finalContent || '',
                 },
                 schedule: {
                     startDate: scheduledAt ? new Date(scheduledAt) : new Date(),
@@ -95,6 +110,24 @@ export class MarketingController {
             ]);
             const result: any = { total: 0, sent: 0, draft: 0, scheduled: 0, cancelled: 0, running: 0, completed: 0, paused: 0 };
             stats.forEach((s: any) => { result[s._id] = s.count; result.total += s.count; });
+
+            // Delivery/engagement totals for dashboard summary cards (mobile app's
+            // MarketingDashboardScreen expects campaigns_sent/open_rate/click_rate/conversions).
+            const [metrics] = await Campaign.aggregate([
+                { $match: { tenantId: new mongoose.Types.ObjectId(tenantId as unknown as string) } },
+                { $group: {
+                    _id: null,
+                    totalSent: { $sum: '$analytics.sent' },
+                    totalOpened: { $sum: '$analytics.opened' },
+                    totalClicked: { $sum: '$analytics.clicked' },
+                    totalConverted: { $sum: '$analytics.converted' },
+                } }
+            ]);
+            result.campaigns_sent = result.completed;
+            result.open_rate = metrics?.totalSent ? Math.round((metrics.totalOpened / metrics.totalSent) * 100) : 0;
+            result.click_rate = metrics?.totalSent ? Math.round((metrics.totalClicked / metrics.totalSent) * 100) : 0;
+            result.conversions = metrics?.totalConverted ?? 0;
+
             return res.json({ success: true, data: result });
         } catch (error) { return next(error); }
     }

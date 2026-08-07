@@ -248,6 +248,78 @@ class SubscriptionController {
         }
     }
 
+    // PUT /subscriptions/:id — generic edit (plan / endDate / status) used by
+    // the mobile app's Edit Membership screen. The action-specific endpoints
+    // below (cancel/freeze/unfreeze/renew) don't cover a plain field edit.
+    async updateSubscription(req: Request, res: Response): Promise<Response> {
+        try {
+            const tenantId = req.tenantId;
+            if (!tenantId) {
+                return res.status(400).json({ success: false, message: 'Tenant context required' });
+            }
+
+            const { planId, endDate, status, autoRenew } = req.body;
+            const allowedStatuses = ['active', 'paused', 'frozen', 'expired', 'cancelled'];
+            if (status !== undefined && !allowedStatuses.includes(status)) {
+                return res.status(400).json({ success: false, message: `status must be one of: ${allowedStatuses.join(', ')}` });
+            }
+
+            const subscription = await Subscription.findOne({ _id: req.params.id, tenantId });
+            if (!subscription) {
+                return res.status(404).json({ success: false, message: 'Subscription not found' });
+            }
+
+            if (planId && String(planId) !== String(subscription.planId)) {
+                const plan = await MembershipPlan.findOne({ _id: planId, tenantId });
+                if (!plan) {
+                    return res.status(404).json({ success: false, message: 'Membership plan not found' });
+                }
+                subscription.planId = plan._id as mongoose.Types.ObjectId;
+                subscription.pricing.basePrice = plan.pricing.basePrice;
+                subscription.pricing.totalAmount = plan.pricing.finalPrice;
+            }
+
+            if (endDate) {
+                subscription.endDate = new Date(endDate);
+            }
+
+            if (typeof autoRenew === 'boolean') {
+                subscription.autoRenew = autoRenew;
+            }
+
+            let historyAction: 'cancelled' | 'frozen' | 'reactivated' | 'renewed' = 'renewed';
+            if (status) {
+                if (status === 'cancelled') historyAction = 'cancelled';
+                else if (status === 'frozen') historyAction = 'frozen';
+                else if (status === 'active') historyAction = 'reactivated';
+                subscription.status = status;
+            }
+
+            await subscription.save();
+
+            // Keep the member record's cached plan/expiry in sync
+            await Member.findByIdAndUpdate(subscription.memberId, {
+                planId: subscription.planId,
+                membershipExpiry: subscription.endDate,
+                ...(status === 'active' ? { status: 'active' } : {}),
+            });
+
+            await SubscriptionHistory.create({
+                tenantId,
+                memberId: subscription.memberId,
+                subscriptionId: subscription._id,
+                action: historyAction,
+                newPlanId: subscription.planId,
+                performedBy: req.user!._id,
+                notes: 'Subscription updated',
+            });
+
+            return res.json({ success: true, message: 'Subscription updated', data: subscription });
+        } catch (error: any) {
+            return res.status(500).json({ success: false, message: error.message });
+        }
+    }
+
     // GET /subscriptions/:id/history
     async getSubscriptionHistory(req: Request, res: Response): Promise<Response> {
         try {
@@ -454,6 +526,11 @@ class SubscriptionController {
                 calculatedEndDate = computeEndDate(renewFrom, plan.duration, plan.durationValue);
                 renewalPlanId = plan._id as mongoose.Types.ObjectId;
                 subscription.planId = renewalPlanId;
+                // Keep pricing in sync with the newly-selected plan so the
+                // renewalHistory entry (and future reads) reflect its price
+                // instead of the previous plan's stale amount.
+                subscription.pricing.basePrice = plan.pricing.basePrice;
+                subscription.pricing.totalAmount = plan.pricing.finalPrice;
             } else {
                 // Renew using the existing plan
                 const plan = await MembershipPlan.findById(subscription.planId);

@@ -5,7 +5,7 @@ export interface IBiometricDevice extends Document {
     branchId: mongoose.Types.ObjectId;
     // Reference-compatible primary fields
     deviceName: string;
-    deviceBrand: 'zkteco' | 'essl' | 'matrix' | 'realtime' | 'generic';
+    deviceBrand: 'zkteco' | 'essl' | 'suprema' | 'matrix' | 'realtime' | 'generic';
     deviceModel?: string;
     deviceType: 'fingerprint' | 'face' | 'rfid' | 'pin' | 'hybrid';
     syncMode: 'realtime' | 'scheduled' | 'manual';
@@ -53,7 +53,7 @@ const BiometricDeviceSchema = new Schema<IBiometricDevice>(
 
         // Primary (reference-compatible) fields
         deviceName:          { type: String },
-        deviceBrand:         { type: String, enum: ['zkteco', 'essl', 'matrix', 'realtime', 'generic'], default: 'generic' },
+        deviceBrand:         { type: String, enum: ['zkteco', 'essl', 'suprema', 'matrix', 'realtime', 'generic'], default: 'generic' },
         deviceModel:         { type: String },
         deviceType:          { type: String, enum: ['fingerprint', 'face', 'rfid', 'pin', 'hybrid'], default: 'fingerprint' },
         syncMode:            { type: String, enum: ['realtime', 'scheduled', 'manual'], default: 'scheduled' },

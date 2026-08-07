@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import memberController from '../controllers/member.controller';
 import { authenticate } from '../middleware/auth.middleware';
-import { requirePermission } from '../middleware/rbac.middleware';
+import { requirePermission, requireSelfMemberOrPermission, requireMemberSearchOrPermission } from '../middleware/rbac.middleware';
 import { tenantContext } from '../middleware/tenant.middleware';
 import { invalidateTenantCache } from '../middleware/cache.middleware';
 import QRCode from 'qrcode';
@@ -38,7 +38,7 @@ router.get('/me/qr-code', async (req: Request, res: Response, next: NextFunction
     } catch (err) { next(err); }
 });
 router.post('/', requirePermission('member:create'), invalidateCache, memberController.createMember.bind(memberController));
-router.get('/', requirePermission('member:read'), memberController.getMembers.bind(memberController));
+router.get('/', requireMemberSearchOrPermission('member:read'), memberController.getMembers.bind(memberController));
 router.get('/stats', requirePermission('member:read'), memberController.getMemberStats.bind(memberController));
 router.get('/alerts/expiry', requirePermission('member:read'), memberController.getExpiryAlerts.bind(memberController));
 router.get('/expiry-alerts', requirePermission('member:read'), memberController.getExpiryAlertsBucketed.bind(memberController));
@@ -53,11 +53,11 @@ router.post('/:memberId/reactivate', requirePermission('member:update'), memberC
 router.post('/:memberId/transfer', requirePermission('member:update'), memberController.transferMember.bind(memberController));
 
 // Member measurements
-router.post('/:memberId/measurements', requirePermission('member:update'), memberController.addMeasurement.bind(memberController));
+router.post('/:memberId/measurements', requireSelfMemberOrPermission('member:update'), memberController.addMeasurement.bind(memberController));
 
 // Profile picture & transformation gallery
 router.put('/:memberId/profile-picture', requirePermission('member:update'), memberController.uploadProfilePicture.bind(memberController));
-router.post('/:memberId/transformation', requirePermission('member:update'), memberController.addTransformationPhoto.bind(memberController));
+router.post('/:memberId/transformation', requireSelfMemberOrPermission('member:update'), memberController.addTransformationPhoto.bind(memberController));
 
 // Timeline
 router.get('/:memberId/timeline', requirePermission('member:read'), memberController.getMemberTimeline.bind(memberController));
@@ -66,15 +66,15 @@ router.get('/:memberId/timeline', requirePermission('member:read'), memberContro
 router.patch('/:memberId/plan', requirePermission('member:update'), memberController.changeMemberPlan.bind(memberController));
 
 // Health info
-router.patch('/:memberId/health', requirePermission('member:update'), memberController.updateHealthInfo.bind(memberController));
+router.patch('/:memberId/health', requireSelfMemberOrPermission('member:update'), memberController.updateHealthInfo.bind(memberController));
 
 // Documents
 router.post('/:memberId/documents', requirePermission('member:update'), memberController.uploadDocument.bind(memberController));
 router.delete('/:memberId/documents/:docId', requirePermission('member:update'), memberController.deleteDocument.bind(memberController));
 
 // Workout logs
-router.post('/:memberId/workout-logs', requirePermission('member:update'), memberController.addWorkoutLog.bind(memberController));
-router.get('/:memberId/workout-logs', requirePermission('member:read'), memberController.getWorkoutLogs.bind(memberController));
+router.post('/:memberId/workout-logs', requireSelfMemberOrPermission('member:update'), memberController.addWorkoutLog.bind(memberController));
+router.get('/:memberId/workout-logs', requireSelfMemberOrPermission('member:read'), memberController.getWorkoutLogs.bind(memberController));
 
 // Delete member (soft delete → archived)
 router.delete('/:memberId', requirePermission('member:delete'), invalidateCache, memberController.deleteMember.bind(memberController));

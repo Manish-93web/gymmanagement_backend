@@ -3,13 +3,14 @@ import Payment from '../models/Payment.model';
 import Attendance from '../models/Attendance.model';
 import Class from '../models/Class.model';
 import User from '../models/User.model';
+import Lead from '../models/Lead.model';
 import CustomReport from '../models/CustomReport.model';
 import logger from '../config/logger';
 
 interface ReportConfig {
     name: string;
     description?: string;
-    dataSource: 'members' | 'payments' | 'attendance' | 'classes' | 'users';
+    dataSource: 'members' | 'payments' | 'attendance' | 'classes' | 'users' | 'leads';
     filters: ReportFilter[];
     columns: ReportColumn[];
     groupBy?: string[];
@@ -65,12 +66,13 @@ class CustomReportService {
         // Get data source model
         const Model = this.getModel(report.dataSource);
 
-        // Build query
+        // Build query, always scoped to the report's own tenant
         const query = this.buildQuery(report.filters as any, additionalFilters as any);
+        query.tenantId = report.tenantId;
 
         // Execute query
         let queryBuilder = Model.find(query);
-        if (report.dataSource !== 'users') {
+        if (Model.schema.path('userId')) {
             queryBuilder = queryBuilder.populate('userId');
         }
         let data = await queryBuilder;
@@ -179,6 +181,19 @@ class CustomReportService {
                     { name: 'createdAt', label: 'Joined Date', type: 'date' },
                 ],
             },
+            {
+                name: 'leads',
+                label: 'Leads',
+                fields: [
+                    { name: 'firstName', label: 'First Name', type: 'string' },
+                    { name: 'lastName', label: 'Last Name', type: 'string' },
+                    { name: 'mobile', label: 'Mobile', type: 'string' },
+                    { name: 'status', label: 'Status', type: 'string' },
+                    { name: 'source', label: 'Source', type: 'string' },
+                    { name: 'budget', label: 'Budget', type: 'number' },
+                    { name: 'createdAt', label: 'Created Date', type: 'date' },
+                ],
+            },
         ];
     }
 
@@ -192,6 +207,7 @@ class CustomReportService {
             attendance: Attendance,
             classes: Class,
             users: User,
+            leads: Lead,
         };
 
         return models[dataSource] || Member;

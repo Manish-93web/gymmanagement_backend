@@ -15,6 +15,7 @@ router.get('/posts/:postId/comments', communityController.getPostComments);
 router.delete('/posts/:postId', communityController.deletePost);
 
 router.get('/groups', communityController.getGroups);
+router.get('/groups/:groupId', communityController.getGroupDetail);
 router.post('/groups/:groupId/join', communityController.joinGroup);
 router.post('/groups/:groupId/leave', communityController.leaveGroup);
 

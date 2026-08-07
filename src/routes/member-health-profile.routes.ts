@@ -54,7 +54,7 @@ router.get('/:memberId', async (req: Request, res: Response, next: NextFunction)
         const { memberId } = req.params;
 
         const member = await Member.findOne({ _id: memberId, tenantId })
-            .select('firstName lastName bloodGroup emergencyContact medicalNotes userId')
+            .select('firstName lastName bloodGroup abhaId emergencyContact medicalNotes userId')
             .lean();
 
         if (!member) {
@@ -86,7 +86,7 @@ router.patch('/:memberId', async (req: Request, res: Response, next: NextFunctio
         const user = (req as any).user;
         const tenantId = (req as any).tenantId || user?.tenantId;
         const { memberId } = req.params;
-        const { bloodGroup, emergencyContact, medicalNotes } = req.body;
+        const { bloodGroup, abhaId, emergencyContact, medicalNotes } = req.body;
 
         const member = await Member.findOne({ _id: memberId, tenantId }).lean();
         if (!member) {
@@ -110,6 +110,7 @@ router.patch('/:memberId', async (req: Request, res: Response, next: NextFunctio
 
         const updates: Record<string, any> = {};
         if (bloodGroup !== undefined) updates.bloodGroup = bloodGroup;
+        if (abhaId !== undefined) updates.abhaId = abhaId;
         if (emergencyContact !== undefined) updates.emergencyContact = emergencyContact;
         if (medicalNotes !== undefined) updates.medicalNotes = medicalNotes;
 
@@ -121,7 +122,7 @@ router.patch('/:memberId', async (req: Request, res: Response, next: NextFunctio
             memberId,
             { $set: updates },
             { new: true, runValidators: true }
-        ).select('firstName lastName bloodGroup emergencyContact medicalNotes');
+        ).select('firstName lastName bloodGroup abhaId emergencyContact medicalNotes');
 
         return res.json({ success: true, data: updated });
     } catch (err) { next(err); }

@@ -380,8 +380,9 @@ export class MemberController {
                 return;
             }
 
+            const isSelfServiceSearch = req.user?.role === 'member';
             const page = parseInt(req.query.page as string) || 1;
-            const limit = parseInt(req.query.limit as string) || 20;
+            const limit = isSelfServiceSearch ? Math.min(parseInt(req.query.limit as string) || 10, 10) : (parseInt(req.query.limit as string) || 20);
             const status = req.query.status as MemberStatus | undefined;
             const search = req.query.search as string | undefined;
             const planId = req.query.planId as string | undefined;
@@ -398,10 +399,23 @@ export class MemberController {
                 duration
             );
 
+            // A 'member' caller only reaches this endpoint via a search query
+            // (enforced by requireMemberSearchOrPermission) — never expose the full
+            // record (health info, payments, documents) to another member, only the
+            // minimum needed to pick a recipient for e.g. a membership transfer.
+            const members = isSelfServiceSearch
+                ? result.members.map((m: any) => ({
+                    _id: m._id,
+                    firstName: m.firstName,
+                    lastName: m.lastName,
+                    mobile: m.mobile,
+                }))
+                : result.members;
+
             res.status(200).json({
                 status: 'success',
                 data: {
-                    members: result.members,
+                    members,
                     pagination: {
                         page,
                         limit,
@@ -774,9 +788,16 @@ export class MemberController {
         try {
             const { memberId } = req.params as Record<string, string>;
             const tenantId = req.tenantId;
+            // Merge only the provided healthInfo sub-fields instead of replacing the
+            // whole healthInfo object, so a partial update (e.g. just medicalConditions)
+            // doesn't wipe out allergies/medications/injuries/doctorClearance etc.
+            const updates: Record<string, any> = {};
+            for (const key of Object.keys(req.body || {})) {
+                updates[`healthInfo.${key}`] = req.body[key];
+            }
             const member = await Member.findOneAndUpdate(
                 { _id: memberId, ...(tenantId ? { tenantId } : {}) },
-                { $set: { healthInfo: req.body } },
+                { $set: updates },
                 { new: true }
             );
             if (!member) { res.status(404).json({ status: 'error', message: 'Member not found' }); return; }

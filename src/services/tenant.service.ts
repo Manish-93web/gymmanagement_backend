@@ -26,6 +26,8 @@ export interface UpdateTenantDTO {
     name?: string;
     email?: string;
     mobile?: string;
+    address?: string;
+    timezone?: string;
     branding?: {
         logo?: string;
         primaryColor?: string;
@@ -177,12 +179,21 @@ export class TenantService {
     async updateTenant(tenantId: string, data: UpdateTenantDTO): Promise<ITenant | null> {
         // Flatten branding into dot-notation so individual fields are merged, not the whole object replaced.
         // This prevents clearing branding.logo when only colors are saved, and vice versa.
+        // `email`, `mobile`, and `address` live under the nested `contactInfo` sub-document on the
+        // Tenant model (not as top-level fields) — map them there so they actually persist instead
+        // of being silently dropped by Mongoose's strict-mode $set.
         const setPayload: Record<string, unknown> = {};
         for (const [key, value] of Object.entries(data)) {
             if (key === 'branding' && value && typeof value === 'object') {
                 for (const [bKey, bVal] of Object.entries(value as object)) {
                     if (bVal !== undefined) setPayload[`branding.${bKey}`] = bVal;
                 }
+            } else if (key === 'email' && value !== undefined) {
+                setPayload['contactInfo.email'] = value;
+            } else if (key === 'mobile' && value !== undefined) {
+                setPayload['contactInfo.phone'] = value;
+            } else if (key === 'address' && value !== undefined) {
+                setPayload['contactInfo.address'] = value;
             } else if (value !== undefined) {
                 setPayload[key] = value;
             }

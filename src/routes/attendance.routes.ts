@@ -23,5 +23,9 @@ router.post('/hardware-entry', requireAnyRole('gym_owner', 'branch_manager', 'st
 router.get('/records', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'accountant', 'auditor', 'super_admin'), attendanceController.getAttendanceRecords.bind(attendanceController));
 router.get('/unmatched', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), attendanceController.getUnmatchedAttendance.bind(attendanceController));
 router.get('/today', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), attendanceController.getTodayAttendance.bind(attendanceController));
+router.get('/summary', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'auditor', 'super_admin'), attendanceController.getAttendanceSummary.bind(attendanceController));
+router.get('/report', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'accountant', 'auditor', 'super_admin'), attendanceController.getAttendanceReport.bind(attendanceController));
+// Generic single-record lookup — MUST stay last so it never shadows the literal routes above.
+router.get('/:attendanceId', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'accountant', 'auditor', 'super_admin'), attendanceController.getAttendanceById.bind(attendanceController));
 
 export default router;

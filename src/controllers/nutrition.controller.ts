@@ -465,6 +465,9 @@ class NutritionController {
                 meals: req.body.meals || [],
                 schedule: req.body.schedule || { daysPerWeek: 7, duration: 4 },
                 restrictions: req.body.restrictions || [],
+                // DietPlan.startDate is a required field on the model — without it every
+                // call here threw a Mongoose ValidationError and the plan was never saved.
+                startDate: req.body.startDate ? new Date(req.body.startDate) : new Date(),
             } as any);
 
             res.status(201).json({ success: true, data: plan });

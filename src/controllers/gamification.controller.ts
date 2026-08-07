@@ -39,8 +39,62 @@ export class GamificationController {
             }
             const member = await Member.findOne({ userId: user._id });
             if (!member) return res.status(404).json({ success: false, message: 'Member profile not found' });
-            const badges = await gamificationBadgeService.getMemberBadges(member._id.toString());
-            res.status(200).json({ success: true, data: badges });
+            const allBadges = await gamificationBadgeService.getAllBadgesWithStatus(
+                member._id.toString(),
+                user.tenantId.toString()
+            );
+            const toClientBadge = (b: any) => ({
+                id: b._id,
+                name: b.name,
+                description: b.description,
+                icon: b.icon,
+                points: b.points,
+                rarity: b.tier,
+                earnedAt: b.earnedAt ?? undefined,
+            });
+            const earned = allBadges.filter((b: any) => b.earned).map(toClientBadge);
+            const available = allBadges.filter((b: any) => !b.earned).map(toClientBadge);
+            res.status(200).json({ success: true, data: { earned, available } });
+        } catch (error: any) {
+            res.status(500).json({ success: false, message: error.message });
+        }
+    }
+
+    async getBadgeDetail(req: Request, res: Response) {
+        try {
+            const user = (req as any).user;
+            const { badgeId } = req.params;
+            const badge = await Badge.findOne({ _id: badgeId, tenantId: user.tenantId }).lean();
+            if (!badge) return res.status(404).json({ success: false, message: 'Badge not found' });
+
+            let earnedAt: Date | undefined;
+            if (user.role === 'member' || user.role === 'trainer') {
+                const member = await Member.findOne({ userId: user._id });
+                if (member) {
+                    const memberBadge = await MemberBadge.findOne({ memberId: member._id, badgeId: badge._id }).lean();
+                    if (memberBadge) earnedAt = memberBadge.earnedAt;
+                }
+            }
+
+            const holdersCount = await MemberBadge.countDocuments({ badgeId: badge._id });
+            const criteria = badge.criteria
+                ? [`Reach ${badge.criteria.value} ${String(badge.criteria.type).replace(/_/g, ' ')}`]
+                : [];
+
+            res.status(200).json({
+                success: true,
+                data: {
+                    id: badge._id,
+                    name: badge.name,
+                    description: badge.description,
+                    icon: badge.icon,
+                    points: badge.points,
+                    rarity: badge.tier,
+                    criteria,
+                    earnedAt,
+                    holdersCount,
+                },
+            });
         } catch (error: any) {
             res.status(500).json({ success: false, message: error.message });
         }

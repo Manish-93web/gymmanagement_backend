@@ -6,6 +6,7 @@ import { tenantContext } from '../middleware/tenant.middleware';
 import MembershipPlan from '../models/MembershipPlan.model';
 import Subscription from '../models/Subscription.model';
 import Member from '../models/Member.model';
+import { getOwnMemberId } from '../utils/memberOwnership';
 
 const router = Router();
 
@@ -254,12 +255,24 @@ router.post(
 // ─── POST /enroll/:planId — enroll a member in a digital wellness plan ─────────
 router.post(
     '/enroll/:planId',
-    requireAnyRole('gym_owner', 'branch_manager', 'staff_reception', 'super_admin'),
+    requireAnyRole('gym_owner', 'branch_manager', 'staff_reception', 'super_admin', 'member'),
     async (req: Request, res: Response) => {
         try {
             const tenantId = (req as any).tenantId;
             const planId = req.params.planId as string;
-            const { memberId } = req.body;
+
+            // A 'member' caller can only ever enroll themselves — never trust a
+            // client-supplied memberId for that role, or any member could enroll
+            // (and bill) an arbitrary other member's account.
+            let memberId = req.body.memberId;
+            if ((req as any).user?.role === 'member') {
+                const ownMemberId = await getOwnMemberId(req);
+                if (!ownMemberId) {
+                    res.status(403).json({ success: false, message: 'No linked member record' });
+                    return;
+                }
+                memberId = ownMemberId;
+            }
 
             if (!memberId) {
                 res.status(400).json({ success: false, message: 'memberId is required' });

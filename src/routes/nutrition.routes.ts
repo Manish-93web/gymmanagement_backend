@@ -25,6 +25,19 @@ const HydrationLogModel: any = mongoose.models['HydrationLog'] || mongoose.model
     glasses:  { type: Number, default: 0, min: 0, max: 20 },
 }, { timestamps: true, collection: 'hydration_logs' }));
 
+// ─── Nutrition Goal Model (inline) ─────────────────────────────────────────────
+// Backs NutritionGoalsScreen.tsx, which previously called GET/PUT /nutrition/goals — a
+// route that never existed anywhere in this backend (every load/save silently 404'd).
+const NutritionGoalModel: any = mongoose.models['NutritionGoal'] || mongoose.model('NutritionGoal', new mongoose.Schema({
+    tenantId: { type: String, required: true },
+    memberId: { type: mongoose.Schema.Types.ObjectId, required: true },
+    type:     { type: String, default: 'Maintain' },
+    calories: { type: Number, default: 2000 },
+    protein:  { type: Number, default: 150 },
+    carbs:    { type: Number, default: 220 },
+    fat:      { type: Number, default: 65 },
+}, { timestamps: true, collection: 'nutrition_goals' }));
+
 const router = Router();
 
 // ─── Barcode lookup via Open Food Facts ───────────────────────────────────────
@@ -205,6 +218,111 @@ router.get('/foods/dish-list', authenticate, (_req: Request, res: Response) => {
     res.json({ success: true, data: Object.keys(DISH_DB).sort() });
 });
 
+// ─── Recipes ───────────────────────────────────────────────────────────────────
+// Backs RecipesScreen.tsx / RecipeDetailScreen.tsx, which previously called
+// GET /nutrition/recipes and GET /nutrition/recipes/:id — routes that never existed
+// anywhere in this backend (every load 404'd, leaving both screens permanently empty).
+// Both screens read the response body directly (no {success,data} envelope), matching
+// the same unwrapped convention used by /goals below.
+const RECIPE_DB: Array<{
+    id: string; name: string; category: string; calories: number; protein: number;
+    carbs: number; fat: number; prepTime: number; difficulty: string;
+    ingredients: string[]; instructions: string[]; tags: string[];
+}> = [
+    {
+        id: 'recipe_protein_oats', name: 'Protein Overnight Oats', category: 'Breakfast',
+        calories: 380, protein: 28, carbs: 48, fat: 9, prepTime: 10, difficulty: 'Easy',
+        ingredients: ['1/2 cup rolled oats', '1 scoop whey protein', '1 cup milk', '1 tbsp chia seeds', '1/2 banana, sliced'],
+        instructions: ['Mix oats, protein powder, milk and chia seeds in a jar.', 'Stir well until no lumps remain.', 'Refrigerate overnight.', 'Top with banana slices before eating.'],
+        tags: ['high-protein', 'no-cook', 'meal-prep'],
+    },
+    {
+        id: 'recipe_egg_veggie_scramble', name: 'Veggie Egg Scramble', category: 'Breakfast',
+        calories: 290, protein: 22, carbs: 10, fat: 18, prepTime: 12, difficulty: 'Easy',
+        ingredients: ['3 whole eggs', '1/4 cup chopped bell pepper', '1/4 cup spinach', '1 tbsp olive oil', 'Salt & pepper'],
+        instructions: ['Heat oil in a pan over medium heat.', 'Sauté bell pepper for 2 minutes.', 'Add spinach and cook until wilted.', 'Beat eggs and pour in; scramble until set.', 'Season and serve hot.'],
+        tags: ['high-protein', 'low-carb', 'vegetarian'],
+    },
+    {
+        id: 'recipe_grilled_chicken_bowl', name: 'Grilled Chicken Rice Bowl', category: 'Lunch',
+        calories: 520, protein: 42, carbs: 55, fat: 12, prepTime: 25, difficulty: 'Medium',
+        ingredients: ['150g chicken breast', '1 cup cooked rice', '1/2 cup broccoli', '1 tbsp soy sauce', '1 tsp sesame oil'],
+        instructions: ['Marinate chicken in soy sauce for 10 minutes.', 'Grill chicken 5-6 minutes per side until cooked through.', 'Steam broccoli for 4 minutes.', 'Slice chicken and assemble over rice with broccoli.', 'Drizzle with sesame oil before serving.'],
+        tags: ['high-protein', 'meal-prep'],
+    },
+    {
+        id: 'recipe_paneer_salad', name: 'Paneer & Chickpea Salad', category: 'Lunch',
+        calories: 410, protein: 26, carbs: 32, fat: 20, prepTime: 15, difficulty: 'Easy',
+        ingredients: ['100g paneer, cubed', '1/2 cup boiled chickpeas', '1 cup mixed greens', '1/2 cucumber, diced', '1 tbsp olive oil', 'Lemon juice'],
+        instructions: ['Lightly pan-sear paneer cubes until golden.', 'Toss greens, chickpeas and cucumber in a bowl.', 'Add paneer on top.', 'Dress with olive oil and lemon juice.'],
+        tags: ['vegetarian', 'high-protein', 'no-cook'],
+    },
+    {
+        id: 'recipe_dal_roti', name: 'Dal Tadka with Roti', category: 'Dinner',
+        calories: 450, protein: 20, carbs: 65, fat: 10, prepTime: 35, difficulty: 'Medium',
+        ingredients: ['1 cup yellow lentils', '2 whole wheat rotis', '1 tsp cumin', '1 tsp turmeric', '1 tbsp ghee', 'Garlic & onion tempering'],
+        instructions: ['Boil lentils with turmeric until soft.', 'Prepare tempering with ghee, cumin, garlic and onion.', 'Pour tempering over cooked dal.', 'Simmer 5 minutes and serve with roti.'],
+        tags: ['vegetarian', 'high-fiber'],
+    },
+    {
+        id: 'recipe_baked_salmon', name: 'Baked Salmon with Sweet Potato', category: 'Dinner',
+        calories: 480, protein: 38, carbs: 30, fat: 22, prepTime: 30, difficulty: 'Medium',
+        ingredients: ['150g salmon fillet', '1 medium sweet potato', '1 tbsp olive oil', 'Herbs (rosemary/thyme)', 'Salt & pepper'],
+        instructions: ['Preheat oven to 200°C.', 'Toss sweet potato cubes in oil and roast 20 minutes.', 'Season salmon and bake for 12-15 minutes.', 'Plate together and finish with herbs.'],
+        tags: ['high-protein', 'omega-3'],
+    },
+    {
+        id: 'recipe_greek_yogurt_berries', name: 'Greek Yogurt with Berries', category: 'Snack',
+        calories: 180, protein: 15, carbs: 20, fat: 4, prepTime: 5, difficulty: 'Easy',
+        ingredients: ['1 cup Greek yogurt', '1/2 cup mixed berries', '1 tsp honey', '1 tbsp granola'],
+        instructions: ['Spoon yogurt into a bowl.', 'Top with berries and granola.', 'Drizzle honey and serve.'],
+        tags: ['high-protein', 'no-cook', 'quick'],
+    },
+    {
+        id: 'recipe_almond_energy_balls', name: 'Almond Date Energy Balls', category: 'Snack',
+        calories: 150, protein: 5, carbs: 18, fat: 8, prepTime: 15, difficulty: 'Easy',
+        ingredients: ['1 cup pitted dates', '1/2 cup almonds', '2 tbsp cocoa powder', '1 tbsp chia seeds'],
+        instructions: ['Blend dates and almonds in a food processor until sticky.', 'Add cocoa powder and chia seeds; pulse to combine.', 'Roll into small balls.', 'Refrigerate for 30 minutes before eating.'],
+        tags: ['vegan', 'no-cook', 'meal-prep'],
+    },
+    {
+        id: 'recipe_banana_pb_toast', name: 'Banana Peanut Butter Toast', category: 'Pre-Workout',
+        calories: 320, protein: 12, carbs: 42, fat: 12, prepTime: 5, difficulty: 'Easy',
+        ingredients: ['2 slices whole wheat bread', '2 tbsp peanut butter', '1 banana, sliced', 'Pinch of cinnamon'],
+        instructions: ['Toast bread slices.', 'Spread peanut butter evenly.', 'Top with banana slices and cinnamon.'],
+        tags: ['quick', 'pre-workout-fuel'],
+    },
+    {
+        id: 'recipe_whey_smoothie', name: 'Post-Workout Recovery Smoothie', category: 'Post-Workout',
+        calories: 340, protein: 32, carbs: 40, fat: 5, prepTime: 5, difficulty: 'Easy',
+        ingredients: ['1 scoop whey protein', '1 banana', '1 cup milk', '1 tbsp peanut butter', 'Ice cubes'],
+        instructions: ['Add all ingredients to a blender.', 'Blend until smooth.', 'Pour into a glass and drink immediately.'],
+        tags: ['high-protein', 'recovery', 'quick'],
+    },
+];
+
+router.get('/recipes', authenticate, (req: Request, res: Response) => {
+    const { search, category } = req.query as Record<string, string>;
+    let results = RECIPE_DB;
+    if (category && category.toLowerCase() !== 'all') {
+        results = results.filter(r => r.category.toLowerCase() === category.toLowerCase());
+    }
+    if (search && search.trim()) {
+        const q = search.trim().toLowerCase();
+        results = results.filter(r => r.name.toLowerCase().includes(q));
+    }
+    res.json(results);
+});
+
+router.get('/recipes/:id', authenticate, (req: Request, res: Response) => {
+    const recipe = RECIPE_DB.find(r => r.id === req.params.id);
+    if (!recipe) {
+        res.status(404).json({ success: false, message: 'Recipe not found' });
+        return;
+    }
+    res.json(recipe);
+});
+
 // Food search is accessible to any authenticated user
 router.get('/foods/search', authenticate, nutritionController.searchFood.bind(nutritionController));
 router.get('/foods/:foodId', authenticate, nutritionController.getFoodById.bind(nutritionController));
@@ -268,6 +386,36 @@ router.delete('/favourites/:id', async (req: Request, res: Response) => {
         const deleted = await NutritionFavouriteModel.findOneAndDelete({ _id: req.params.id, tenantId, memberId });
         if (!deleted) return res.status(404).json({ success: false, message: 'Favourite not found' });
         res.json({ success: true, message: 'Removed from favourites' });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// ─── Nutrition Goals ────────────────────────────────────────────────────────────
+// Frontend reads/writes the goal fields flat on the response body (r.data.calories, not
+// r.data.data.calories), so these intentionally don't use the {success, data} envelope.
+router.get('/goals', async (req: Request, res: Response) => {
+    try {
+        const tenantId = (req as any).tenantId;
+        const memberId = (req as any).user?._id;
+        const goal = await NutritionGoalModel.findOne({ tenantId, memberId }).lean();
+        res.json(goal || { type: 'Maintain', calories: 2000, protein: 150, carbs: 220, fat: 65 });
+    } catch (err: any) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+router.put('/goals', async (req: Request, res: Response) => {
+    try {
+        const tenantId = (req as any).tenantId;
+        const memberId = (req as any).user?._id;
+        const { type, calories, protein, carbs, fat } = req.body;
+        const goal = await NutritionGoalModel.findOneAndUpdate(
+            { tenantId, memberId },
+            { $set: { type, calories, protein, carbs, fat } },
+            { upsert: true, new: true }
+        );
+        res.json({ success: true, data: goal });
     } catch (err: any) {
         res.status(500).json({ success: false, message: err.message });
     }

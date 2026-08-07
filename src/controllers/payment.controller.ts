@@ -50,7 +50,9 @@ class PaymentController {
             if (!payment) return res.status(404).json({ success: false, message: 'Payment not found' });
 
             const order = await paymentService.createRazorpayOrder(payment.amount.total);
-            return res.status(200).json({ success: true, data: { orderId: order.id, amount: order.amount, currency: order.currency } });
+            // `key` (the public Razorpay key ID) is required by the client-side Checkout SDK
+            // to open the payment sheet — without it the mobile app has no way to launch Razorpay.
+            return res.status(200).json({ success: true, data: { orderId: order.id, amount: order.amount, currency: order.currency, key: config.razorpay.keyId } });
         } catch (error) {
             return next(error);
         }
@@ -144,6 +146,7 @@ class PaymentController {
             const { paymentId } = req.params;
             const payment = await Payment.findOne({ _id: paymentId, tenantId })
                 .populate('memberId', 'firstName lastName email mobile membershipNumber')
+                .populate('planId', 'name')
                 .lean();
 
             if (!payment) return res.status(404).json({ success: false, message: 'Payment not found' });

@@ -14,7 +14,7 @@ export interface IMessage extends Document {
 
 const MessageSchema: Schema = new Schema({
     conversationId: { type: Schema.Types.ObjectId, ref: 'Conversation', required: true, index: true },
-    senderId: { type: Schema.Types.ObjectId, ref: 'Member', required: true, index: true },
+    senderId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     content: { type: String, required: true },
     type: { type: String, enum: ['text', 'image', 'video', 'file'], default: 'text' },
     mediaUrl: { type: String },

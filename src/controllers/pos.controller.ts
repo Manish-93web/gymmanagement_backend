@@ -8,6 +8,7 @@ const createProductSchema = z.object({
     category: z.enum(['supplement', 'equipment', 'apparel', 'accessory', 'other']),
     sku: z.string(),
     barcode: z.string().optional(),
+    emoji: z.string().optional(),
     pricing: z.object({
         cost: z.number().positive(),
         sellingPrice: z.number().positive(),
@@ -155,6 +156,23 @@ export class POSController {
             );
 
             res.status(200).json({ success: true, data: result });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    async getSaleById(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { saleId } = req.params as Record<string, string>;
+            const tenantId = req.user?.role === 'super_admin' ? undefined : req.user?.tenantId?.toString();
+
+            const sale = await POSService.getSaleById(saleId, tenantId);
+
+            if (!sale) {
+                return res.status(404).json({ success: false, message: 'Sale not found' });
+            }
+
+            res.status(200).json({ success: true, data: sale });
         } catch (error) {
             next(error);
         }

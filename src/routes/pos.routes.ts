@@ -37,5 +37,6 @@ router.post('/products/:productId/stock', requireAnyRole('gym_owner', 'branch_ma
 router.post('/sales', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), posController.createSale.bind(posController));
 router.get('/sales', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'accountant', 'super_admin'), posController.getSales.bind(posController));
 router.get('/sales/stats', requireAnyRole('gym_owner', 'branch_manager', 'accountant', 'super_admin'), posController.getSalesStats.bind(posController));
+router.get('/sales/:saleId', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'accountant', 'super_admin'), posController.getSaleById.bind(posController));
 
 export default router;
