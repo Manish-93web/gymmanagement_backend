@@ -111,13 +111,20 @@ export class FitnessController {
                 return res.status(400).json({ success: false, message: 'name and muscleGroups are required' });
             }
 
+            const CATEGORIES = ['strength', 'cardio', 'flexibility', 'balance', 'sports', 'other'] as const;
+            const DIFFICULTIES = ['beginner', 'intermediate', 'advanced'] as const;
+            const isCategory = (v: string): v is typeof CATEGORIES[number] => (CATEGORIES as readonly string[]).includes(v);
+            const isDifficulty = (v: string): v is typeof DIFFICULTIES[number] => (DIFFICULTIES as readonly string[]).includes(v);
+            const normalizedCategory = String(category || 'strength').toLowerCase();
+            const normalizedDifficulty = String(difficulty || 'beginner').toLowerCase();
+
             const exercise = await Exercise.create({
                 tenantId,
                 name,
-                category: String(category || 'strength').toLowerCase(),
+                category: isCategory(normalizedCategory) ? normalizedCategory : 'strength',
                 muscleGroups,
                 equipment: Array.isArray(equipment) ? equipment : [],
-                difficulty: String(difficulty || 'beginner').toLowerCase(),
+                difficulty: isDifficulty(normalizedDifficulty) ? normalizedDifficulty : 'beginner',
                 instructions: Array.isArray(instructions) ? instructions : [],
                 createdBy: req.user?._id,
             });
