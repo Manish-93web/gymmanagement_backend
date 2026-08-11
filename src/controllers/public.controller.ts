@@ -4,6 +4,7 @@ import Lead from '../models/Lead.model';
 import Member from '../models/Member.model';
 import Attendance from '../models/Attendance.model';
 import Branch from '../models/Branch.model';
+import Payment from '../models/Payment.model';
 import mongoose from 'mongoose';
 
 export class PublicController {
@@ -61,17 +62,54 @@ export class PublicController {
             todayStart.setHours(0, 0, 0, 0);
             const todayEnd = new Date();
             todayEnd.setHours(23, 59, 59, 999);
+            const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
+            const yesterdayEnd = new Date(todayEnd.getTime() - 24 * 60 * 60 * 1000);
 
-            const [gymCount, totalMemberCount, activeMemberCount, todayCheckIns, cities] = await Promise.all([
+            const [
+                gymCount, totalMemberCount, activeMemberCount, todayCheckIns, cities,
+                liveCheckedIn, capacityAgg,
+                todayRevenueAgg, yesterdayRevenueAgg,
+                newSignupsToday, newSignupsYesterday,
+            ] = await Promise.all([
                 Tenant.countDocuments({ isActive: true }),
                 (Member as any).countDocuments({}),
                 (Member as any).countDocuments({ status: 'active' }),
                 (Attendance as any).countDocuments({ checkInTime: { $gte: todayStart, $lte: todayEnd } }),
                 (Branch as any).distinct('contactInfo.city', { isActive: true }),
+                (Attendance as any).countDocuments({ checkInTime: { $gte: todayStart }, checkOutTime: null }),
+                (Branch as any).aggregate([
+                    { $match: { isActive: true } },
+                    { $group: { _id: null, total: { $sum: '$capacity.maxConcurrentAttendance' } } },
+                ]),
+                (Payment as any).aggregate([
+                    { $match: { status: 'completed', createdAt: { $gte: todayStart, $lte: todayEnd } } },
+                    { $group: { _id: null, total: { $sum: '$amount.total' } } },
+                ]),
+                (Payment as any).aggregate([
+                    { $match: { status: 'completed', createdAt: { $gte: yesterdayStart, $lte: yesterdayEnd } } },
+                    { $group: { _id: null, total: { $sum: '$amount.total' } } },
+                ]),
+                (Member as any).countDocuments({ createdAt: { $gte: todayStart, $lte: todayEnd } }),
+                (Member as any).countDocuments({ createdAt: { $gte: yesterdayStart, $lte: yesterdayEnd } }),
             ]);
 
             const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
             const retentionRate = totalMemberCount > 0 ? Math.round((activeMemberCount / totalMemberCount) * 100) : null;
+
+            const totalCapacity = capacityAgg[0]?.total || 0;
+            const liveOccupancy = totalCapacity > 0 ? Math.round((liveCheckedIn / totalCapacity) * 100) : null;
+
+            const todayRevenue = todayRevenueAgg[0]?.total || 0;
+            const yesterdayRevenue = yesterdayRevenueAgg[0]?.total || 0;
+            let revenueChange: string | null = null;
+            if (yesterdayRevenue > 0) {
+                const pct = Math.round(((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100);
+                revenueChange = `${pct >= 0 ? '↑' : '↓'} ${Math.abs(pct)}%`;
+            } else if (todayRevenue > 0) {
+                revenueChange = '↑ new';
+            }
+
+            const signupsChange = newSignupsToday - newSignupsYesterday;
 
             return res.json({
                 success: true,
@@ -82,6 +120,11 @@ export class PublicController {
                     checkIns: fmt(todayCheckIns),
                     cities: String(cities.length),
                     retentionRate: retentionRate === null ? null : `${retentionRate}%`,
+                    liveOccupancy: liveOccupancy === null ? null : `${liveOccupancy}%`,
+                    todayRevenue: todayRevenue > 0 ? `₹${todayRevenue.toLocaleString('en-IN')}` : null,
+                    todayRevenueChange: revenueChange,
+                    newSignupsToday: String(newSignupsToday),
+                    newSignupsChange: signupsChange === 0 ? null : `${signupsChange >= 0 ? '↑' : '↓'} ${Math.abs(signupsChange)}`,
                 },
             });
         } catch (error) {
