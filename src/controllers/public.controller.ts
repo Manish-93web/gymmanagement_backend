@@ -3,6 +3,7 @@ import Tenant from '../models/Tenant.model';
 import Lead from '../models/Lead.model';
 import Member from '../models/Member.model';
 import Attendance from '../models/Attendance.model';
+import Branch from '../models/Branch.model';
 import mongoose from 'mongoose';
 
 export class PublicController {
@@ -61,14 +62,16 @@ export class PublicController {
             const todayEnd = new Date();
             todayEnd.setHours(23, 59, 59, 999);
 
-            const [gymCount, totalMemberCount, activeMemberCount, todayCheckIns] = await Promise.all([
+            const [gymCount, totalMemberCount, activeMemberCount, todayCheckIns, cities] = await Promise.all([
                 Tenant.countDocuments({ isActive: true }),
                 (Member as any).countDocuments({}),
                 (Member as any).countDocuments({ status: 'active' }),
                 (Attendance as any).countDocuments({ checkInTime: { $gte: todayStart, $lte: todayEnd } }),
+                (Branch as any).distinct('contactInfo.city', { isActive: true }),
             ]);
 
             const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+            const retentionRate = totalMemberCount > 0 ? Math.round((activeMemberCount / totalMemberCount) * 100) : null;
 
             return res.json({
                 success: true,
@@ -77,6 +80,8 @@ export class PublicController {
                     totalMembers: fmt(totalMemberCount),
                     activeMembers: fmt(activeMemberCount),
                     checkIns: fmt(todayCheckIns),
+                    cities: String(cities.length),
+                    retentionRate: retentionRate === null ? null : `${retentionRate}%`,
                 },
             });
         } catch (error) {
