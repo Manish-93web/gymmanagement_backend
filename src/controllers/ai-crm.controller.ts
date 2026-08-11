@@ -2,9 +2,10 @@
 import { z } from 'zod';
 import AIService from '../services/ai.service';
 import CRMService from '../services/crm.service';
+import { getOwnMemberId } from '../utils/memberOwnership';
 
 const generateWorkoutSchema = z.object({
-    memberId: z.string(),
+    memberId: z.string().optional(),
     goal: z.enum(['strength', 'hypertrophy', 'endurance', 'weight_loss', 'general_fitness']),
     daysPerWeek: z.number().min(1).max(7),
     experience: z.enum(['beginner', 'intermediate', 'advanced']),
@@ -12,12 +13,23 @@ const generateWorkoutSchema = z.object({
 });
 
 const generateDietSchema = z.object({
-    memberId: z.string(),
+    memberId: z.string().optional(),
     goal: z.enum(['weight_loss', 'muscle_gain', 'maintenance', 'athletic_performance']),
     dietaryPreferences: z.array(z.string()).optional(),
     allergies: z.array(z.string()).optional(),
     mealsPerDay: z.number().min(1).max(8),
 });
+
+/**
+ * Resolves the memberId a plan should be generated for. Member accounts can
+ * only ever generate their own plan (resolved server-side, ignoring any
+ * client-supplied memberId to prevent reading another member's health data);
+ * staff roles must specify which member the plan is for.
+ */
+async function resolvePlanMemberId(req: Request, bodyMemberId?: string): Promise<string | null> {
+    if (req.user?.role === 'member') return getOwnMemberId(req);
+    return bodyMemberId ?? null;
+}
 
 const chatbotSchema = z.object({
     memberId: z.string(),
@@ -53,9 +65,13 @@ export class AIAndCRMController {
         try {
             const validatedData = generateWorkoutSchema.parse(req.body);
             const tenantId = req.user?.tenantId?.toString() || '';
+            const memberId = await resolvePlanMemberId(req, validatedData.memberId);
+            if (!memberId) {
+                return res.status(400).json({ success: false, message: 'memberId is required' });
+            }
 
             const workoutPlan = await AIService.generateWorkoutPlan(
-                validatedData.memberId,
+                memberId,
                 validatedData.goal,
                 validatedData.experience,
                 validatedData.daysPerWeek,
@@ -73,9 +89,13 @@ export class AIAndCRMController {
         try {
             const validatedData = generateDietSchema.parse(req.body);
             const tenantId = req.user?.tenantId?.toString() || '';
+            const memberId = await resolvePlanMemberId(req, validatedData.memberId);
+            if (!memberId) {
+                return res.status(400).json({ success: false, message: 'memberId is required' });
+            }
 
             const dietPlan = await AIService.generateDietPlan(
-                validatedData.memberId,
+                memberId,
                 validatedData.goal,
                 validatedData.dietaryPreferences,
                 validatedData.allergies,

@@ -1,6 +1,5 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import mongoose from 'mongoose';
-import OpenAI from 'openai';
 import whatsappController from '../controllers/whatsapp.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireAnyRole } from '../middleware/rbac.middleware';
@@ -9,8 +8,7 @@ import WhatsAppAutomationConfig from '../models/WhatsAppAutomationConfig.model';
 import WhatsAppBotConfig from '../models/WhatsAppBotConfig.model';
 import WhatsAppInbox from '../models/WhatsAppInbox.model';
 import Member from '../models/Member.model';
-
-const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+import { aiClient as openai, aiModel } from '../config/aiClient';
 
 async function generateBotReply(
   systemPrompt: string,
@@ -21,7 +19,7 @@ async function generateBotReply(
     return "Thank you for your message! Our team will get back to you shortly. 🙏";
   }
   const completion = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
+    model: aiModel,
     messages: [
       { role: 'system', content: systemPrompt },
       ...conversationHistory,
@@ -582,7 +580,7 @@ router.post('/bot/test', requireAnyRole('gym_owner', 'branch_manager', 'staff', 
       .map(m => ({ role: m.role, content: m.content }));
 
     const reply = await generateBotReply(systemPrompt, history, message);
-    return res.json({ success: true, data: { reply, escalated: false, hasOpenAI: !!openai } });
+    return res.json({ success: true, data: { reply, escalated: false, hasAI: !!openai } });
   } catch (err) { next(err); }
 });
 

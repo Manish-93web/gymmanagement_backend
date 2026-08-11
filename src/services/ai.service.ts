@@ -5,6 +5,25 @@ import Exercise from '../models/Exercise.model';
 import Attendance from '../models/Attendance.model';
 import Payment from '../models/Payment.model';
 
+/**
+ * LLMs frequently wrap JSON in markdown code fences or prepend prose
+ * ("Here is your plan:") despite being asked for raw JSON. Strip fences,
+ * then fall back to extracting the outermost {...} span before parsing.
+ */
+function parseAIJson(raw: string): any {
+    let text = raw.trim();
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenced) text = fenced[1].trim();
+
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start !== -1 && end !== -1 && end > start) {
+        text = text.slice(start, end + 1);
+    }
+
+    return JSON.parse(text);
+}
+
 export class AIService {
     private openai: OpenAI | null = null;
     private initialized = false;
@@ -102,7 +121,9 @@ Format the response as JSON with the following structure:
     }
   ],
   "notes": "General recommendations"
-}`;
+}
+
+Respond with ONLY the JSON object above — no markdown code fences, no explanatory text before or after.`;
 
         try {
             const completion = await this.openai.chat.completions.create({
@@ -110,7 +131,7 @@ Format the response as JSON with the following structure:
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are a professional fitness trainer and exercise physiologist. Provide safe, effective workout plans.',
+                        content: 'You are a professional fitness trainer and exercise physiologist. Provide safe, effective workout plans. Always respond with raw JSON only — never wrap it in markdown code fences and never add explanatory text.',
                     },
                     {
                         role: 'user',
@@ -122,7 +143,7 @@ Format the response as JSON with the following structure:
             });
 
             const response = completion.choices[0].message.content;
-            return JSON.parse(response || '{}');
+            return parseAIJson(response || '{}');
         } catch (error) {
             console.error('AI workout generation failed:', error);
             throw new Error('Failed to generate AI workout plan');
@@ -189,7 +210,9 @@ Format the response as JSON with the following structure:
     }
   ],
   "notes": "General recommendations"
-}`;
+}
+
+Respond with ONLY the JSON object above — no markdown code fences, no explanatory text before or after.`;
 
         try {
             const completion = await this.openai.chat.completions.create({
@@ -197,7 +220,7 @@ Format the response as JSON with the following structure:
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are a certified nutritionist and dietitian. Provide balanced, healthy meal plans.',
+                        content: 'You are a certified nutritionist and dietitian. Provide balanced, healthy meal plans. Always respond with raw JSON only — never wrap it in markdown code fences and never add explanatory text.',
                     },
                     {
                         role: 'user',
@@ -209,7 +232,7 @@ Format the response as JSON with the following structure:
             });
 
             const response = completion.choices[0].message.content;
-            return JSON.parse(response || '{}');
+            return parseAIJson(response || '{}');
         } catch (error) {
             console.error('AI diet generation failed:', error);
             throw new Error('Failed to generate AI diet plan');

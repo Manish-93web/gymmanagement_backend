@@ -214,7 +214,7 @@ router.get(
       const b2cSales: any[] = [];
 
       for (const p of payments as any[]) {
-        const amount: number = p.amount ?? 0;
+        const amount: number = p.amount?.total ?? 0;
         const gstRate: number = defaultGSTRate;
         const taxableAmount = Math.round((amount / (1 + gstRate / 100)) * 100) / 100;
         const gstAmount = amount - taxableAmount;

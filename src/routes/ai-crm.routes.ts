@@ -14,8 +14,8 @@ router.post('/crm/leads/public', aiCrmController.createPublicLead.bind(aiCrmCont
 router.use(authenticate);
 
 // AI routes
-router.post('/ai/workout-plan', requireAnyRole('trainer', 'gym_owner', 'branch_manager', 'super_admin'), aiCrmController.generateWorkoutPlan.bind(aiCrmController));
-router.post('/ai/diet-plan', requireAnyRole('trainer', 'gym_owner', 'branch_manager', 'super_admin'), aiCrmController.generateDietPlan.bind(aiCrmController));
+router.post('/ai/workout-plan', requireAnyRole('member', 'trainer', 'gym_owner', 'branch_manager', 'super_admin'), aiCrmController.generateWorkoutPlan.bind(aiCrmController));
+router.post('/ai/diet-plan', requireAnyRole('member', 'trainer', 'gym_owner', 'branch_manager', 'super_admin'), aiCrmController.generateDietPlan.bind(aiCrmController));
 router.post('/ai/chatbot', requireAnyRole('member', 'trainer', 'super_admin'), aiCrmController.chatbot.bind(aiCrmController));
 router.get('/ai/predict', aiCrmController.predict.bind(aiCrmController));
 router.get('/ai/churn/:memberId', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), aiCrmController.predictChurn.bind(aiCrmController));

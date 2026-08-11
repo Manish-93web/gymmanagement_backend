@@ -1,13 +1,11 @@
 import { Router, Request, Response, NextFunction } from 'express';
-import OpenAI from 'openai';
 import { authenticate } from '../middleware/auth.middleware';
 import { tenantContext } from '../middleware/tenant.middleware';
 import Member from '../models/Member.model';
+import { aiClient as openai, aiModel } from '../config/aiClient';
 
 const router = Router();
 router.use(authenticate, tenantContext);
-
-const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
 // ─── Health Risk Assessment ──────────────────────────────────────────────────
 // POST /health-risk/assess — compute risk scores from member health data
@@ -198,7 +196,7 @@ Generate a detailed metabolic profile and personalised plan in JSON format with 
 }`;
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: aiModel,
       messages: [{ role: 'user', content: prompt }],
       response_format: { type: 'json_object' },
       max_tokens: 800,

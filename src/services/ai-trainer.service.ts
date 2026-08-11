@@ -1,12 +1,8 @@
-import OpenAI from 'openai';
 import User from '../models/User.model';
 import Member from '../models/Member.model';
 import Class from '../models/Class.model';
 import logger from '../config/logger';
-
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
+import { aiClient, aiModel } from '../config/aiClient';
 
 interface TrainerSuggestion {
     trainerId: string;
@@ -98,8 +94,8 @@ Provide only a number between 0-100.
 `;
 
         try {
-            const response = await openai.chat.completions.create({
-                model: process.env.OPENAI_MODEL || 'gpt-4',
+            const response = await aiClient!.chat.completions.create({
+                model: aiModel,
                 messages: [{ role: 'user', content: prompt }],
                 temperature: 0.3,
                 max_tokens: 10,
@@ -131,8 +127,8 @@ Provide concise, actionable reasons.
 `;
 
         try {
-            const response = await openai.chat.completions.create({
-                model: process.env.OPENAI_MODEL || 'gpt-4',
+            const response = await aiClient!.chat.completions.create({
+                model: aiModel,
                 messages: [{ role: 'user', content: prompt }],
                 temperature: 0.7,
                 max_tokens: 150,
@@ -185,8 +181,8 @@ Format as JSON with this structure:
 `;
 
         try {
-            const response = await openai.chat.completions.create({
-                model: process.env.OPENAI_MODEL || 'gpt-4',
+            const response = await aiClient!.chat.completions.create({
+                model: aiModel,
                 messages: [{ role: 'user', content: prompt }],
                 temperature: 0.7,
                 max_tokens: 2000,
@@ -225,8 +221,8 @@ Provide daily calorie target and meal suggestions.
 `;
 
         try {
-            const response = await openai.chat.completions.create({
-                model: process.env.OPENAI_MODEL || 'gpt-4',
+            const response = await aiClient!.chat.completions.create({
+                model: aiModel,
                 messages: [{ role: 'user', content: prompt }],
                 temperature: 0.7,
                 max_tokens: 1000,

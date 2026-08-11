@@ -9,12 +9,12 @@ import Member from '../models/Member.model';
 /**
  * Resolve the Member._id for the authenticated user. The mobile app has no
  * way to know its own Member document id (only the User id), so wellness
- * endpoints resolve it server-side the same way tele-consultation.routes.ts
- * does via `Member.findOne({ userId, tenantId })`.
+ * endpoints resolve it server-side via `Member.findOne({ userId, tenantId })`.
+ * Deliberately ignores any client-supplied memberId — trusting the caller's
+ * own input here would let any authenticated tenant user read or write
+ * another member's private wellness logs.
  */
 async function resolveSelfMemberId(req: Request): Promise<string | null> {
-  const explicit = req.query.memberId || req.body?.memberId;
-  if (explicit) return String(explicit);
   const tenantId = (req as any).user?.tenantId || req.tenantId;
   const userId = (req as any).user?._id;
   if (!userId) return null;
@@ -140,7 +140,7 @@ router.get('/wellness/logs', async (req: Request, res: Response, next: NextFunct
     const tenantId = (req as any).user?.tenantId || req.tenantId;
     const memberId = await resolveSelfMemberId(req);
     if (!memberId) {
-      return res.json({ success: true, data: { logs: [], weeklyAvg: { mood: 0, energyLevel: 0, stressLevel: 0, sleepQuality: 0 } } });
+      return res.json({ success: true, data: { logs: [], weeklyAvg: { mood: 0, energyLevel: 0, stressLevel: 0, sleepQuality: 0 }, hasMemberProfile: false } });
     }
     const days = parseInt(String(req.query.days || '30'));
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -165,6 +165,7 @@ router.get('/wellness/logs', async (req: Request, res: Response, next: NextFunct
           mood: avg('mood'), energyLevel: avg('energyLevel'),
           stressLevel: avg('stressLevel'), sleepQuality: avg('sleepQuality'),
         },
+        hasMemberProfile: true,
       },
     });
   } catch (err) { next(err); }
@@ -175,7 +176,7 @@ router.post('/wellness/logs', async (req: Request, res: Response, next: NextFunc
   try {
     const tenantId = (req as any).user?.tenantId || req.tenantId;
     const memberId = await resolveSelfMemberId(req);
-    if (!memberId) return res.status(400).json({ success: false, message: 'memberId is required' });
+    if (!memberId) return res.status(400).json({ success: false, message: 'Daily wellness check-ins are available for member accounts only.' });
 
     const { mood, energyLevel, stressLevel, sleepQuality, sleepHours, notes, activitiesDone, gratitudeEntry, affirmation, videoWatched } = req.body;
     if (!mood || !energyLevel || !stressLevel || !sleepQuality) {
