@@ -31,6 +31,7 @@ import {
     getMenuRegistry,
     getTenantMenuPermissions,
     updateTenantMenuPermissions,
+    recordTenantPayment,
 } from '../controllers/platform.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/role.middleware';
@@ -77,6 +78,7 @@ router.patch('/saas-plans/:id', updateSaaSPlan);
 // Payments — /saas-payments matches frontend calls
 router.get('/payments', getPlatformPayments);
 router.get('/saas-payments', getPlatformPayments);
+router.post('/tenants/:tenantId/payments', recordTenantPayment);
 
 // Backup alias — frontend calls POST /platform/backup
 router.post('/backup', triggerBackup);

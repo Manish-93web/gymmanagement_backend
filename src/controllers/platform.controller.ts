@@ -4,7 +4,6 @@ import Tenant from '../models/Tenant.model';
 import User from '../models/User.model';
 import Member from '../models/Member.model';
 import Payment from '../models/Payment.model';
-import Subscription from '../models/Subscription.model';
 import systemConfigService from '../services/system-config.service';
 import auditService from '../services/audit.service';
 import backupService from '../services/backup.service';
@@ -225,6 +224,65 @@ export const updateTenant = async (req: Request, res: Response) => {
 /**
  * Get Platform-wide Metrics (Aggregation only)
  */
+/**
+ * Real tenant-to-platform SaaS revenue — the single source of truth for MRR and
+ * lifetime collections, shared by every platform metrics/analytics endpoint.
+ * Gym member payments (money members pay their gym) must never feed into this;
+ * only actual SaaSPayment records and, as an estimate, active tenants' configured
+ * billing (customPrice/billingCycle, falling back to their plan's list price).
+ */
+async function calculatePlatformRevenue(): Promise<{ mrr: number; totalCollected: number }> {
+    const SaaSPayment = (await import('../models/SaaSPayment.model')).default;
+    const now = new Date();
+
+    const [mrrAgg, totalAgg] = await Promise.all([
+        SaaSPayment.aggregate([
+            { $match: { status: 'completed', createdAt: { $gte: new Date(now.getFullYear(), now.getMonth(), 1) } } },
+            { $group: { _id: null, total: { $sum: '$amount' } } },
+        ]),
+        SaaSPayment.aggregate([
+            { $match: { status: 'completed' } },
+            { $group: { _id: null, total: { $sum: '$amount' } } },
+        ]),
+    ]);
+    const actualMrr = mrrAgg[0]?.total || 0;
+    const totalCollected = totalAgg[0]?.total || 0;
+
+    // Fallback MRR estimate from active non-trial tenants' configured billing —
+    // still 100% tenant-derived, just not backed by an actual payment record yet.
+    const activePaidTenants = await Tenant.find({
+        isActive: true,
+        'subscription.status': 'active',
+    } as any).select('customPrice billingCycle saasPlanId').lean();
+
+    let expectedMrr = 0;
+    const tenantsNeedingPlanPrice: string[] = [];
+    for (const t of activePaidTenants) {
+        const price = (t as any).customPrice;
+        if (price && price > 0) {
+            const cycle = (t as any).billingCycle || 'monthly';
+            if (cycle === 'monthly')          expectedMrr += price;
+            else if (cycle === 'quarterly')   expectedMrr += price / 3;
+            else if (cycle === 'semi_annual') expectedMrr += price / 6;
+            else if (cycle === 'yearly')      expectedMrr += price / 12;
+            // lifetime = 0 MRR contribution
+        } else if ((t as any).saasPlanId) {
+            tenantsNeedingPlanPrice.push(String((t as any).saasPlanId));
+        }
+    }
+    if (tenantsNeedingPlanPrice.length) {
+        const planPriceAgg = await Tenant.aggregate([
+            { $match: { isActive: true, saasPlanId: { $exists: true, $ne: null }, customPrice: { $not: { $gt: 0 } } } },
+            { $lookup: { from: 'saasplans', localField: 'saasPlanId', foreignField: '_id', as: 'plan' } },
+            { $unwind: { path: '$plan', preserveNullAndEmptyArrays: false } },
+            { $group: { _id: null, total: { $sum: '$plan.pricing.monthly' } } },
+        ]);
+        expectedMrr += planPriceAgg[0]?.total || 0;
+    }
+
+    return { mrr: actualMrr || Math.round(expectedMrr), totalCollected };
+}
+
 export const getPlatformMetrics = async (req: Request, res: Response) => {
     try {
         const totalTenants = await Tenant.countDocuments();
@@ -232,10 +290,7 @@ export const getPlatformMetrics = async (req: Request, res: Response) => {
         const totalUsers = await User.countDocuments();
         const totalMembers = await Member.countDocuments();
 
-        // Calculate Total Platform Revenue (MRR) from Subscriptions
-        const subscriptions = await Subscription.find({ status: 'active' });
-        // @ts-ignore
-        const mrr = subscriptions.reduce((acc: number, sub) => acc + (sub.pricing?.totalAmount || 0), 0);
+        const { mrr } = await calculatePlatformRevenue();
         const arr = mrr * 12;
 
         // Recent Signups (this calendar month, and last 30 days for back-compat)
@@ -422,27 +477,9 @@ export const getPlatformPlans = async (req: Request, res: Response) => {
 };
 
 /**
- * Normalize a member Payment doc to match the SaaSPayment shape expected by RevenueModule.
- */
-const normalizeMemberPayment = (p: any) => ({
-    _id: p._id,
-    tenantId: p.tenantId,   // populated { name, slug }
-    saasPlanId: { name: p.planId?.name || 'Member Fee', type: p.type || 'subscription' },
-    type: p.type || 'subscription',
-    amount: p.amount?.total ?? 0,
-    currency: 'INR',
-    status: p.status,
-    gateway: {
-        provider: p.method || 'manual',
-        transactionId: p.gateway?.transactionId || p.invoiceNumber || String(p._id).slice(-10),
-    },
-    createdAt: p.createdAt,
-});
-
-/**
- * Get platform-wide payments.
- * Primary source: SaaSPayment (platform billing).
- * Fallback: gym member Payment records when no SaaS billing records exist.
+ * Get platform-wide payments — real tenant-to-platform SaaS billing records only.
+ * Gym member payments are a different revenue stream (money members pay their gym,
+ * not money the gym pays this platform) and must never appear here.
  */
 export const getPlatformPayments = async (req: Request, res: Response) => {
     try {
@@ -458,7 +495,7 @@ export const getPlatformPayments = async (req: Request, res: Response) => {
         }
         const skip = (parseInt(page) - 1) * parseInt(limit);
 
-        const [saasPayments, saasTotal] = await Promise.all([
+        const [payments, total] = await Promise.all([
             SaaSPayment.find(filter)
                 .populate('tenantId', 'name slug')
                 .populate('saasPlanId', 'name type')
@@ -468,35 +505,121 @@ export const getPlatformPayments = async (req: Request, res: Response) => {
             SaaSPayment.countDocuments(filter),
         ]);
 
-        // If SaaS payment records exist, return them directly
-        if (saasTotal > 0) {
-            return res.status(200).json({ success: true, data: { payments: saasPayments, total: saasTotal, page: parseInt(page) } });
-        }
-
-        // Fallback: gym member payment records normalized to match the SaaS payment shape
-        const memberFilter: any = {};
-        if (status) memberFilter.status = status;
-        if (tenantId) memberFilter.tenantId = tenantId;
-        if (startDate || endDate) {
-            memberFilter.createdAt = {};
-            if (startDate) memberFilter.createdAt.$gte = new Date(startDate);
-            if (endDate) memberFilter.createdAt.$lte = new Date(endDate);
-        }
-
-        const [memberPayments, memberTotal] = await Promise.all([
-            Payment.find(memberFilter)
-                .populate('tenantId', 'name slug')
-                .populate('planId', 'name')
-                .sort({ createdAt: -1 })
-                .skip(skip)
-                .limit(parseInt(limit)),
-            Payment.countDocuments(memberFilter),
-        ]);
-
-        const payments = memberPayments.map(normalizeMemberPayment);
-        return res.status(200).json({ success: true, data: { payments, total: memberTotal, page: parseInt(page) } });
+        return res.status(200).json({ success: true, data: { payments, total, page: parseInt(page) } });
     } catch (error) {
         return res.status(500).json({ success: false, message: 'Error fetching payments', error: (error as Error).message });
+    }
+};
+
+const GATEWAY_PROVIDER_MAP: Record<string, 'razorpay' | 'stripe' | 'manual' | 'upi'> = {
+    upi: 'upi',
+    razorpay: 'razorpay',
+    stripe: 'stripe',
+    cash: 'manual',
+    bank_transfer: 'manual',
+    manual: 'manual',
+};
+
+type InvoicePaymentMethod = 'upi' | 'cash' | 'bank_transfer' | 'razorpay' | 'stripe' | 'manual';
+const VALID_PAYMENT_METHODS: InvoicePaymentMethod[] = ['upi', 'cash', 'bank_transfer', 'razorpay', 'stripe', 'manual'];
+function normalizePaymentMethod(method: string): InvoicePaymentMethod {
+    return (VALID_PAYMENT_METHODS as string[]).includes(method) ? (method as InvoicePaymentMethod) : 'manual';
+}
+
+/**
+ * Records a tenant's SaaS subscription payment (Super Admin action, e.g. after
+ * collecting payment offline via UPI/bank transfer). Creates the ledger entry
+ * (SaaSPayment) that platform revenue reporting reads, and optionally a
+ * billing invoice (SaaSInvoice) alongside it.
+ */
+export const recordTenantPayment = async (req: Request, res: Response) => {
+    try {
+        const { tenantId } = req.params;
+        const { amount, method, notes, generateInvoice, isGSTInvoice, reactivateIfSuspended } = req.body;
+
+        const numericAmount = Number(amount);
+        if (!numericAmount || numericAmount <= 0) {
+            return res.status(400).json({ success: false, message: 'Amount must be greater than 0' });
+        }
+        if (!method || typeof method !== 'string') {
+            return res.status(400).json({ success: false, message: 'Payment method is required' });
+        }
+
+        const tenant = await Tenant.findById(tenantId);
+        if (!tenant) {
+            return res.status(404).json({ success: false, message: 'Tenant not found' });
+        }
+
+        const tax = isGSTInvoice ? Math.round(numericAmount * 0.18) : 0;
+        const total = numericAmount + tax;
+        const now = new Date();
+        const cycle = (tenant as any).billingCycle || 'monthly';
+        const periodEnd = new Date(now);
+        if (cycle === 'quarterly')          periodEnd.setMonth(periodEnd.getMonth() + 3);
+        else if (cycle === 'semi_annual')   periodEnd.setMonth(periodEnd.getMonth() + 6);
+        else if (cycle === 'yearly')        periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+        else if (cycle === 'lifetime')      periodEnd.setFullYear(periodEnd.getFullYear() + 100);
+        else                                periodEnd.setMonth(periodEnd.getMonth() + 1);
+
+        const SaaSPayment = (await import('../models/SaaSPayment.model')).default;
+        const payment = await SaaSPayment.create({
+            tenantId: tenant._id,
+            saasPlanId: (tenant as any).saasPlanId,
+            amount: total,
+            currency: 'INR',
+            type: 'subscription',
+            status: 'completed',
+            billingPeriod: { start: now, end: periodEnd },
+            gateway: { provider: GATEWAY_PROVIDER_MAP[method] || 'manual' },
+            paidAt: now,
+        });
+
+        let invoice = null;
+        if (generateInvoice) {
+            const SaaSInvoice = (await import('../models/SaaSInvoice.model')).default;
+            invoice = await SaaSInvoice.create({
+                tenantId: tenant._id,
+                gymName: tenant.name,
+                ownerName: (tenant as any).ownerName || '',
+                ownerEmail: (tenant as any).ownerEmail || tenant.contactInfo?.email || '',
+                invoiceNo: `SAAS-${payment._id.toString().slice(-8).toUpperCase()}`,
+                plan: tenant.subscription?.plan || 'basic',
+                billingCycle: cycle,
+                amount: numericAmount,
+                tax,
+                taxRate: isGSTInvoice ? 18 : 0,
+                discount: 0,
+                total,
+                currency: 'INR',
+                dueDate: now,
+                paidAt: now,
+                status: 'paid',
+                paymentMethod: normalizePaymentMethod(method),
+                periodStart: now,
+                periodEnd,
+                notes,
+                generatedBy: req.user?.email || req.user?._id?.toString() || 'super_admin',
+            });
+        }
+
+        let reactivated = false;
+        const wasSuspended = tenant.subscription?.status === 'suspended' || !tenant.isActive;
+        if (reactivateIfSuspended && wasSuspended) {
+            tenant.isActive = true;
+            tenant.subscription.status = 'active';
+            tenant.lockState = 'none';
+            await tenant.save();
+            reactivated = true;
+        }
+
+        return res.status(201).json({
+            success: true,
+            data: { payment, invoice },
+            reactivated,
+            message: 'Payment recorded successfully',
+        });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Error recording payment', error: (error as Error).message });
     }
 };
 
@@ -749,65 +872,7 @@ export const getPlatformAnalytics = async (req: Request, res: Response) => {
         const SupportTicket = (await import('../models/SupportTicket.model')).default;
 
         const now = new Date();
-
-        // MRR — actual SaaS subscription payments collected this month
-        const mrrAgg = await SaaSPayment.aggregate([
-            { $match: { status: 'completed', createdAt: { $gte: new Date(now.getFullYear(), now.getMonth(), 1) } } },
-            { $group: { _id: null, total: { $sum: '$amount' } } },
-        ]);
-        const actualMrr = mrrAgg[0]?.total || 0;
-
-        // Total collected (all time) from SaaS payments
-        const totalAgg = await SaaSPayment.aggregate([
-            { $match: { status: 'completed' } },
-            { $group: { _id: null, total: { $sum: '$amount' } } },
-        ]);
-        const actualTotalCollected = totalAgg[0]?.total || 0;
-
-        // Fallback: expected MRR from active non-trial tenants using customPrice + billingCycle
-        // (same approach as reference gymmanagement platform-business.service.ts)
-        // Then further fallback to plan pricing if customPrice not set
-        const activePaidTenants = await Tenant.find({
-            isActive: true,
-            'subscription.status': 'active',
-        } as any).select('customPrice billingCycle saasPlanId').lean();
-
-        let expectedMrr = 0;
-        const tenantsNeedingPlanPrice: string[] = [];
-        for (const t of activePaidTenants) {
-            const price = (t as any).customPrice;
-            if (price && price > 0) {
-                const cycle = (t as any).billingCycle || 'monthly';
-                if (cycle === 'monthly')      expectedMrr += price;
-                else if (cycle === 'quarterly')  expectedMrr += price / 3;
-                else if (cycle === 'semi_annual') expectedMrr += price / 6;
-                else if (cycle === 'yearly')      expectedMrr += price / 12;
-                // lifetime = 0 MRR contribution
-            } else if ((t as any).saasPlanId) {
-                tenantsNeedingPlanPrice.push(String((t as any).saasPlanId));
-            }
-        }
-        // For tenants without customPrice, fall back to their plan's monthly price
-        if (tenantsNeedingPlanPrice.length) {
-            const planPriceAgg = await Tenant.aggregate([
-                { $match: { isActive: true, saasPlanId: { $exists: true, $ne: null }, customPrice: { $not: { $gt: 0 } } } },
-                { $lookup: { from: 'saasplans', localField: 'saasPlanId', foreignField: '_id', as: 'plan' } },
-                { $unwind: { path: '$plan', preserveNullAndEmptyArrays: false } },
-                { $group: { _id: null, total: { $sum: '$plan.pricing.monthly' } } },
-            ]);
-            expectedMrr += planPriceAgg[0]?.total || 0;
-        }
-        expectedMrr = Math.round(expectedMrr);
-
-        // Fallback total collected: sum all completed gym member payments (total volume through platform)
-        const memberPaymentAgg = await Payment.aggregate([
-            { $match: { status: 'completed' } },
-            { $group: { _id: null, total: { $sum: '$amount.total' } } },
-        ]);
-        const memberRevenue = memberPaymentAgg[0]?.total || 0;
-
-        const mrr = actualMrr || expectedMrr;
-        const totalCollected = actualTotalCollected || memberRevenue;
+        const { mrr, totalCollected } = await calculatePlatformRevenue();
 
         // Tenant counts for conversion + churn
         const thirtyDaysAgo = new Date();
@@ -855,17 +920,9 @@ export const getPlatformAnalytics = async (req: Request, res: Response) => {
             { $sort: { '_id.year': 1, '_id.month': 1 } },
         ]);
         const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        let monthlyTrend = monthlyAgg.map(m => ({ month: MONTH_NAMES[m._id.month - 1], revenue: m.revenue }));
-
-        // Fallback: use member payment revenue by month when no SaaS payment trend data
-        if (!monthlyTrend.length) {
-            const memberMonthlyAgg = await Payment.aggregate([
-                { $match: { status: 'completed', createdAt: { $gte: sixMonthsAgo } } },
-                { $group: { _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } }, revenue: { $sum: '$amount.total' } } },
-                { $sort: { '_id.year': 1, '_id.month': 1 } },
-            ]);
-            monthlyTrend = memberMonthlyAgg.map(m => ({ month: MONTH_NAMES[m._id.month - 1], revenue: m.revenue || 0 }));
-        }
+        // Deliberately no gym-member-payment fallback here — an empty trend honestly
+        // reflects "no SaaS payments recorded yet" rather than showing unrelated revenue.
+        const monthlyTrend = monthlyAgg.map(m => ({ month: MONTH_NAMES[m._id.month - 1], revenue: m.revenue }));
 
         // Signups & conversions trend (last 6 months)
         const signupsAgg = await Tenant.aggregate([
