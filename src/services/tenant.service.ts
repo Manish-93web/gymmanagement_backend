@@ -73,6 +73,7 @@ export class TenantService {
             const tenant = new Tenant({
                 name: data.name,
                 slug: `${slugify(data.name)}-${Date.now().toString(36)}`,
+                allowedMenuKeys: [],
                 subscription: {
                     plan: data.subscriptionTier,
                     startDate: new Date(),

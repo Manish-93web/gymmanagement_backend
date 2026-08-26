@@ -38,7 +38,7 @@ export const tenantContext = async (
             const trialEnd = new Date();
             trialEnd.setDate(trialEnd.getDate() + 30);
             const tenant = await Tenant.create({
-                name: gymName, slug, isActive: true,
+                name: gymName, slug, isActive: true, allowedMenuKeys: [],
                 subscription: { plan: 'trial', status: 'active', startDate: new Date(), endDate: trialEnd },
             });
             tenantId = tenant._id.toString();

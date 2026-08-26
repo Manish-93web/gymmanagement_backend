@@ -8,6 +8,7 @@ import Subscription from '../models/Subscription.model';
 import systemConfigService from '../services/system-config.service';
 import auditService from '../services/audit.service';
 import backupService from '../services/backup.service';
+import { MENU_REGISTRY, MENU_CATEGORIES, MENU_REGISTRY_KEYS } from '../utils/MenuRegistry';
 
 /**
  * Get all tenants with aggregated stats
@@ -103,6 +104,88 @@ export const updateTenantStatus = async (req: Request, res: Response) => {
         return res.status(500).json({
             success: false,
             message: 'Error updating tenant status',
+            error: (error as Error).message,
+        });
+    }
+};
+
+/**
+ * Canonical menu registry the Super Admin picker renders — every gateable
+ * sidebar (web) / drawer (mobile) menu item, grouped by category.
+ */
+export const getMenuRegistry = async (req: Request, res: Response) => {
+    return res.status(200).json({
+        success: true,
+        data: { categories: MENU_CATEGORIES, items: MENU_REGISTRY },
+    });
+};
+
+/**
+ * A tenant's current menu permission selection. `allowedMenuKeys: null`
+ * means unrestricted (sees everything) — the default until a Super Admin
+ * explicitly sets a selection for that tenant.
+ */
+export const getTenantMenuPermissions = async (req: Request, res: Response) => {
+    try {
+        const { tenantId } = req.params;
+        const tenant = await Tenant.findById(tenantId).select('allowedMenuKeys');
+        if (!tenant) {
+            return res.status(404).json({ success: false, message: 'Tenant not found' });
+        }
+        return res.status(200).json({
+            success: true,
+            data: { allowedMenuKeys: tenant.allowedMenuKeys ?? null },
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: 'Error fetching tenant menu permissions',
+            error: (error as Error).message,
+        });
+    }
+};
+
+/**
+ * Sets a tenant's menu permission selection. Body: { allowedMenuKeys: string[] | null }.
+ * Passing null clears the restriction (unrestricted / sees everything);
+ * passing an array (including []) sets an explicit allow-list, silently
+ * dropping any key that isn't in the canonical registry.
+ */
+export const updateTenantMenuPermissions = async (req: Request, res: Response) => {
+    try {
+        const { tenantId } = req.params;
+        const { allowedMenuKeys } = req.body;
+
+        if (allowedMenuKeys !== null && !Array.isArray(allowedMenuKeys)) {
+            return res.status(400).json({
+                success: false,
+                message: 'allowedMenuKeys must be an array of strings or null',
+            });
+        }
+
+        const sanitized = allowedMenuKeys === null
+            ? null
+            : allowedMenuKeys.filter((key: unknown) => typeof key === 'string' && MENU_REGISTRY_KEYS.has(key));
+
+        const tenant = await Tenant.findByIdAndUpdate(
+            tenantId,
+            { $set: { allowedMenuKeys: sanitized } },
+            { new: true }
+        ).select('allowedMenuKeys');
+
+        if (!tenant) {
+            return res.status(404).json({ success: false, message: 'Tenant not found' });
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: { allowedMenuKeys: tenant.allowedMenuKeys ?? null },
+            message: 'Menu permissions updated successfully',
+        });
+    } catch (error) {
+        return res.status(500).json({
+            success: false,
+            message: 'Error updating tenant menu permissions',
             error: (error as Error).message,
         });
     }

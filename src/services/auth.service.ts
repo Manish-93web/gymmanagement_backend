@@ -53,6 +53,7 @@ export class AuthService {
                 name: gymName,
                 slug,
                 isActive: true,
+                allowedMenuKeys: [],
                 subscription: {
                     plan: 'trial',
                     status: 'active',
@@ -171,6 +172,7 @@ export class AuthService {
                 name: gymName,
                 slug,
                 isActive: true,
+                allowedMenuKeys: [],
                 subscription: { plan: 'trial', status: 'active', startDate: new Date(), endDate: trialEnd },
             });
             user.tenantId = newTenant._id as any;

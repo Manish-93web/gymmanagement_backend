@@ -67,6 +67,11 @@ export interface ITenant extends Document {
         limit?: number;
         enabled: boolean;
     }[];
+    // Per-tenant sidebar/drawer menu restriction, set by a Super Admin.
+    // undefined/null = unrestricted (sees everything — the default for every
+    // tenant that predates this feature). A populated (possibly empty) array
+    // means the tenant is explicitly limited to these menu registry keys.
+    allowedMenuKeys?: string[] | null;
     features: {
         aiEnabled: boolean;
         onlineClasses: boolean;
@@ -209,6 +214,7 @@ const TenantSchema: Schema = new Schema(
                 enabled: { type: Boolean, required: true },
             },
         ],
+        allowedMenuKeys: { type: [String], default: undefined },
         features: {
             aiEnabled: { type: Boolean, default: false },
             onlineClasses: { type: Boolean, default: false },

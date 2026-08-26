@@ -28,6 +28,9 @@ import {
     getPlatformAnalytics,
     getPlatformHealth,
     promoteToAdmin,
+    getMenuRegistry,
+    getTenantMenuPermissions,
+    updateTenantMenuPermissions,
 } from '../controllers/platform.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/role.middleware';
@@ -42,6 +45,11 @@ router.get('/tenants/:tenantId', getTenantById);
 router.patch('/tenants/:tenantId', updateTenant);
 router.patch('/tenants/:tenantId/status', updateTenantStatus);
 router.get('/metrics', getPlatformMetrics);
+
+// Per-tenant sidebar/drawer menu permissions
+router.get('/menu-registry', getMenuRegistry);
+router.get('/tenants/:tenantId/menu-permissions', getTenantMenuPermissions);
+router.patch('/tenants/:tenantId/menu-permissions', updateTenantMenuPermissions);
 
 // Platform Management
 router.get('/config', getPlatformConfig);
