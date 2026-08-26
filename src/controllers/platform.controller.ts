@@ -224,39 +224,58 @@ export const updateTenant = async (req: Request, res: Response) => {
 /**
  * Get Platform-wide Metrics (Aggregation only)
  */
+function monthsCoveredBy(start: Date, end: Date): number {
+    return Math.max(1, Math.round((end.getTime() - start.getTime()) / (30.44 * 24 * 60 * 60 * 1000)));
+}
+
 /**
  * Real tenant-to-platform SaaS revenue — the single source of truth for MRR and
  * lifetime collections, shared by every platform metrics/analytics endpoint.
- * Gym member payments (money members pay their gym) must never feed into this;
- * only actual SaaSPayment records and, as an estimate, active tenants' configured
- * billing (customPrice/billingCycle, falling back to their plan's list price).
+ * Gym member payments (money members pay their gym) must never feed into this.
+ *
+ * Two legitimate record types feed this: SaaSPayment (created going forward via
+ * the "Record Payment" action, which also creates a linked SaaSInvoice for the
+ * same transaction when requested) and orphan SaaSInvoice records with status
+ * 'paid' and no linked payment (historical payments tracked outside the app
+ * before "Record Payment" existed). Invoices linked to a payment via
+ * `paymentReference` are deliberately excluded here — counting both would
+ * double the same real-world transaction.
  */
 async function calculatePlatformRevenue(): Promise<{ mrr: number; totalCollected: number }> {
     const SaaSPayment = (await import('../models/SaaSPayment.model')).default;
+    const SaaSInvoice = (await import('../models/SaaSInvoice.model')).default;
     const now = new Date();
 
-    // Actual MRR: normalize each currently-active billing period's payment to a
-    // monthly-equivalent rate (a ₹14,999 semi-annual payment contributes ~₹2,500/mo,
-    // not its full amount) — NOT "raw $ collected this calendar month", which would
-    // spike whenever a quarterly/semi-annual/yearly payment happens to land this month.
-    const [currentPayments, totalAgg] = await Promise.all([
+    // Actual MRR: normalize each currently-active billing period to a monthly-equivalent
+    // rate (a ₹14,999 semi-annual payment contributes ~₹2,500/mo, not its full amount) —
+    // NOT "raw $ collected this calendar month", which would spike whenever a
+    // quarterly/semi-annual/yearly payment happens to land this month.
+    const [currentPayments, currentInvoices, paymentTotalAgg, invoiceTotalAgg] = await Promise.all([
         SaaSPayment.find({
             status: 'completed',
             'billingPeriod.start': { $lte: now },
             'billingPeriod.end': { $gte: now },
         }).select('amount billingPeriod').lean(),
+        SaaSInvoice.find({
+            status: 'paid',
+            paymentReference: null, // exclude invoices already linked to a SaaSPayment — would double-count
+            periodStart: { $lte: now },
+            periodEnd: { $gte: now },
+        }).select('total periodStart periodEnd').lean(),
         SaaSPayment.aggregate([
             { $match: { status: 'completed' } },
             { $group: { _id: null, total: { $sum: '$amount' } } },
         ]),
+        SaaSInvoice.aggregate([
+            { $match: { status: 'paid', paymentReference: null } },
+            { $group: { _id: null, total: { $sum: '$total' } } },
+        ]),
     ]);
-    const actualMrr = Math.round(currentPayments.reduce((sum, p: any) => {
-        const start = new Date(p.billingPeriod?.start);
-        const end = new Date(p.billingPeriod?.end);
-        const monthsCovered = Math.max(1, Math.round((end.getTime() - start.getTime()) / (30.44 * 24 * 60 * 60 * 1000)));
-        return sum + (p.amount / monthsCovered);
-    }, 0));
-    const totalCollected = totalAgg[0]?.total || 0;
+    const actualMrr = Math.round(
+        currentPayments.reduce((sum, p: any) => sum + (p.amount / monthsCoveredBy(new Date(p.billingPeriod?.start), new Date(p.billingPeriod?.end))), 0)
+        + currentInvoices.reduce((sum, inv: any) => sum + (inv.total / monthsCoveredBy(new Date(inv.periodStart), new Date(inv.periodEnd))), 0)
+    );
+    const totalCollected = (paymentTotalAgg[0]?.total || 0) + (invoiceTotalAgg[0]?.total || 0);
 
     // Fallback MRR estimate from active non-trial tenants' configured billing —
     // still 100% tenant-derived, just not backed by an actual payment record yet.
@@ -486,36 +505,67 @@ export const getPlatformPlans = async (req: Request, res: Response) => {
     }
 };
 
+/** SaaSInvoice.status uses different words than SaaSPayment.status for the same states. */
+const INVOICE_STATUS_MAP: Record<string, string> = { completed: 'paid', pending: 'pending', failed: 'failed', refunded: 'refunded' };
+
 /**
- * Get platform-wide payments — real tenant-to-platform SaaS billing records only.
- * Gym member payments are a different revenue stream (money members pay their gym,
- * not money the gym pays this platform) and must never appear here.
+ * Normalizes a SaaSInvoice (historical, manually-tracked payments recorded before
+ * the "Record Payment" action existed) into the same shape as a SaaSPayment, so
+ * both real revenue sources render identically in the payments list.
+ */
+const normalizeInvoiceAsPayment = (inv: any) => ({
+    _id: inv._id,
+    tenantId: inv.tenantId,
+    saasPlanId: { name: inv.plan, type: 'subscription' },
+    type: 'subscription',
+    amount: inv.total,
+    currency: inv.currency,
+    status: inv.status === 'paid' ? 'completed' : inv.status,
+    gateway: { provider: inv.paymentMethod || 'manual', transactionId: inv.paymentReference || inv.invoiceNo },
+    createdAt: inv.createdAt,
+});
+
+/**
+ * Get platform-wide payments — real tenant-to-platform SaaS billing only, merged
+ * from two legitimate sources: SaaSPayment (recorded going forward via "Record
+ * Payment") and SaaSInvoice (historical payments tracked before that existed).
+ * Gym member payments are a different revenue stream entirely and never appear here.
  */
 export const getPlatformPayments = async (req: Request, res: Response) => {
     try {
         const SaaSPayment = (await import('../models/SaaSPayment.model')).default;
+        const SaaSInvoice = (await import('../models/SaaSInvoice.model')).default;
         const { startDate, endDate, tenantId, status, page = '1', limit = '50' } = req.query as Record<string, string>;
-        const filter: any = {};
-        if (status) filter.status = status;
-        if (tenantId) filter.tenantId = tenantId;
-        if (startDate || endDate) {
-            filter.createdAt = {};
-            if (startDate) filter.createdAt.$gte = new Date(startDate);
-            if (endDate) filter.createdAt.$lte = new Date(endDate);
-        }
-        const skip = (parseInt(page) - 1) * parseInt(limit);
 
-        const [payments, total] = await Promise.all([
-            SaaSPayment.find(filter)
-                .populate('tenantId', 'name slug')
-                .populate('saasPlanId', 'name type')
-                .sort({ createdAt: -1 })
-                .skip(skip)
-                .limit(parseInt(limit)),
-            SaaSPayment.countDocuments(filter),
+        const paymentFilter: any = {};
+        // Only orphan invoices (no linked SaaSPayment) — a linked invoice is the
+        // billing document FOR a payment already in the list, not a separate one.
+        const invoiceFilter: any = { paymentReference: null };
+        if (status) {
+            paymentFilter.status = status;
+            invoiceFilter.status = INVOICE_STATUS_MAP[status] || status;
+        }
+        if (tenantId) { paymentFilter.tenantId = tenantId; invoiceFilter.tenantId = tenantId; }
+        if (startDate || endDate) {
+            paymentFilter.createdAt = {};
+            invoiceFilter.createdAt = {};
+            if (startDate) { paymentFilter.createdAt.$gte = new Date(startDate); invoiceFilter.createdAt.$gte = new Date(startDate); }
+            if (endDate) { paymentFilter.createdAt.$lte = new Date(endDate); invoiceFilter.createdAt.$lte = new Date(endDate); }
+        }
+
+        const [payments, invoices] = await Promise.all([
+            SaaSPayment.find(paymentFilter).populate('tenantId', 'name slug').populate('saasPlanId', 'name type').lean(),
+            SaaSInvoice.find(invoiceFilter).populate('tenantId', 'name slug').lean(),
         ]);
 
-        return res.status(200).json({ success: true, data: { payments, total, page: parseInt(page) } });
+        const merged = [...payments, ...invoices.map(normalizeInvoiceAsPayment)]
+            .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        const total = merged.length;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const pageItems = merged.slice(skip, skip + parseInt(limit));
+
+        return res.status(200).json({ success: true, data: { payments: pageItems, total, page: parseInt(page) } });
     } catch (error) {
         return res.status(500).json({ success: false, message: 'Error fetching payments', error: (error as Error).message });
     }
@@ -605,6 +655,7 @@ export const recordTenantPayment = async (req: Request, res: Response) => {
                 paidAt: now,
                 status: 'paid',
                 paymentMethod: normalizePaymentMethod(method),
+                paymentReference: payment._id.toString(),
                 periodStart: now,
                 periodEnd,
                 notes,
