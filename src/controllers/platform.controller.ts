@@ -235,17 +235,27 @@ async function calculatePlatformRevenue(): Promise<{ mrr: number; totalCollected
     const SaaSPayment = (await import('../models/SaaSPayment.model')).default;
     const now = new Date();
 
-    const [mrrAgg, totalAgg] = await Promise.all([
-        SaaSPayment.aggregate([
-            { $match: { status: 'completed', createdAt: { $gte: new Date(now.getFullYear(), now.getMonth(), 1) } } },
-            { $group: { _id: null, total: { $sum: '$amount' } } },
-        ]),
+    // Actual MRR: normalize each currently-active billing period's payment to a
+    // monthly-equivalent rate (a ₹14,999 semi-annual payment contributes ~₹2,500/mo,
+    // not its full amount) — NOT "raw $ collected this calendar month", which would
+    // spike whenever a quarterly/semi-annual/yearly payment happens to land this month.
+    const [currentPayments, totalAgg] = await Promise.all([
+        SaaSPayment.find({
+            status: 'completed',
+            'billingPeriod.start': { $lte: now },
+            'billingPeriod.end': { $gte: now },
+        }).select('amount billingPeriod').lean(),
         SaaSPayment.aggregate([
             { $match: { status: 'completed' } },
             { $group: { _id: null, total: { $sum: '$amount' } } },
         ]),
     ]);
-    const actualMrr = mrrAgg[0]?.total || 0;
+    const actualMrr = Math.round(currentPayments.reduce((sum, p: any) => {
+        const start = new Date(p.billingPeriod?.start);
+        const end = new Date(p.billingPeriod?.end);
+        const monthsCovered = Math.max(1, Math.round((end.getTime() - start.getTime()) / (30.44 * 24 * 60 * 60 * 1000)));
+        return sum + (p.amount / monthsCovered);
+    }, 0));
     const totalCollected = totalAgg[0]?.total || 0;
 
     // Fallback MRR estimate from active non-trial tenants' configured billing —
