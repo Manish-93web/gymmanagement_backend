@@ -948,28 +948,61 @@ export const getPlatformAnalytics = async (req: Request, res: Response) => {
         const churnRate = totalTenants > 0 ? parseFloat(((recentChurned / totalTenants) * 100).toFixed(2)) : 0;
         const churnedTenants = await Tenant.countDocuments({ isActive: false } as any);
 
-        // Plan distribution — prefer actual SaaS payments; fall back to active tenant plan subscriptions
+        // Plan distribution — prefer actual SaaS payments; fall back to active tenant plan subscriptions.
+        // Most tenants are priced via customPrice/billingCycle directly rather than a linked SaaSPlan
+        // document, so the plan LABEL must fall back to the tenant's subscription.plan string (e.g.
+        // 'pro_6m') instead of showing "unknown" whenever there's no real SaaSPlan reference.
         const planDistAgg = await SaaSPayment.aggregate([
             { $match: { status: 'completed' } },
-            { $group: { _id: '$saasPlanId', count: { $sum: 1 }, revenue: { $sum: '$amount' } } },
-            { $lookup: { from: 'saasplans', localField: '_id', foreignField: '_id', as: 'plan' } },
+            { $lookup: { from: 'tenants', localField: 'tenantId', foreignField: '_id', as: 'tenant' } },
+            { $unwind: { path: '$tenant', preserveNullAndEmptyArrays: true } },
+            { $lookup: { from: 'saasplans', localField: 'saasPlanId', foreignField: '_id', as: 'plan' } },
             { $unwind: { path: '$plan', preserveNullAndEmptyArrays: true } },
-            { $project: { _id: 0, plan: { $toLower: { $ifNull: ['$plan.name', 'unknown'] } }, count: 1, revenue: 1 } },
+            {
+                $group: {
+                    _id: { $toLower: { $ifNull: ['$plan.name', { $ifNull: ['$tenant.subscription.plan', 'basic'] }] } },
+                    count: { $sum: 1 },
+                    revenue: { $sum: '$amount' },
+                },
+            },
+            { $project: { _id: 0, plan: '$_id', count: 1, revenue: 1 } },
             { $sort: { revenue: -1 } },
         ]);
-        let planDistribution = planDistAgg.map(p => ({ plan: p.plan || 'basic', count: p.count, revenue: p.revenue || 0 }));
+        let planDistribution: { plan: string; count: number; revenue: number }[] = planDistAgg;
 
-        // Fallback: count tenants per plan when no payment records exist
+        // Fallback: distribute active tenants by plan when no payment records exist yet.
         if (!planDistribution.length) {
-            const tenantPlanAgg = await Tenant.aggregate([
-                { $match: { isActive: true, saasPlanId: { $exists: true, $ne: null } } },
-                { $lookup: { from: 'saasplans', localField: 'saasPlanId', foreignField: '_id', as: 'plan' } },
-                { $unwind: { path: '$plan', preserveNullAndEmptyArrays: false } },
-                { $group: { _id: '$plan._id', plan: { $first: { $toLower: '$plan.name' } }, count: { $sum: 1 }, revenue: { $sum: '$plan.pricing.monthly' } } },
-                { $project: { _id: 0, plan: 1, count: 1, revenue: 1 } },
-                { $sort: { count: -1 } },
-            ]);
-            planDistribution = tenantPlanAgg.map(p => ({ plan: p.plan || 'basic', count: p.count, revenue: p.revenue || 0 }));
+            const activeTenantsForDist = await Tenant.find({ isActive: true })
+                .select('subscription.plan customPrice billingCycle saasPlanId')
+                .populate('saasPlanId', 'name pricing')
+                .lean();
+
+            const byPlan = new Map<string, { plan: string; count: number; revenue: number }>();
+            for (const t of activeTenantsForDist) {
+                const linkedPlan = (t as any).saasPlanId;
+                const planLabel = (linkedPlan?.name || (t as any).subscription?.plan || 'basic').toLowerCase();
+
+                let monthlyRevenue = 0;
+                const price = (t as any).customPrice;
+                if (price && price > 0) {
+                    const cycle = (t as any).billingCycle || 'monthly';
+                    if (cycle === 'monthly')          monthlyRevenue = price;
+                    else if (cycle === 'quarterly')   monthlyRevenue = price / 3;
+                    else if (cycle === 'semi_annual') monthlyRevenue = price / 6;
+                    else if (cycle === 'yearly')      monthlyRevenue = price / 12;
+                    // lifetime = 0 monthly contribution
+                } else {
+                    monthlyRevenue = linkedPlan?.pricing?.monthly || 0;
+                }
+
+                const entry = byPlan.get(planLabel) || { plan: planLabel, count: 0, revenue: 0 };
+                entry.count += 1;
+                entry.revenue += monthlyRevenue;
+                byPlan.set(planLabel, entry);
+            }
+            planDistribution = Array.from(byPlan.values())
+                .map(p => ({ ...p, revenue: Math.round(p.revenue) }))
+                .sort((a, b) => b.count - a.count);
         }
 
         // Monthly revenue trend (last 6 months)
