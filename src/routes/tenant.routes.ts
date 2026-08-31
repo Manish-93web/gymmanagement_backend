@@ -46,6 +46,7 @@ router.get('/manifest', authenticate, async (req: Request, res: Response) => {
 
 router.get('/:tenantId', authenticate, requireTenantAccess, tenantController.getTenant.bind(tenantController));
 router.put('/:tenantId', authenticate, requireTenantAccess, requireRole('gym_owner', 'super_admin'), tenantController.updateTenant.bind(tenantController));
+router.patch('/:tenantId', authenticate, requireTenantAccess, requireRole('gym_owner', 'super_admin'), tenantController.updateTenant.bind(tenantController));
 router.patch('/:tenantId/features', authenticate, requireTenantAccess, requireRole('gym_owner', 'super_admin'), tenantController.toggleFeature.bind(tenantController));
 
 export default router;
