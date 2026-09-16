@@ -8,10 +8,7 @@ import Notification from '../models/Notification.model';
 
 const router = Router();
 
-// Webhook — no auth (device-to-server)
-router.post('/webhook', biometricController.handleWebhook.bind(biometricController));
-
-// All other routes require auth + tenant context
+// All routes require auth + tenant context
 router.use(authenticate, tenantContext);
 
 // Devices
@@ -26,6 +23,9 @@ router.post('/devices/:id/sync', requireAnyRole('gym_owner', 'branch_manager', '
 router.post('/devices/:id/reset-cursor', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.resetSyncCursor.bind(biometricController));
 router.post('/devices/:id/reprocess', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.reprocessLogs.bind(biometricController));
 router.get('/devices/:id/logs', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), biometricController.getDeviceLogs.bind(biometricController));
+// Cross-tenant serial-number conflict resolution — inherently mutates OTHER tenants'
+// devices by design, so this can never be scoped to a single tenant's own admin.
+router.post('/devices/fix-serial-conflict', requireAnyRole('super_admin'), biometricController.fixDeviceSerialConflict.bind(biometricController));
 
 // Member enrollment
 router.get('/members', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), biometricController.getEnrolledMembers.bind(biometricController));

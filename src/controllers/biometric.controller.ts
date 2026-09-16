@@ -8,10 +8,7 @@ import BiometricSettings from '../models/BiometricSettings.model';
 import Attendance from '../models/Attendance.model';
 import Member from '../models/Member.model';
 import Branch from '../models/Branch.model';
-import { AttendanceService } from '../services/attendance.service';
 import BiometricAttendanceService from '../services/biometric-attendance.service';
-
-const attendanceService = new AttendanceService();
 
 class BiometricController {
     // ─── DEVICES ────────────────────────────────────────────────
@@ -166,7 +163,12 @@ class BiometricController {
 
             // settings.* — always use dot-notation to avoid parent/child conflict in $set
             if (body.timezone            !== undefined) updates['settings.timezone']        = body.timezone;
-            if (body.syncMode            !== undefined) updates['settings.autoSync']        = body.syncMode !== 'manual';
+            if (body.syncMode            !== undefined) {
+                // Top-level field the sync worker actually queries on — must be set
+                // alongside the settings mirror, or edits to Sync Mode silently have no effect.
+                updates.syncMode                        = body.syncMode;
+                updates['settings.autoSync']             = body.syncMode !== 'manual';
+            }
             if (body.syncIntervalMinutes !== undefined) updates['settings.syncInterval']    = body.syncIntervalMinutes;
 
             // If frontend sends a nested settings object, flatten it
@@ -329,6 +331,48 @@ class BiometricController {
             );
 
             res.json({ success: true, message: 'Sync cursor reset — device will re-send all records on next heartbeat.' });
+        } catch (error) { next(error); }
+    }
+
+    /**
+     * A device's serialNumber is the global identity key resolveDevice() (essl-adms.controller.ts)
+     * uses to route incoming punches — if a stale/duplicate serial number is sitting on another
+     * tenant's device doc, it permanently hijacks that serial's real device's punches. This clears
+     * the serial from every other tenant's device and assigns it to the target tenant's device.
+     * super_admin only — this deliberately mutates OTHER tenants' documents, so no per-tenant
+     * ownership check could ever make this safe to expose to a gym_owner.
+     */
+    async fixDeviceSerialConflict(req: Request, res: Response, next: NextFunction) {
+        try {
+            const { tenantId, serialNumber } = req.body;
+            if (!tenantId || !serialNumber) {
+                res.status(400).json({ success: false, message: 'tenantId and serialNumber are required' });
+                return;
+            }
+
+            const allDevices = await BiometricDevice.find({ serialNumber }).lean();
+            const results: any[] = [];
+            for (const device of allDevices) {
+                const isSameTenant = device.tenantId.toString() === tenantId;
+                if (!isSameTenant) {
+                    await BiometricDevice.findByIdAndUpdate(device._id, { $unset: { serialNumber: '' } });
+                    results.push({ id: device._id, tenant: device.tenantId, action: 'cleared serial number' });
+                } else {
+                    results.push({ id: device._id, tenant: device.tenantId, action: 'kept (correct tenant)' });
+                }
+            }
+
+            // Ensure the target tenant has a device carrying this serial number
+            const alreadyAssigned = allDevices.some(d => d.tenantId.toString() === tenantId);
+            if (!alreadyAssigned) {
+                const tenantDevice = await BiometricDevice.findOne({ tenantId, isDeleted: { $ne: true } }).lean();
+                if (tenantDevice) {
+                    await BiometricDevice.findByIdAndUpdate(tenantDevice._id, { serialNumber });
+                    results.push({ id: tenantDevice._id, tenant: tenantId, action: 'assigned serial number' });
+                }
+            }
+
+            res.json({ success: true, data: { serialNumber, results } });
         } catch (error) { next(error); }
     }
 
@@ -726,61 +770,6 @@ class BiometricController {
             }
 
             res.status(400).json({ success: false, message: `Unknown report type: ${type}` });
-        } catch (error) { next(error); }
-    }
-
-    // ─── WEBHOOK ─────────────────────────────────────────────────
-
-    async handleWebhook(req: Request, res: Response, next: NextFunction) {
-        try {
-            const { deviceId, biometricUserId, memberId, direction, timestamp, rawPayload } = req.body;
-            const device = await BiometricDevice.findOne({ deviceId });
-            if (!device) { res.status(404).json({ success: false, message: 'Device not found' }); return; }
-
-            await BiometricDevice.findByIdAndUpdate(device._id, { lastPing: new Date(), status: 'online' });
-
-            const punchTime = timestamp ? new Date(timestamp) : new Date();
-
-            const rawLog = await new BiometricRawLog({
-                tenantId: device.tenantId,
-                branchId: device.branchId,
-                deviceId: device._id,
-                biometricUserId: biometricUserId || memberId,
-                eventType: direction === 'out' ? 'check_out' : 'check_in',
-                punchTime,
-                deviceLocalTime: punchTime,
-                rawPayload: rawPayload || req.body,
-                processed: false,
-            }).save();
-
-            const member = await Member.findOne({ _id: memberId, tenantId: device.tenantId });
-            if (member) {
-                let attendanceId: string | undefined;
-                if (direction === 'in') {
-                    const record = await attendanceService.checkIn({
-                        memberId: member._id.toString(),
-                        tenantId: device.tenantId.toString(),
-                        branchId: device.branchId.toString(),
-                        checkInMethod: 'biometric',
-                    });
-                    attendanceId = (record as any)?._id?.toString();
-                } else if (direction === 'out') {
-                    const open = await Attendance.findOne({
-                        memberId: member._id,
-                        tenantId: device.tenantId,
-                        checkOutTime: null,
-                    }).sort({ checkInTime: -1 });
-                    if (open) {
-                        await attendanceService.checkOut(open._id.toString(), device.tenantId.toString());
-                        attendanceId = open._id.toString();
-                    }
-                }
-                await BiometricRawLog.findByIdAndUpdate((rawLog as any)._id, { processed: true, processedAt: new Date(), attendanceId });
-            } else {
-                await BiometricRawLog.findByIdAndUpdate((rawLog as any)._id, { skippedReason: 'member_not_found' });
-            }
-
-            res.json({ success: true, message: 'Webhook processed' });
         } catch (error) { next(error); }
     }
 

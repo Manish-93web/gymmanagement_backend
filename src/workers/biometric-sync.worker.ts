@@ -1,20 +1,18 @@
 import cron from 'node-cron';
-import mongoose from 'mongoose';
 import BiometricDevice from '../models/BiometricDevice.model';
-import BiometricRawLog from '../models/BiometricRawLog.model';
 import BiometricSyncJob from '../models/BiometricSyncJob.model';
 import BiometricAttendanceService from '../services/biometric-attendance.service';
-import { getDeviceAdapter } from '../services/device-adapters/adapter.factory';
 import logger from '../config/logger';
 
 /**
  * BiometricSyncWorker — ticks every minute.
  *
- * For ADMS/push devices: just processes any unprocessed BiometricRawLog entries
- * (they were already inserted by the ADMS HTTP handler).
- *
- * For scheduled/pull devices: uses the device adapter to fetch new punches from
- * the device's REST API, saves them to BiometricRawLog, then processes them.
+ * All supported devices are ADMS/push (the device dials out to this backend and
+ * POSTs punches to /iclock/cdata; see essl-adms.controller.ts). There is no pull
+ * path — a cloud-hosted backend has no route into a gym's private LAN/WiFi network,
+ * so "poll the device's IP" can never work here regardless of brand or sync mode.
+ * This worker's only job is to process whatever BiometricRawLog rows the ADMS
+ * handler has already inserted since the last tick.
  */
 export class BiometricSyncWorker {
     private static instance: BiometricSyncWorker;
@@ -66,67 +64,17 @@ export class BiometricSyncWorker {
 
     private async syncDevice(device: any): Promise<void> {
         const jobId = await this.startSyncJob(device);
-        let recordsFetched = 0, recordsCreated = 0, recordsUnmatched = 0;
 
         try {
-            const syncMode: string = device.syncMode || 'realtime';
-            const brand = (device.deviceBrand || device.vendor || '').toLowerCase();
-            // eSSL devices always use ADMS push — TCP pull is not supported on port 4370
-            const isAdmsPush = syncMode === 'realtime' || brand === 'essl';
-
-            if (!isAdmsPush) {
-                // Pull mode: fetch from device REST API
-                const adapter = getDeviceAdapter(device.deviceBrand || device.vendor || 'essl');
-                const creds = {
-                    ipAddress: device.ipAddress || '',
-                    port: device.port || 4370,
-                    password: device.password || '',
-                    apiKey: device.apiKey || '',
-                    timezone: device.timezone || device.settings?.timezone || 'Asia/Kolkata',
-                };
-
-                const { records, newCursor, clockDriftSeconds } = await adapter.pullLogs(
-                    creds, device.lastSyncCursor || undefined
-                );
-
-                if (clockDriftSeconds && Math.abs(clockDriftSeconds) > 300) {
-                    logger.warn(`[BiometricSync] Device ${device._id}: clock drift = ${clockDriftSeconds}s`);
-                }
-
-                recordsFetched = records.length;
-
-                // Bulk-insert raw logs, skip exact duplicates via unique index
-                for (const r of records) {
-                    try {
-                        await BiometricRawLog.create({
-                            tenantId:        new mongoose.Types.ObjectId(device.tenantId),
-                            branchId:        device.branchId ? new mongoose.Types.ObjectId(device.branchId) : undefined,
-                            deviceId:        new mongoose.Types.ObjectId(device._id),
-                            biometricUserId: r.biometricUserId,
-                            eventType:       r.eventType,
-                            punchTime:       r.punchTime,
-                            deviceLocalTime: r.deviceLocalTime,
-                            rawPayload:      r.rawPayload,
-                            processed:       false,
-                        });
-                    } catch (e: any) {
-                        if (e?.code !== 11000) throw e; // swallow duplicates only
-                    }
-                }
-
-                // Persist new cursor
-                if (newCursor) {
-                    await BiometricDevice.findByIdAndUpdate(device._id, { lastSyncCursor: newCursor });
-                }
-            }
-
-            // Process all pending raw logs for this device
+            // Process whatever pending raw logs the ADMS push handler already inserted
+            // for this device since the last tick — nothing to fetch, nothing to pull.
             const result = await BiometricAttendanceService.processUnprocessedLogs(
                 device.tenantId.toString(),
                 device._id.toString()
             );
-            recordsCreated = result.created;
-            recordsUnmatched = result.unmatched;
+            const recordsCreated = result.created;
+            const recordsUnmatched = result.unmatched;
+            const recordsFetched = result.created + result.unmatched + result.skipped;
 
             await BiometricDevice.findByIdAndUpdate(device._id, {
                 lastSyncAt: new Date(),

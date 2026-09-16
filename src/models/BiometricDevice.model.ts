@@ -56,7 +56,11 @@ const BiometricDeviceSchema = new Schema<IBiometricDevice>(
         deviceBrand:         { type: String, enum: ['zkteco', 'essl', 'suprema', 'matrix', 'realtime', 'generic'], default: 'generic' },
         deviceModel:         { type: String },
         deviceType:          { type: String, enum: ['fingerprint', 'face', 'rfid', 'pin', 'hybrid'], default: 'fingerprint' },
-        syncMode:            { type: String, enum: ['realtime', 'scheduled', 'manual'], default: 'scheduled' },
+        // 'scheduled' (pull-based polling) is kept in the enum only for backward
+        // compatibility with existing documents — it is not a supported mode; only
+        // 'realtime' (ADMS push) and 'manual' (paused) have real behavior. See
+        // biometric-sync.worker.ts and migrateDevices() below.
+        syncMode:            { type: String, enum: ['realtime', 'scheduled', 'manual'], default: 'realtime' },
         syncIntervalMinutes: { type: Number, default: 5, min: 1, max: 1440 },
         timezone:            { type: String, default: 'Asia/Kolkata' },
 
@@ -165,6 +169,16 @@ async function migrateDevices() {
         );
         // Backfill: status 'online' → 'active'
         await col.updateMany({ status: 'online' }, { $set: { status: 'active' } });
+
+        // 'scheduled' sync mode used to silently route through a pull-based worker
+        // branch that could never actually work (no route from this cloud backend
+        // into a gym's private LAN/WiFi). That branch has been removed — flip any
+        // devices left on 'scheduled' to 'realtime' (the only real push mode), and
+        // clear failure state that only ever accumulated from the broken attempts.
+        await col.updateMany(
+            { syncMode: 'scheduled' },
+            { $set: { syncMode: 'realtime', consecutiveFailures: 0 }, $unset: { lastErrorMessage: '' } }
+        );
 
     } catch { /* migration errors are non-fatal */ }
 }
