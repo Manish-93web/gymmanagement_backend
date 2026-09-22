@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import Subscription from '../models/Subscription.model';
 import Member from '../models/Member.model';
 import SubscriptionHistory from '../models/SubscriptionHistory.model';
+import BiometricMember from '../models/BiometricMember.model';
 import mongoose from 'mongoose';
 
 export class CronController {
@@ -35,16 +36,29 @@ export class CronController {
                 } catch { failed++; }
             }
 
+            // Find subscriptions about to be marked expired BEFORE updating them, so the
+            // member-status cascade below isn't limited to a 24h lookback window — if this
+            // job ever misses a day (deploy, downtime, etc.), a subscription that expired
+            // 3 days ago would previously never get its Member.status cascaded at all.
+            const toExpire = await Subscription.find(
+                { status: 'active', endDate: { $lt: now }, autoRenew: false }
+            ).select('_id memberId').lean();
+
             // Mark expired subscriptions
             const expired = await Subscription.updateMany(
                 { status: 'active', endDate: { $lt: now }, autoRenew: false },
                 { status: 'expired' }
             );
 
-            // Update member statuses for expired subscriptions
-            const expiredSubs = await Subscription.find({ status: 'expired', endDate: { $gte: yesterday, $lt: now } });
-            for (const sub of expiredSubs) {
-                await Member.findByIdAndUpdate(sub.memberId, { status: 'expired' });
+            // Cascade to Member.status — and keep biometric enrollment in sync, the
+            // same rule enforced everywhere else a member becomes inactive (see
+            // membership-expiry.worker.ts, member.service.ts changeMemberStatus).
+            for (const sub of toExpire) {
+                await Member.findByIdAndUpdate(sub.memberId, { status: 'expired' }).catch(() => {});
+                await BiometricMember.updateOne(
+                    { memberId: sub.memberId },
+                    { $set: { active: false } }
+                ).catch(() => {});
             }
 
             return res.json({

@@ -379,6 +379,41 @@ router.post('/confirm-renewal', async (req: Request, res: Response) => {
             notes: `Self-service online renewal`,
         });
 
+        // Update the Member document itself — this was the actual gap: a new
+        // Subscription+Payment were created above, but nothing updated Member.status/
+        // membershipExpiry/planId. A member renewing from 'expired' would keep showing
+        // as expired everywhere (member lists, dashboards) and stay blocked from
+        // checking in — by biometric, QR, or any non-manual method — since those all
+        // gate on Member.status directly, not on Subscription state.
+        const Member = require('../models/Member.model').default;
+        await Member.findOneAndUpdate(
+            { _id: member._id, tenantId: req.tenantId },
+            {
+                $set: {
+                    status: 'active',
+                    planId: plan._id,
+                    membershipExpiry: endDate,
+                    ...(currentSub ? {} : { membershipStart: startDate }),
+                },
+                $push: {
+                    statusHistory: {
+                        status: 'active',
+                        changedAt: new Date(),
+                        reason: `Self-renewed online — ${plan.name}`,
+                    },
+                },
+            }
+        ).catch(() => {});
+
+        // Re-enable biometric punches now that the membership is active again
+        try {
+            const BiometricMember = require('../models/BiometricMember.model').default;
+            await BiometricMember.updateOne(
+                { memberId: member._id, tenantId: req.tenantId },
+                { $set: { active: true } }
+            );
+        } catch { /* enrollment may not exist yet — nothing to re-activate */ }
+
         // Send WhatsApp notification (best-effort, non-blocking)
         try {
             const whatsappService = require('../services/whatsapp.service').default;

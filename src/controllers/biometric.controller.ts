@@ -1035,8 +1035,13 @@ class BiometricController {
                 rawPayload: { simulated: true, triggeredBy: req.user?._id },
             });
 
-            // Ensure attendance was created even if auto-match didn't fire
-            if (!result.created && result.reason !== 'duplicate') {
+            // Ensure attendance was created even if there's no enrollment mapping yet —
+            // that's the one case this simulation tool is meant to bypass. Any other
+            // skip reason (member_inactive, duplicate_punch, etc.) must be reported as-is,
+            // not silently force-created — a simulated punch should behave exactly like a
+            // real one for status checks, or this "verify the pipeline" tool would lie
+            // about an expired/paused member being able to check in.
+            if (!result.created && result.reason === 'no_member_mapping') {
                 // Direct attendance creation (bypass biometric mapping requirement for simulation)
                 const todayStart = new Date(punchTime); todayStart.setHours(0, 0, 0, 0);
                 const todayEnd   = new Date(punchTime); todayEnd.setHours(23, 59, 59, 999);

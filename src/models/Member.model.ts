@@ -155,7 +155,10 @@ const MemberSchema: Schema = new Schema(
         branchId: { type: Schema.Types.ObjectId, ref: 'Branch', required: true, index: true },
         userId: { type: Schema.Types.ObjectId, ref: 'User', unique: true, sparse: true },
         firstName: { type: String, required: true, trim: true },
-        lastName: { type: String, required: true, trim: true },
+        // Last Name is deliberately optional (UI labels it "(Optional)") — required:true
+        // here caused a genuine Mongoose ValidationError even after the frontend/backend
+        // Zod schemas correctly allowed an empty value through.
+        lastName: { type: String, required: false, trim: true, default: '' },
         email: { type: String, required: true, lowercase: true, trim: true },
         mobile: { type: String, required: true, trim: true },
         membershipNumber: { type: String, required: true, unique: true },

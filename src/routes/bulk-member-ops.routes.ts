@@ -29,6 +29,14 @@ async function loadSubscription() {
     }
 }
 
+async function loadBiometricMember() {
+    try {
+        return (await import('../models/BiometricMember.model')).default;
+    } catch {
+        return null;
+    }
+}
+
 // ─── GET /expired-active ──────────────────────────────────────────────────────
 // Members whose subscription has expired but Member.status is still 'active'
 router.get('/expired-active', async (req: Request, res: Response) => {
@@ -95,6 +103,7 @@ router.post('/shift-to-expired', async (req: Request, res: Response) => {
 
         const Member = await loadMember();
         const Subscription = await loadSubscription();
+        const BiometricMember = await loadBiometricMember();
 
         if (!Member || !Subscription) {
             res.status(500).json({ success: false, message: 'Models not available' });
@@ -131,6 +140,13 @@ router.post('/shift-to-expired', async (req: Request, res: Response) => {
                         { tenantId: tid, memberId: oid, status: 'active' },
                         { $set: { status: 'expired' } }
                     );
+                    // An expired member must not still be able to punch the biometric device
+                    if (BiometricMember) {
+                        await BiometricMember.updateOne(
+                            { memberId: oid, tenantId: tid },
+                            { $set: { active: false } }
+                        ).catch(() => {});
+                    }
                     updated.push(memberId);
                 } else {
                     errors.push({ memberId, error: 'Member not found or not in this tenant' });
@@ -155,6 +171,7 @@ router.post('/shift-all-expired', async (req: Request, res: Response) => {
 
         const Member = await loadMember();
         const Subscription = await loadSubscription();
+        const BiometricMember = await loadBiometricMember();
 
         if (!Member || !Subscription) {
             res.status(500).json({ success: false, message: 'Models not available' });
@@ -214,6 +231,14 @@ router.post('/shift-all-expired', async (req: Request, res: Response) => {
             { tenantId: tid, memberId: { $in: targetIds }, status: 'active' },
             { $set: { status: 'expired' } }
         );
+
+        // These members must not still be able to punch the biometric device
+        if (BiometricMember) {
+            await BiometricMember.updateMany(
+                { memberId: { $in: targetIds }, tenantId: tid },
+                { $set: { active: false } }
+            ).catch(() => {});
+        }
 
         res.json({
             success: true,

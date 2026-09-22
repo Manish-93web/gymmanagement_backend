@@ -1,115 +1,154 @@
 # Biometric Attendance — Setup & Troubleshooting Guide
 
-## 1. How it actually works (read this first)
+## How it works (read this first)
 
-This platform supports biometric attendance through **one mechanism only: eSSL's ADMS push protocol.** The physical device — whether it's plugged into the gym's LAN via ethernet cable or connected over WiFi, it makes no difference — dials **out** to this backend over the internet and pushes each punch as it happens. The backend never dials into the device.
-
-This is a hard requirement of the hosting model, not a configuration choice: the backend runs on Render (a cloud host), and there is no route from Render into a private network sitting behind a gym's router/NAT. A "pull" or "poll the device" sync mode is not supported and cannot be made to work here, regardless of device brand. If you ever see a device stuck in a permanent sync-failure loop, the fix is always the same: make sure it's configured for ADMS push (Section 2), not scheduled polling.
-
-**Data flow, end to end:**
+The physical device — on LAN cable or WiFi, doesn't matter which — dials **out** to this backend over the internet and pushes each punch the moment it happens. The backend never dials into the device. This is the only supported mode; there is no "the platform polls the device" option, and there never will be, because a cloud-hosted backend has no route into a gym's private network.
 
 ```
 Member's finger/face on device
         │
         ▼
-Device sends a heartbeat (GET) + pushes punch data (POST), tab-delimited ATTLOG lines
+Device pushes the punch to the server you configured on it
         │
         ▼
-Backend: /essl/iclock/cdata  (essl-adms.controller.ts)
-        │
-        ▼
-BiometricRawLog created (raw, unprocessed)
-        │
-        ▼
-BiometricAttendanceService matches the device's enrollment ID
-against a BiometricMember mapping for this tenant
+Backend matches the device's "User ID" against the member
+you enrolled with that same ID
         │
    ┌────┴────┐
    │ matched │ unmatched
    ▼         ▼
-Attendance   Stays visible under "Unmatched Logs" until
-record       someone enrolls that ID against a member
-created      (Section 6)
+Attendance   Stays under "Unmatched Logs" until
+record       someone enrolls that ID (Part 5)
+created
 ```
 
-Attendance records created this way carry `method: 'biometric'` / `source: 'biometric'`, and are visually distinguished (colored badge) from manual or QR check-ins wherever attendance is listed — the main **Attendance** page and a member's own profile.
+A biometric-sourced attendance record shows up wherever attendance normally shows up — the main **Attendance** page and the member's own profile — marked with a distinct "biometric" badge so it's visually distinguishable from manual/QR check-ins.
 
-## 2. Physically configuring an eSSL device
+Follow Parts 1–6 in order. Don't skip Part 1 — getting the server address wrong is the single most common reason a device never connects.
 
-On the device itself (menu path varies by firmware/model — look for **Comm** → **Cloud Server Setting**, or **Network** → **ADMS**):
+---
+
+## Part 1 — Find your server address
+
+The device needs one thing above all else: the correct public address of this backend. Guessing this wrong is the #1 cause of "I did everything and it still shows offline."
+
+1. Log in as a gym owner / branch manager and open **Biometric Devices** in the sidebar (`/dashboard/biometric`).
+2. If you have at least one device already added, you'll see a **"Test Server"** button in the amber eSSL setup banner at the top of the page. Click it.
+   - **"Server endpoint is reachable"** (green) → the address/port shown in that banner is correct. Copy it and use it in Part 3.
+   - **"Endpoint not reachable"** (red) → the domain you're using does not currently forward device traffic to this backend. Do not proceed with device configuration until this is resolved — talk to whoever manages your deployment/DNS about routing `/iclock/*` to the backend service, or use the backend's own direct URL instead (e.g. its Render service URL) if you have it.
+3. If you don't see this banner yet (no devices added), skip ahead to Part 2 to add a placeholder device record first, then come back here before touching the physical device.
+
+Write down the exact **Server Address** and **Port** the banner confirms as reachable — you'll type these into the physical device in Part 3.
+
+---
+
+## Part 2 — Add the device record in the platform
+
+1. Sidebar → **Biometric Devices** → **Add Device** button.
+2. Fill in the form exactly as follows:
+
+| Field | What to enter |
+|---|---|
+| **Branch** *(required)* | Select the branch this physical device sits at. |
+| **Device Name** *(required)* | A name your staff will recognize, e.g. `Main Entrance` or `Reception Scanner`. |
+| **Brand** *(required)* | Pick the closest match (`ESSL`, `ZKTECO`, etc.) — this is just a label for your reference, it does not change how the device connects. |
+| **Device Type** *(required)* | `Fingerprint`, `Face Recognition`, `RFID Card`, `PIN Attendance`, or `Hybrid` — whatever the physical device actually is. |
+| **Model** | Optional — the device's model number, e.g. `ZK400`, for your own records. |
+| **Serial Number** | **Leave this blank.** It fills in automatically the first time the device successfully connects — you don't need to find it yourself. |
+| **IP Address** *(required)* | The device's local IP on the gym's network (e.g. `192.168.1.73`) — check this on the device itself (Menu → Comm → Ethernet/WiFi, or similar). This is only used as a hint for matching, not to reach the device, so it's fine even though it's a private address. |
+| **Port** | Leave as the default `4370` unless you specifically changed it on the device. |
+| **Password / Key** | Only fill this in if you set a communication password/key on the device itself. Leave blank otherwise. |
+| **Location / Label** | Optional — e.g. `Ground Floor Entrance`. |
+| **Device Timezone** | Match the timezone the device's clock is actually set to — this matters for punch times to be correct. Most India-based gyms: `Asia/Kolkata`. |
+| **Sync Mode** | Leave as **"Automatic (ADMS Push)"** — this is the only mode that works. Only switch to "Manual (Paused)" if you deliberately want to stop processing this device's data. |
+| **Re-check Interval** | Leave the default (5 minutes) — this only controls how often the backend re-checks for anything not yet processed, it does not affect how fast a punch shows up (that happens instantly, see the diagram above). |
+
+3. Click **Add Device**.
+
+---
+
+## Part 3 — Configure the physical device
+
+On the device's own menu (exact path varies slightly by firmware — look for **Comm**, **Network**, or **Cloud Server Setting**):
+
+1. Navigate to: **Menu → Network → ADMS** (some models: **Comm → Cloud Server Setting**).
+2. Set the following:
 
 | Setting | Value |
 |---|---|
-| Server Mode | **ADMS** (not "Standalone"/"None") |
-| Server Address | The backend's **public** address — see the warning below |
-| Server Port | 80 (HTTP) or 443 (HTTPS), matching how the backend is actually exposed |
-| Enable Domain Name | On, if you're using a domain rather than a raw IP |
+| **Server Mode** | `ADMS` — not "Standalone" or "None." |
+| **Enable Domain Name** | `ON` if your server address is a domain name (not a raw IP). |
+| **Server Address** | The address confirmed reachable in Part 1. |
+| **Server Port** | The port confirmed reachable in Part 1 (typically `80` for HTTP or `443` for HTTPS). |
+| **Enable Proxy** | `OFF`. |
 
-The device will POST to `/iclock/cdata` (also available at `/essl/iclock/cdata`) on whatever host/port you configure — both paths are handled identically.
+3. Save the settings and let the device reboot if it asks to.
+4. **If the device supports HTTPS and it doesn't connect**, try HTTP instead (many older eSSL units only speak plain HTTP, not modern TLS) — flip the setting and re-test rather than assuming it's misconfigured.
 
-> **Important — verify the address before relying on it.** These endpoints are mounted at the backend's raw root, not under `/api`. This repo's frontend calls its own API at `https://gymbodyflow.digitalbrandai.com/api/...`, but there's no proxy/rewrite config in this repo confirming that the *same* public domain also forwards non-`/api` paths like `/essl/iclock/cdata` through to the backend service — that depends on how DNS/routing was set up outside this codebase (a custom domain pointed straight at the Render backend service would work; a domain that only fronts the Next.js frontend would not, unless it has its own reverse-proxy rule for this path). **Confirm before configuring a real device**: open `https://<candidate-address>/iclock/cdata` in a browser (a plain GET, no auth needed). If you get a response from this server (even an error) rather than the frontend's own 404 page, that address is correct. If in doubt, the backend's own Render service URL will always work directly.
+---
 
-**HTTPS note:** older eSSL firmware often only speaks plain HTTP, not HTTPS. If your device can't be configured for HTTPS, it needs an HTTP-reachable path to the backend — check with whoever manages the deployment/domain if this is a blocker.
+## Part 4 — Confirm the device connected
 
-Once the device successfully sends its first heartbeat, its real serial number appears automatically — you do not need to type it in manually (see Section 3).
+1. Back in **Biometric Devices**, wait 1–2 minutes after the device reboots.
+2. Refresh the page. The device card should now show:
+   - **Status: Online** (or a recent "Last Seen" time).
+   - **Serial Number** auto-filled (confirms the device actually reached the server — if this stays blank, it hasn't connected yet; recheck Part 3).
+3. If it's still offline after a few minutes, use the **Test** button on the device card, and see Part 7 (Troubleshooting) below.
 
-## 3. Adding the device in the admin UI
+---
 
-**Sidebar → Biometric Devices** (`/dashboard/biometric`) → **Add Device**. Fields:
+## Part 5 — Enroll members (link a person to a device User ID)
 
-- **Branch** (required) — which branch this device belongs to.
-- **Device Name** (required) — a friendly label, e.g. "Main Entrance."
-- **Brand** — informational/matching-hint only; it does not change how the device connects. Every device uses the same ADMS push mechanism described in Section 1.
-- **Device Type** — fingerprint, face, RFID, PIN, or hybrid.
-- **Serial Number** — leave blank. It auto-fills the first time the device connects.
-- **IP Address** — used only as a secondary matching hint if the device happens to connect from a stable, recognizable source IP. It is **not** used to dial out to the device, so a typical private LAN IP (`192.168.x.x`) is expected here and is harmless — don't worry if it looks like it "shouldn't work."
-- **Sync Mode** — "Automatic (ADMS Push)" (the only real option) or "Manual (Paused)" to temporarily stop processing a device's incoming data.
-- **Re-check Interval** — how often the backend re-checks for any punches not yet turned into attendance records. This does not poll the device; the device has already pushed the data by the time this runs.
+Every member needs their device-assigned **User ID** (the number the device uses internally, assigned when you enroll their fingerprint on the device) linked to their profile in the platform. **Two ways to do this — either works:**
 
-## 4. Enrolling members' biometric IDs
+### Option A — from the Members list (fastest, recommended)
+1. Go to the **Members** page.
+2. Find the member's row — there's a small toggle switch next to their name.
+3. Turn it **ON**. A popup titled "Enroll [Name]" appears.
+   - It may pre-fill a suggested **Biometric User ID** (based on their member number) — you can use this, or type the exact ID you actually assigned on the device.
+   - **Biometric User ID** *(required)* — type the exact number, e.g. `1`, `2`, `00042`. This must match, digit for digit, what you entered on the device when enrolling their fingerprint (device: **Menu → User Mgmt → All Users**, find them, note the User ID).
+   - **RFID Card ID** *(optional)* — only if this device also reads RFID cards.
+4. Click **Save & Activate**.
 
-Each member needs their **Device User ID / Enroll ID** (the number assigned when they're enrolled on the physical device) linked to their member profile:
+### Option B — from the member's own profile
+1. Open the member's profile → **Biometric** tab.
+2. Enter the same **Device User ID** in the field shown.
+3. It saves automatically / on pressing Enter.
 
-- From a member's profile: **Biometric** tab (`members/[id]/biometric`), or
-- From the device dashboard's member panel.
+Either way, once saved: the next time that person punches the device using that User ID, their attendance marks automatically.
 
-Enter the exact Enroll ID as shown on the device. Leading zeros are normalized automatically server-side, but the digits must match.
+---
 
-## 5. Verifying device connectivity/health
+## Part 6 — Test it end-to-end
 
-"Online" here means **a recent heartbeat**, not a live network probe — ADMS devices dial out, they never listen for incoming connections, so there's nothing to "ping" in the traditional sense. The device card shows:
+1. Have one enrolled person actually punch the physical device (fingerprint, face, or card, whichever it supports).
+2. Within a few seconds, open the **Attendance** page — a new check-in should appear for that member, tagged as a biometric check-in.
+3. If it doesn't appear:
+   - Go to **Biometric Devices → Unmatched Logs** — if the punch shows up there instead, the User ID you entered in Part 5 doesn't exactly match what's enrolled on the device. Fix the ID and save — this automatically reprocesses that ID's previously-unmatched punches, no extra step needed. Refresh the Attendance page after saving.
+   - If it still doesn't show up, use **Reset Cursor** on the device card as a fallback (also resets skipped punches for reprocessing).
+   - If nothing shows up anywhere (not even Unmatched Logs), the device likely never reached the server — revisit Parts 1 and 3.
 
-- **Last Seen** — from the device's most recent heartbeat (`GET /iclock/cdata`).
-- **Last Sync** — when punches from this device were last turned into attendance records.
-- **Consecutive Failures** / **Last Error** — only relevant if something in the processing pipeline itself is failing (not connectivity).
+Once one real punch shows up correctly, the setup is done — every future punch behaves the same way automatically.
 
-A background health check runs every 5 minutes and raises an alert if a device goes quiet past the tenant's configured offline threshold, if sync failures pile up, or if unmatched punches spike (usually means a batch of members were never enrolled — see Section 6).
+---
 
-## 6. Resolving unmatched punches
+## Part 7 — Troubleshooting
 
-A punch with no matching `BiometricMember` enrollment never becomes an attendance record — it sits visible under **Unmatched Logs** (from the Biometric Devices dashboard) instead of silently disappearing.
+**Device shows offline, but is physically on and connected to the network:**
+- Re-check the Server Address/Port against what Part 1's "Test Server" button confirmed — a typo here is the most common cause.
+- Confirm Server Mode is `ADMS`, not Standalone.
+- Check the gym's WiFi/router isn't blocking outbound traffic on the port you configured.
+- Try the HTTP option instead of HTTPS (Part 3, step 4).
 
-To resolve:
-1. Open **Unmatched Logs**, find the Enroll ID that doesn't match anyone.
-2. Enroll that ID against the correct member (Section 4).
-3. Reprocess — either **Reprocess All** (dashboard's Diagnostic tab) or reset that specific device's cursor (**Reset Cursor** on the device card), which also re-queues its previously-skipped punches.
+**Punches aren't becoming attendance records:**
+- Check **Unmatched Logs** first — the punch is very likely arriving fine, just with no member linked to that User ID yet (Part 5).
+- Confirm the device's Sync Mode isn't set to "Manual (Paused)."
 
-## 7. Troubleshooting
+**A device that used to work now fails constantly:**
+- If this device was set up before this platform switched to ADMS-only mode, edit it and confirm Sync Mode reads "Automatic (ADMS Push)," not any older "Scheduled" value.
 
-**Device shows offline, but is physically powered on and connected:**
-- Confirm Server Mode is ADMS, not Standalone.
-- Re-verify the Server Address per the warning in Section 2 — a wrong or stale address is the most common cause.
-- Check the gym's router/firewall allows outbound HTTP/HTTPS from the device — some locked-down networks block outbound traffic by port or destination.
+**One device's punches are landing on the wrong gym/tenant, or it won't pick up its real serial number:**
+- This means a serial number is stuck on a stale device record elsewhere in the system. Only a Super Admin can resolve this (it deliberately requires platform-level access since it touches another tenant's data) — have them use the serial-conflict resolution tool.
 
-**Punches never turn into attendance records:**
-- Check Sync Mode isn't set to Manual (paused).
-- Check **Unmatched Logs** (Section 6) — the punch may be arriving but has no member mapping.
-
-**A device that used to work is now stuck failing every sync:**
-- If this device predates this platform's fix removing pull/scheduled sync, it may have been left in a legacy "Scheduled" mode that never worked. Re-save it with Sync Mode set to "Automatic (ADMS Push)."
-
-**One device's punches are appearing on the wrong tenant, or a device won't adopt its real serial number:**
-- This happens when a serial number is stuck on a stale device record (often another tenant's old/replaced device). This can only be fixed by a Super Admin, via the serial-conflict resolution endpoint (`POST /api/biometric/devices/fix-serial-conflict`) — it's deliberately restricted to Super Admin because it can modify another tenant's device record.
-
-**A gym owner's Edit Device changes to Sync Mode don't seem to take effect:**
-- This was a real bug (the edit form wasn't persisting Sync Mode to the field the sync worker reads) that's now fixed. If you still see this, confirm you're on the current deployed version.
+**A gym owner's edits to Sync Mode on an existing device don't seem to take effect:**
+- This was a real bug that has since been fixed. If you still see it, you're likely on an older deployed version — confirm the latest backend build is live.

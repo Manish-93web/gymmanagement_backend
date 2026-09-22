@@ -16,6 +16,7 @@ export interface CheckInDTO {
         longitude: number;
     };
     notes?: string;
+    deviceId?: string;
 }
 
 export class AttendanceService {
@@ -71,6 +72,9 @@ export class AttendanceService {
         };
         if (data.notes !== undefined) {
             createData.notes = data.notes;
+        }
+        if (data.deviceId !== undefined) {
+            createData.deviceId = data.deviceId;
         }
         if (data.checkOutTime) {
             const resolvedCheckOut = new Date(data.checkOutTime);

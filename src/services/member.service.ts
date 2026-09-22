@@ -72,6 +72,7 @@ export interface UpdateMemberDTO {
     membershipDuration?: string;
     membershipStart?: Date | string;
     membershipExpiry?: Date | string;
+    status?: MemberStatus;
     // Payment (from MemberForm submission)
     amount?: number;
     discountType?: 'none' | 'flat' | 'percentage';
@@ -337,6 +338,7 @@ export class MemberService {
         if (data.membershipDuration !== undefined) setObj.membershipDuration = data.membershipDuration;
         if (data.membershipStart !== undefined) setObj.membershipStart = new Date(data.membershipStart as string);
         if (data.membershipExpiry !== undefined) setObj.membershipExpiry = new Date(data.membershipExpiry as string);
+        if (data.status !== undefined) setObj.status = data.status;
 
         // Payment fields — map form names → schema names
         if (data.amount !== undefined) {
@@ -354,11 +356,35 @@ export class MemberService {
             setObj.dueDate = data.dueDate ? new Date(data.dueDate as string) : null;
         }
 
+        const update: any = { $set: setObj };
+        if (data.status !== undefined) {
+            update.$push = {
+                statusHistory: {
+                    status: data.status,
+                    changedAt: new Date(),
+                    reason: 'Updated via member edit/renewal',
+                },
+            };
+        }
+
         const member = await Member.findOneAndUpdate(
             query,
-            { $set: setObj },
+            update,
             { new: true, runValidators: true }
         ).populate('userId');
+
+        // Keep biometric enrollment in sync with status — e.g. renewing an expired
+        // member back to 'active' must re-enable their device punches, and marking
+        // them paused/frozen/expired/etc. must disable them (see changeMemberStatus
+        // and membership-expiry.worker.ts for the same rule applied elsewhere).
+        if (data.status !== undefined) {
+            const bioActive = ['active', 'trial'].includes(data.status);
+            await BiometricMember.updateOne(
+                { memberId, tenantId },
+                { $set: { active: bioActive } }
+            ).catch(() => {});
+        }
+
         return this._repairMemberFields(member);
     }
 

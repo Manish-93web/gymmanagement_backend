@@ -1,6 +1,7 @@
 import Member from '../models/Member.model';
 import MembershipPlan from '../models/MembershipPlan.model';
 import Payment from '../models/Payment.model';
+import BiometricMember from '../models/BiometricMember.model';
 import logger from '../config/logger';
 import { sendEmail } from '../utils/email.util';
 import { sendSMS } from '../utils/sms.util';
@@ -64,6 +65,12 @@ class MembershipLifecycleService {
 
         await member.save();
 
+        // A frozen member must not be able to punch the biometric device
+        await BiometricMember.updateOne(
+            { memberId: member._id, tenantId: member.tenantId },
+            { $set: { active: false } }
+        ).catch(() => {});
+
         // Send notification
         await sendEmail({
             to: member.email,
@@ -106,6 +113,12 @@ class MembershipLifecycleService {
         // Update status
         member.status = 'active';
         await member.save();
+
+        // Re-enable biometric punches now that the freeze is lifted
+        await BiometricMember.updateOne(
+            { memberId: member._id, tenantId: member.tenantId },
+            { $set: { active: true } }
+        ).catch(() => {});
 
         // Send notification
         await sendEmail({
@@ -224,6 +237,14 @@ class MembershipLifecycleService {
         member.membershipExpiry = expiryDate;
 
         await member.save();
+
+        // Re-enable biometric punches — this is exactly the case that used to be
+        // silently missed: membership-expiry.worker.ts deactivates the enrollment
+        // when a membership lapses, and nothing was re-activating it on renewal.
+        await BiometricMember.updateOne(
+            { memberId: member._id, tenantId: member.tenantId },
+            { $set: { active: true } }
+        ).catch(() => {});
 
         // Send welcome back email
         await sendEmail({

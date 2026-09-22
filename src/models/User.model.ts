@@ -85,7 +85,9 @@ const UserSchema: Schema = new Schema(
         mobile: { type: String, required: true, unique: true, trim: true },
         password: { type: String, required: true, select: false },
         firstName: { type: String, required: true, trim: true },
-        lastName: { type: String, required: true, trim: true },
+        // Deliberately optional — see Member.model.ts for why (Last Name is an
+        // "(Optional)" field in the registration UI; this must not reject an empty value).
+        lastName: { type: String, required: false, trim: true, default: '' },
         avatar: { type: String },
         profilePicture: { type: String },
         googleId: { type: String, unique: true, sparse: true },

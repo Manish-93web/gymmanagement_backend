@@ -22,9 +22,12 @@ async function runExpiryCheck(): Promise<void> {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
 
-    // 1. Find active members whose membership date has already passed
+    // 1. Find active/trial members whose membership date has already passed.
+    // 'trial' is included because the biometric punch check treats trial the same
+    // as active (['active','trial']) — a lapsed trial that's never transitioned to
+    // 'expired' here would be able to keep punching indefinitely.
     const expiredMembers = await Member.find({
-        status: 'active',
+        status: { $in: ['active', 'trial'] },
         membershipExpiry: { $lt: startOfToday },
     }).select('_id tenantId firstName lastName membershipExpiry').lean();
 

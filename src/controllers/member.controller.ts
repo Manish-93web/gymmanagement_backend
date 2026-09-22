@@ -56,6 +56,10 @@ const createMemberSchema = z.object({
     membershipDuration: z.string().optional(),
     membershipStart: z.string().optional(),
     membershipExpiry: z.string().optional(),
+    // Renewal flows (e.g. RenewMembershipDialog) set this directly via the generic
+    // update endpoint rather than the dedicated changeStatus action — without it here
+    // the field was silently stripped by this schema before ever reaching the service.
+    status: z.enum(['lead', 'trial', 'active', 'paused', 'frozen', 'expired', 'archived']).optional(),
     amount: z.number().optional(),
     discountType: z.enum(['none', 'flat', 'percentage']).optional(),
     discountAmount: z.number().optional(),
@@ -871,10 +875,11 @@ export class MemberController {
         try {
             const { memberId } = req.params as Record<string, string>;
             if (!req.tenantId) { res.status(400).json({ status: 'error', message: 'Tenant context required' }); return; }
-            const member = await Member.findOneAndUpdate(
-                { _id: memberId, tenantId: req.tenantId },
-                { status: 'archived' },
-                { new: true }
+            // Route through changeMemberStatus rather than a raw update — it's the one
+            // place that keeps biometric enrollment in sync (an archived member must
+            // not still be able to punch the device).
+            const member = await memberService.changeMemberStatus(
+                memberId, req.tenantId, 'archived', 'Member archived/deleted by staff'
             );
             if (!member) { res.status(404).json({ status: 'error', message: 'Member not found' }); return; }
             res.status(200).json({ status: 'success', message: 'Member archived successfully' });

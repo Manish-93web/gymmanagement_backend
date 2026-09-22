@@ -457,37 +457,45 @@ class AttendanceController {
             const tenantId = req.tenantId;
             if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant context required' });
 
-            const branchId = req.branchId;
+            let branchId = req.branchId;
             const { memberId, deviceId, checkInTime, checkOutTime, method } = req.body;
 
             if (!memberId) {
                 return res.status(400).json({ success: false, message: 'memberId is required' });
             }
             if (!branchId) {
-                return res.status(400).json({ success: false, message: 'Branch context required' });
+                const Branch = (await import('../models/Branch.model')).default;
+                const firstBranch = await Branch.findOne({ tenantId }).select('_id').lean();
+                branchId = (firstBranch as any)?._id?.toString();
+            }
+            if (!branchId) {
+                return res.status(400).json({ success: false, message: 'Branch context required — add a branch first' });
             }
 
-            // If checkOutTime is provided, this is a complete record; otherwise it's just check-in
-            const attendanceData: any = {
+            // Route through AttendanceService.checkIn — it verifies the member exists
+            // and belongs to this tenant, rejects inactive/expired members (same rule
+            // as the biometric ADMS pipeline), and dedupes against an existing open
+            // check-in. This endpoint previously called Attendance.create() directly,
+            // trusting memberId blindly with none of those checks.
+            const attendance = await AttendanceService.checkIn({
                 tenantId,
                 branchId,
                 memberId,
-                checkInTime: checkInTime ? new Date(checkInTime) : new Date(),
-                method: method || 'rfid',
+                checkInMethod: method || 'rfid',
+                checkInTime: checkInTime ? new Date(checkInTime) : undefined,
+                checkOutTime: checkOutTime ? new Date(checkOutTime) : undefined,
                 deviceId,
-            };
-
-            if (checkOutTime) {
-                attendanceData.checkOutTime = new Date(checkOutTime);
-                attendanceData.duration = Math.floor(
-                    (attendanceData.checkOutTime.getTime() - attendanceData.checkInTime.getTime()) / 60000
-                );
-            }
-
-            const attendance = await Attendance.create(attendanceData);
+            });
 
             return res.status(201).json({ success: true, data: attendance });
-        } catch (error) {
+        } catch (error: any) {
+            if (
+                error.message === 'Member not found' ||
+                error.message === 'Member is not active' ||
+                error.message === 'Member is already checked in'
+            ) {
+                return res.status(400).json({ success: false, message: error.message });
+            }
             return next(error);
         }
     }
