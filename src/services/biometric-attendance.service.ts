@@ -171,14 +171,21 @@ class BiometricAttendanceService {
 
         const memberId = mapping.memberId;
 
-        // 3. Check member is active
+        // 3. Check member is active. Checked independently of the stored `status`
+        // field too — status is flipped to 'expired' by scheduled/cron jobs that can
+        // lag (or, in a dev/misconfigured environment, never run at all), so a member
+        // whose membershipExpiry has already passed must be rejected here regardless
+        // of whatever `status` currently says.
         const member = await Member.findOne({ _id: memberId, tenantId }).lean();
-        if (!member || !['active', 'trial'].includes((member as any).status)) {
+        const memberExpired = (member as any)?.membershipExpiry
+            && new Date((member as any).membershipExpiry) < new Date()
+            && (member as any).status !== 'archived';
+        if (!member || !['active', 'trial'].includes((member as any).status) || memberExpired) {
             await BiometricRawLog.findByIdAndUpdate(rawLog._id, {
                 processed: true, processedAt: new Date(), skippedReason: 'member_inactive',
             }).catch(() => {});
             console.log(
-                `[BiometricAttendance] Member "${(member as any)?.firstName} ${(member as any)?.lastName}" status="${(member as any)?.status}" — skipping`
+                `[BiometricAttendance] Member "${(member as any)?.firstName} ${(member as any)?.lastName}" status="${(member as any)?.status}" expired=${!!memberExpired} — skipping`
             );
             return { created: false, reason: 'member_inactive' };
         }

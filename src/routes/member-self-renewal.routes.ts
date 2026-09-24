@@ -401,6 +401,16 @@ router.post('/confirm-renewal', async (req: Request, res: Response) => {
                         changedAt: new Date(),
                         reason: `Self-renewed online — ${plan.name}`,
                     },
+                    membershipHistory: {
+                        startDate,
+                        expiryDate: endDate,
+                        planDuration: plan.name,
+                        fee: finalPrice,
+                        dueAmount: 0,
+                        paymentMethod: 'online',
+                        type: 'renewal',
+                        recordedAt: new Date(),
+                    },
                 },
             }
         ).catch(() => {});

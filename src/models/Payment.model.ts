@@ -68,6 +68,8 @@ export interface IPayment extends Document {
     };
     metadata: {
         description: string;
+        membershipStart?: Date;
+        membershipExpiry?: Date;
         items: {
             name: string;
             quantity: number;
@@ -167,6 +169,8 @@ const PaymentSchema: Schema = new Schema(
         },
         metadata: {
             description: { type: String },
+            membershipStart: { type: Date },
+            membershipExpiry: { type: Date },
             items: [
                 {
                     name: { type: String, required: true },

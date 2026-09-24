@@ -104,6 +104,17 @@ const transferMemberSchema = z.object({
     reason: z.string().min(1),
 });
 
+const addMembershipHistorySchema = z.object({
+    startDate: z.coerce.date(),
+    expiryDate: z.coerce.date(),
+    planDuration: z.string().optional(),
+    fee: z.number().min(0),
+    dueAmount: z.number().min(0).optional(),
+    discountAmount: z.number().min(0).optional(),
+    paymentMethod: z.string().optional(),
+    recordPayment: z.boolean().optional(),
+});
+
 export class MemberController {
     // Create new member
     async createMember(req: Request, res: Response): Promise<void> {
@@ -486,6 +497,37 @@ export class MemberController {
             });
         } catch (error: any) {
             res.status(400).json({ status: 'error', message: error.message || 'Failed to freeze member' });
+        }
+    }
+
+    // Manually add a past membership cycle to history — for backfilling records
+    // from a previous system with no export/API, entered by staff from what they
+    // can see on screen there. Purely additive: never touches the member's current
+    // status/membershipExpiry/fee, only appends a historical record.
+    async addMembershipHistory(req: Request, res: Response): Promise<void> {
+        try {
+            const { memberId } = req.params as Record<string, string>;
+            const validatedData = addMembershipHistorySchema.parse(req.body);
+
+            if (!req.tenantId) {
+                res.status(400).json({ status: 'error', message: 'Tenant context required' });
+                return;
+            }
+
+            const member = await memberService.addMembershipHistoryEntry(memberId, req.tenantId, validatedData);
+
+            if (!member) {
+                res.status(404).json({ status: 'error', message: 'Member not found' });
+                return;
+            }
+
+            res.status(200).json({
+                status: 'success',
+                message: 'Membership history entry added',
+                data: { member }
+            });
+        } catch (error: any) {
+            res.status(400).json({ status: 'error', message: error.message || 'Failed to add membership history entry' });
         }
     }
 

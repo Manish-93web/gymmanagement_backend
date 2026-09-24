@@ -51,6 +51,7 @@ router.patch('/:memberId/status', requirePermission('member:update'), memberCont
 router.post('/:memberId/freeze', requirePermission('member:update'), memberController.freezeMember.bind(memberController));
 router.post('/:memberId/reactivate', requirePermission('member:update'), memberController.reactivateMember.bind(memberController));
 router.post('/:memberId/transfer', requirePermission('member:update'), memberController.transferMember.bind(memberController));
+router.post('/:memberId/membership-history', requirePermission('member:update'), memberController.addMembershipHistory.bind(memberController));
 
 // Member measurements
 router.post('/:memberId/measurements', requireSelfMemberOrPermission('member:update'), memberController.addMeasurement.bind(memberController));

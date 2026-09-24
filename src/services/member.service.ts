@@ -351,21 +351,42 @@ export class MemberService {
         if (data.gstRate !== undefined) setObj.lastPaymentGstRate = data.gstRate;
         if (data.gstAmount !== undefined) setObj.lastPaymentGstAmount = data.gstAmount;
         if (data.paymentMethod !== undefined) setObj.lastPaymentMethod = data.paymentMethod;
-        if (data.dueAmount !== undefined) setObj.dueAmount = data.dueAmount;
+        if (data.dueAmount !== undefined) {
+            setObj.dueAmount = data.dueAmount;
+            // Keep paymentStatus from drifting out of sync with the due balance
+            // it's meant to reflect — this is what the "Paid Status" column reads.
+            setObj.paymentStatus = data.dueAmount > 0 ? 'unpaid' : 'paid';
+        }
         if (data.dueDate !== undefined) {
             setObj.dueDate = data.dueDate ? new Date(data.dueDate as string) : null;
         }
 
-        const update: any = { $set: setObj };
+        const pushObj: Record<string, any> = {};
         if (data.status !== undefined) {
-            update.$push = {
-                statusHistory: {
-                    status: data.status,
-                    changedAt: new Date(),
-                    reason: 'Updated via member edit/renewal',
-                },
+            pushObj.statusHistory = {
+                status: data.status,
+                changedAt: new Date(),
+                reason: 'Updated via member edit/renewal',
             };
         }
+        // Both dates only arrive together from a renewal/plan-change cycle
+        // (RenewMembershipDialog) — a plain field edit never touches both at once.
+        if (data.membershipStart !== undefined && data.membershipExpiry !== undefined) {
+            pushObj.membershipHistory = {
+                startDate: new Date(data.membershipStart as string),
+                expiryDate: new Date(data.membershipExpiry as string),
+                planDuration: data.membershipDuration,
+                fee: data.amount ?? 0,
+                dueAmount: data.dueAmount ?? 0,
+                discountAmount: data.discountAmount ?? 0,
+                paymentMethod: data.paymentMethod,
+                type: 'renewal',
+                recordedAt: new Date(),
+            };
+        }
+
+        const update: any = { $set: setObj };
+        if (Object.keys(pushObj).length > 0) update.$push = pushObj;
 
         const member = await Member.findOneAndUpdate(
             query,
@@ -383,6 +404,42 @@ export class MemberService {
                 { memberId, tenantId },
                 { $set: { active: bioActive } }
             ).catch(() => {});
+        }
+
+        // Auto-create a Payment record for renewals too, the same way createMember()
+        // already does at registration — without this, a renewal's money never shows
+        // up in the Payment Log, Finance/Analytics, or revenue reports at all.
+        if (member && pushObj.membershipHistory && data.amount && data.amount > 0) {
+            try {
+                const invoiceNumber = generateInvoiceNumber(tenantId, 'MEM');
+                const gstAmt = data.gstAmount ?? 0;
+                const discAmt = data.discountAmount ?? 0;
+                const dueAmt = data.dueAmount ?? 0;
+                const total = data.amount - discAmt + gstAmt - dueAmt;
+                await Payment.create({
+                    tenantId: new mongoose.Types.ObjectId(tenantId),
+                    branchId: (member as any).branchId,
+                    memberId: member._id,
+                    invoiceNumber,
+                    paymentType: 'subscription',
+                    type: 'subscription',
+                    method: (data.paymentMethod || 'cash') as any,
+                    status: 'completed',
+                    paidAt: new Date(),
+                    amount: { subtotal: data.amount, taxAmount: gstAmt, discountAmount: discAmt, total },
+                    taxDetails: { taxType: gstAmt > 0 ? 'GST' : 'NONE', taxRate: data.gstRate ?? 0 },
+                    invoice: { generated: false, emailSent: false },
+                    metadata: {
+                        description: `Membership renewal — ${data.membershipDuration?.replace('_', ' ') ?? ''}`,
+                        membershipStart: data.membershipStart,
+                        membershipExpiry: data.membershipExpiry,
+                        items: [{ name: `Membership renewal (${data.membershipDuration?.replace('_', ' ') ?? ''})`, quantity: 1, price: data.amount, total }],
+                    },
+                    notes: 'Auto-created on membership renewal',
+                });
+            } catch (payErr) {
+                console.error('[MemberService] Failed to create renewal payment record:', payErr);
+            }
         }
 
         return this._repairMemberFields(member);
@@ -614,6 +671,81 @@ export class MemberService {
                 }
             }
         );
+
+        return this._repairMemberFields(member);
+    }
+
+    // Manually append a past membership cycle to history — purely additive
+    // backfill (see addMembershipHistory in member.controller.ts for why: no
+    // export/API exists for the data source, so staff re-enter it from what
+    // they can see there). Never touches the member's current status/fee/expiry.
+    async addMembershipHistoryEntry(
+        memberId: string,
+        tenantId: string,
+        data: {
+            startDate: Date;
+            expiryDate: Date;
+            planDuration?: string;
+            fee: number;
+            dueAmount?: number;
+            discountAmount?: number;
+            paymentMethod?: string;
+            recordPayment?: boolean;
+        }
+    ): Promise<IMember | null> {
+        const member = await Member.findOneAndUpdate(
+            { _id: memberId, tenantId },
+            {
+                $push: {
+                    membershipHistory: {
+                        startDate: data.startDate,
+                        expiryDate: data.expiryDate,
+                        planDuration: data.planDuration,
+                        fee: data.fee,
+                        dueAmount: data.dueAmount ?? 0,
+                        discountAmount: data.discountAmount ?? 0,
+                        paymentMethod: data.paymentMethod,
+                        type: 'renewal',
+                        recordedAt: new Date(),
+                    },
+                },
+            },
+            { new: true }
+        );
+
+        if (!member) return null;
+
+        if (data.recordPayment !== false && data.fee > 0) {
+            try {
+                const invoiceNumber = generateInvoiceNumber(tenantId, 'MEM');
+                const discAmt = data.discountAmount ?? 0;
+                const dueAmt = data.dueAmount ?? 0;
+                const total = data.fee - discAmt - dueAmt;
+                await Payment.create({
+                    tenantId: new mongoose.Types.ObjectId(tenantId),
+                    branchId: (member as any).branchId,
+                    memberId: member._id,
+                    invoiceNumber,
+                    paymentType: 'subscription',
+                    type: 'subscription',
+                    method: (data.paymentMethod || 'cash') as any,
+                    status: 'completed',
+                    paidAt: data.startDate,
+                    amount: { subtotal: data.fee, taxAmount: 0, discountAmount: discAmt, total },
+                    taxDetails: { taxType: 'NONE', taxRate: 0 },
+                    invoice: { generated: false, emailSent: false },
+                    metadata: {
+                        description: `Membership renewal — ${data.planDuration?.replace('_', ' ') ?? ''} (backfilled record)`,
+                        membershipStart: data.startDate,
+                        membershipExpiry: data.expiryDate,
+                        items: [{ name: `Membership renewal (${data.planDuration?.replace('_', ' ') ?? ''})`, quantity: 1, price: data.fee, total }],
+                    },
+                    notes: 'Manually backfilled historical record',
+                });
+            } catch (payErr) {
+                console.error('[MemberService] Failed to create backfilled payment record:', payErr);
+            }
+        }
 
         return this._repairMemberFields(member);
     }

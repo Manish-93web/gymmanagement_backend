@@ -112,6 +112,17 @@ export interface IMember extends Document {
         effectiveDate?: Date;
         createdAt?: Date;
     }[];
+    membershipHistory: {
+        startDate: Date;
+        expiryDate: Date;
+        planDuration?: string;
+        fee: number;
+        dueAmount?: number;
+        discountAmount?: number;
+        paymentMethod?: string;
+        type: 'new' | 'renewal';
+        recordedAt: Date;
+    }[];
     gamification?: {
         currentStreak: number;
         longestStreak: number;
@@ -284,6 +295,19 @@ const MemberSchema: Schema = new Schema(
                 reason: { type: String },
                 effectiveDate: { type: Date },
                 createdAt: { type: Date, default: Date.now },
+            },
+        ],
+        membershipHistory: [
+            {
+                startDate: { type: Date, required: true },
+                expiryDate: { type: Date, required: true },
+                planDuration: { type: String },
+                fee: { type: Number, default: 0 },
+                dueAmount: { type: Number, default: 0 },
+                discountAmount: { type: Number, default: 0 },
+                paymentMethod: { type: String },
+                type: { type: String, enum: ['new', 'renewal'], default: 'new' },
+                recordedAt: { type: Date, default: Date.now },
             },
         ],
         gamification: {
