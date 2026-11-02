@@ -7,6 +7,7 @@ import Attendance from '../models/Attendance.model';
 import Class from '../models/Class.model';
 import Expense from '../models/Expense.model';
 import StaffAttendance from '../models/StaffAttendance.model';
+import StaffAttendanceService from './staff-attendance.service';
 import { UserRole } from '../models/User.model';
 import mongoose from 'mongoose';
 
@@ -590,9 +591,11 @@ class DashboardService {
 
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
-        const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
 
         const todayDow = todayStart.getDay(); // 0=Sun, 1=Mon, ...
+
+        // Staff attendance days are dated at local midnight in the gym's timezone, not server midnight.
+        const staffDay = await StaffAttendanceService.dayWindow(tenantOid, new Date());
 
         const sevenDaysLater = new Date(todayStart);
         sevenDaysLater.setDate(sevenDaysLater.getDate() + 7);
@@ -637,7 +640,7 @@ class DashboardService {
                 { $match: { tenantId: tenantOid, branchId: branchOid, status: 'pending' } },
                 { $group: { _id: null, total: { $sum: '$amount.total' } } },
             ]),
-            StaffAttendance.find({ tenantId: tenantOid, branchId: branchOid, date: { $gte: todayStart, $lt: todayEnd } })
+            StaffAttendance.find({ tenantId: tenantOid, branchId: branchOid, date: { $gte: staffDay.start, $lte: staffDay.end } })
                 .populate({ path: 'staffId', select: 'firstName lastName role' })
                 .lean(),
         ]);

@@ -69,6 +69,7 @@ import crmWebhookRoutes from './routes/crm-webhook.routes';
 import scheduledReportRoutes from './routes/scheduled-report.routes';
 import reportRoutes from './routes/report.routes';
 import esslAdmsRoutes from './routes/essl-adms.routes';
+import biometricIngestRoutes from './routes/biometric-ingest.routes';
 import financeRoutes from './routes/finance.routes';
 import wearableRoutes from './routes/wearable.routes';
 import healthRiskRoutes from './routes/health-risk.routes';
@@ -250,6 +251,8 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
 // /iclock/cdata       → standard eSSL firmware hardcoded path (device cannot change this)
 app.use('/essl', esslAdmsRoutes);
 app.use('/', esslAdmsRoutes);
+// Universal punch intake for non-ADMS machines (Hikvision, Suprema, Matrix, Mantra, Anviz, vendor middleware)
+app.use('/', biometricIngestRoutes);
 
 // Body parsing
 app.use(express.json({ limit: '10mb' }));

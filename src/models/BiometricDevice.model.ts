@@ -5,7 +5,7 @@ export interface IBiometricDevice extends Document {
     branchId: mongoose.Types.ObjectId;
     // Reference-compatible primary fields
     deviceName: string;
-    deviceBrand: 'zkteco' | 'essl' | 'suprema' | 'matrix' | 'realtime' | 'generic';
+    deviceBrand: 'zkteco' | 'essl' | 'suprema' | 'matrix' | 'realtime' | 'hikvision' | 'anviz' | 'mantra' | 'secureye' | 'dahua' | 'generic';
     deviceModel?: string;
     deviceType: 'fingerprint' | 'face' | 'rfid' | 'pin' | 'hybrid';
     syncMode: 'realtime' | 'scheduled' | 'manual';
@@ -29,6 +29,7 @@ export interface IBiometricDevice extends Document {
     lastSyncAt?: Date;
     lastSync?: Date;
     lastSyncCursor?: string;
+    ingestToken?: string;
     consecutiveFailures?: number;
     lastErrorMessage?: string;
     totalRecordsFetched?: number;
@@ -53,7 +54,7 @@ const BiometricDeviceSchema = new Schema<IBiometricDevice>(
 
         // Primary (reference-compatible) fields
         deviceName:          { type: String },
-        deviceBrand:         { type: String, enum: ['zkteco', 'essl', 'suprema', 'matrix', 'realtime', 'generic'], default: 'generic' },
+        deviceBrand:         { type: String, enum: ['zkteco', 'essl', 'suprema', 'matrix', 'realtime', 'hikvision', 'anviz', 'mantra', 'secureye', 'dahua', 'generic'], default: 'generic' },
         deviceModel:         { type: String },
         deviceType:          { type: String, enum: ['fingerprint', 'face', 'rfid', 'pin', 'hybrid'], default: 'fingerprint' },
         // 'scheduled' (pull-based polling) is kept in the enum only for backward
@@ -66,7 +67,7 @@ const BiometricDeviceSchema = new Schema<IBiometricDevice>(
 
         // Legacy aliases — kept so existing documents/code still works
         name:   { type: String },
-        vendor: { type: String, enum: ['zkteco', 'essl', 'suprema', 'matrix', 'realtime', 'generic'] },
+        vendor: { type: String, enum: ['zkteco', 'essl', 'suprema', 'matrix', 'realtime', 'hikvision', 'anviz', 'mantra', 'secureye', 'dahua', 'generic'] },
         type:   { type: String, enum: ['fingerprint', 'face', 'rfid', 'card', 'pin', 'hybrid'] },
 
         deviceId:      { type: String },
@@ -88,6 +89,8 @@ const BiometricDeviceSchema = new Schema<IBiometricDevice>(
         lastSyncAt:          { type: Date },
         lastSync:            { type: Date },
         lastSyncCursor:      { type: String },
+        // Secret in the universal push URL (/ingest/:token). Never returned by list/detail APIs.
+        ingestToken:         { type: String, select: false },
         consecutiveFailures: { type: Number, default: 0 },
         lastErrorMessage:    { type: String },
         totalRecordsFetched: { type: Number, default: 0 },
@@ -128,6 +131,7 @@ BiometricDeviceSchema.index({ tenantId: 1, status: 1 });
 BiometricDeviceSchema.index({ tenantId: 1, isDeleted: 1 });
 BiometricDeviceSchema.index({ tenantId: 1, deviceId: 1 }, { unique: true, sparse: true });
 BiometricDeviceSchema.index({ serialNumber: 1 }, { sparse: true });
+BiometricDeviceSchema.index({ ingestToken: 1 }, { unique: true, sparse: true });
 
 // One-time migration: backfill null deviceIds + sync field aliases for legacy documents
 async function migrateDevices() {

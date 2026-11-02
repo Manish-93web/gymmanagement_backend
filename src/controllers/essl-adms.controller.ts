@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import BiometricDevice from '../models/BiometricDevice.model';
 import BiometricAttendanceService from '../services/biometric-attendance.service';
 import Branch from '../models/Branch.model';
+import { deviceLocalToUTC } from '../utils/tz.utils';
 
 /**
  * eSSL ADMS Push Endpoint — /iclock/cdata
@@ -19,33 +20,6 @@ function esslStatusToEventType(code: number): string {
         case 4:  return 'overtime_in';
         case 5:  return 'overtime_out';
         default: return 'check_in';
-    }
-}
-
-/**
- * Convert a device-local time string to UTC.
- * Device sends "YYYY-MM-DD HH:MM:SS" in its configured timezone (e.g. Asia/Kolkata).
- */
-function deviceLocalToUTC(timeStr: string, tz: string): Date {
-    const naive = new Date(timeStr.replace(' ', 'T') + 'Z');
-    if (isNaN(naive.getTime())) return new Date(NaN);
-
-    try {
-        const parts = new Intl.DateTimeFormat('en-US', {
-            timeZone: tz,
-            year: 'numeric', month: '2-digit', day: '2-digit',
-            hour: '2-digit', minute: '2-digit', second: '2-digit',
-            hour12: false,
-        }).formatToParts(naive);
-        const m: Record<string, string> = {};
-        for (const p of parts) if (p.type !== 'literal') m[p.type] = p.value;
-        const tzInterpretedAsUTC = new Date(
-            `${m.year}-${m.month}-${m.day}T${m.hour}:${m.minute}:${m.second}Z`
-        );
-        const offsetMs = tzInterpretedAsUTC.getTime() - naive.getTime();
-        return new Date(naive.getTime() - offsetMs);
-    } catch {
-        return naive;
     }
 }
 
@@ -360,6 +334,30 @@ class EsslAdmsController {
     // GET /iclock/getrequest — device polls for pending commands
     async getRequest(req: Request, res: Response) {
         res.type('text/plain').send('OK');
+    }
+
+    // GET /iclock/ping — keep-alive used by newer ZKTeco push firmware
+    async ping(req: Request, res: Response) {
+        const sn = (req.query.SN as string) || (req.query.sn as string) || '';
+        if (sn) await resolveDevice(sn, (req.socket?.remoteAddress || req.ip || '').replace(/^::ffff:/, ''));
+        res.type('text/plain').send('OK');
+    }
+
+    // POST /iclock/registry — push-protocol 2.x/3.x registration; hand back a registry code
+    async registry(req: Request, res: Response) {
+        const sn = (req.query.SN as string) || (req.query.sn as string) || '';
+        if (sn) await resolveDevice(sn, (req.socket?.remoteAddress || req.ip || '').replace(/^::ffff:/, ''));
+        res.type('text/plain').send(`RegistryCode=${sn || 'gymbodyflow'}`);
+    }
+
+    // GET|POST /iclock/push — push-protocol server options
+    async pushConfig(req: Request, res: Response) {
+        const sn = (req.query.SN as string) || (req.query.sn as string) || '';
+        res.type('text/plain').send([
+            `ServerVersion=2.4.1`, `ServerName=GymBodyFlow`, `PushVersion=2.4.1`,
+            `ErrorDelay=30`, `RequestDelay=10`, `TransTimes=00:00;14:05`, `TransInterval=1`,
+            `TransTables=User Transaction`, `Realtime=1`, `SessionID=${sn || 'gbf'}`, `TimeoutSec=10`,
+        ].join('\r\n'));
     }
 
     // POST /iclock/devicecmd — device acknowledges a command

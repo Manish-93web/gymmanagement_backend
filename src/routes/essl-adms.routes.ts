@@ -14,6 +14,11 @@ router.post('/iclock/cdata',      esslText, esslAdmsController.receiveData.bind(
 router.post('/iclock/cdata.aspx', esslText, esslAdmsController.receiveData.bind(esslAdmsController));
 router.get('/iclock/getrequest',      esslText, esslAdmsController.getRequest.bind(esslAdmsController));
 router.get('/iclock/getrequest.aspx', esslText, esslAdmsController.getRequest.bind(esslAdmsController));
+router.get('/iclock/ping',      esslText, esslAdmsController.ping.bind(esslAdmsController));
+router.post('/iclock/registry',  esslText, esslAdmsController.registry.bind(esslAdmsController));
+router.get('/iclock/push',       esslText, esslAdmsController.pushConfig.bind(esslAdmsController));
+router.post('/iclock/push',      esslText, esslAdmsController.pushConfig.bind(esslAdmsController));
+router.post('/iclock/rtdata',    esslText, esslAdmsController.receiveData.bind(esslAdmsController));
 router.post('/iclock/devicecmd',      esslText, esslAdmsController.deviceCmd.bind(esslAdmsController));
 router.post('/iclock/devicecmd.aspx', esslText, esslAdmsController.deviceCmd.bind(esslAdmsController));
 

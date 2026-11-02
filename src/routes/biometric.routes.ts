@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import biometricController from '../controllers/biometric.controller';
+import ingestController from '../controllers/biometric-ingest.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireAnyRole } from '../middleware/rbac.middleware';
 import { tenantContext } from '../middleware/tenant.middleware';
@@ -18,6 +19,9 @@ router.get('/devices/:id', requireAnyRole('gym_owner', 'branch_manager', 'staff'
 router.put('/devices/:id', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.updateDevice.bind(biometricController));
 router.patch('/devices/:id', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.updateDevice.bind(biometricController));
 router.delete('/devices/:id', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.deleteDevice.bind(biometricController));
+router.get('/devices/:id/connection', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), ingestController.connection.bind(ingestController));
+router.post('/devices/:id/rotate-token', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), ingestController.rotateToken.bind(ingestController));
+router.post('/import', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), ingestController.importFile.bind(ingestController));
 router.post('/devices/:id/test', requireAnyRole('gym_owner', 'branch_manager', 'staff', 'super_admin'), biometricController.testDevice.bind(biometricController));
 router.post('/devices/:id/sync', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.syncDevice.bind(biometricController));
 router.post('/devices/:id/reset-cursor', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.resetSyncCursor.bind(biometricController));
@@ -36,6 +40,11 @@ router.patch('/members/:memberId', requireAnyRole('gym_owner', 'branch_manager',
 router.delete('/members/:id', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.removeEnrollment.bind(biometricController));
 
 // Settings
+// Staff / trainer enrolment (device user ID -> staff attendance + payroll)
+router.get('/staff', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.getEnrolledStaff.bind(biometricController));
+router.post('/staff', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.enrollStaff.bind(biometricController));
+router.delete('/staff/:userId', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.removeStaffEnrollment.bind(biometricController));
+
 router.get('/settings', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.getSettings.bind(biometricController));
 router.put('/settings', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), biometricController.updateSettings.bind(biometricController));
 

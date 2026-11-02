@@ -5,49 +5,17 @@ import BiometricDevice from '../models/BiometricDevice.model';
 import BiometricSettings from '../models/BiometricSettings.model';
 import Attendance from '../models/Attendance.model';
 import Member from '../models/Member.model';
-
-/**
- * Compute start and end of a calendar day in a given timezone, returned as UTC Date objects.
- * e.g. for Asia/Kolkata: day start = UTC 18:30 previous day, day end = UTC 18:29:59.999 current day
- */
-function dayBoundsUTC(date: Date, tz: string): { start: Date; end: Date } {
-    try {
-        const dayStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(date);
-
-        const tzToUTC = (localStr: string): Date => {
-            const naive = new Date(localStr + 'Z');
-            const parts = new Intl.DateTimeFormat('en-US', {
-                timeZone: tz,
-                year: 'numeric', month: '2-digit', day: '2-digit',
-                hour: '2-digit', minute: '2-digit', second: '2-digit',
-                hour12: false,
-            }).formatToParts(naive);
-            const m: Record<string, string> = {};
-            for (const p of parts) if (p.type !== 'literal') m[p.type] = p.value;
-            const tzInterpretedAsUTC = new Date(
-                `${m.year}-${m.month}-${m.day}T${m.hour}:${m.minute}:${m.second}Z`
-            );
-            const offsetMs = tzInterpretedAsUTC.getTime() - naive.getTime();
-            return new Date(naive.getTime() - offsetMs);
-        };
-
-        return {
-            start: tzToUTC(`${dayStr}T00:00:00`),
-            end:   tzToUTC(`${dayStr}T23:59:59.999`),
-        };
-    } catch {
-        const start = new Date(date); start.setUTCHours(0, 0, 0, 0);
-        const end   = new Date(date); end.setUTCHours(23, 59, 59, 999);
-        return { start, end };
-    }
-}
+import BiometricStaff from '../models/BiometricStaff.model';
+import User from '../models/User.model';
+import StaffAttendanceService from './staff-attendance.service';
+import { dayBoundsUTC } from '../utils/tz.utils';
 
 /**
  * Normalize a biometric user ID: strip leading zeros for numeric IDs so
  * "001", "01", "1" all become "1". Non-numeric IDs are trimmed but unchanged.
  * This prevents "1" vs "001" mismatches between device and enrollment.
  */
-function normalizeBiometricId(id: string): string {
+export function normalizeBiometricId(id: string): string {
     const trimmed = id.trim();
     const n = parseInt(trimmed, 10);
     return isNaN(n) ? trimmed : String(n);
@@ -77,6 +45,17 @@ class BiometricAttendanceService {
 
         // Build search variants: raw form + normalized form (deduped)
         const bioIdVariants = normBioId !== rawBioId ? [rawBioId, normBioId] : [rawBioId];
+
+        // 0. Staff / trainer punches: device IDs enrolled for staff go to staff attendance
+        // (checked first so the member sNo fallback below can never claim a staff ID).
+        const staffMapping = await BiometricStaff.findOne({
+            tenantId,
+            biometricUserId: bioIdVariants.length === 1 ? bioIdVariants[0] : { $in: bioIdVariants },
+            active: true,
+        });
+        if (staffMapping) {
+            return this.processStaffRawLog(rawLog, staffMapping);
+        }
 
         // 1. Find member mapping by biometricUserId (try raw and normalized forms)
         let mapping = await BiometricMember.findOne({
@@ -327,6 +306,64 @@ class BiometricAttendanceService {
     }
 
     /**
+     * Fold a staff / trainer punch into their StaffAttendance record for the day
+     * (first punch = check-in, last punch = check-out).
+     */
+    private async processStaffRawLog(rawLog: any, staffMapping: any): Promise<ProcessResult> {
+        const tenantId = rawLog.tenantId;
+        const markLog = (extra: Record<string, any>) =>
+            BiometricRawLog.findByIdAndUpdate(rawLog._id, {
+                processed: true, processedAt: new Date(), ...extra,
+            }).catch(() => {});
+
+        const staffUser: any = await User.findOne({ _id: staffMapping.userId, tenantId })
+            .select('firstName lastName isActive branchId').lean();
+        if (!staffUser || staffUser.isActive === false) {
+            await markLog({ skippedReason: 'staff_inactive' });
+            return { created: false, reason: 'staff_inactive' };
+        }
+
+        const settings: any = await BiometricSettings.findOne({ tenantId }).lean();
+        const device: any = rawLog.deviceId ? await BiometricDevice.findById(rawLog.deviceId).lean() : null;
+        const timezone = device?.timezone || device?.settings?.timezone || settings?.timezone || 'Asia/Kolkata';
+        const branchId = rawLog.branchId?.toString() || device?.branchId?.toString() || staffUser.branchId?.toString();
+        const punchTime = rawLog.punchTime instanceof Date ? rawLog.punchTime : new Date(rawLog.punchTime);
+
+        const result = await StaffAttendanceService.recordPunch({
+            tenantId,
+            branchId,
+            staffId: staffMapping.userId,
+            punchTime,
+            timezone,
+            deviceId: rawLog.deviceId,
+            dedupeMinutes: settings?.dedupeWindowMinutes ?? 5,
+        });
+
+        if (!result.created) {
+            await markLog({ skippedReason: result.reason ?? 'duplicate_punch' });
+            return { created: false, reason: result.reason, attendanceId: result.attendanceId };
+        }
+
+        await markLog({});
+        await BiometricStaff.updateOne(
+            { _id: staffMapping._id },
+            { $set: { lastPunchAt: punchTime, lastPunchDeviceId: rawLog.deviceId } }
+        ).catch(() => {});
+
+        // Own event names: the member live-attendance widgets listen to biometric:punch and
+        // attendance:update and expect a member payload.
+        this.emitStaffEvent(tenantId.toString(), branchId, {
+            staffId: staffMapping.userId.toString(),
+            staffName: `${staffUser.firstName ?? ''} ${staffUser.lastName ?? ''}`.trim(),
+            punchTime,
+            type: result.action === 'check_out' ? 'checkout' : 'checkin',
+            attendanceId: result.attendanceId,
+        });
+
+        return { created: true, attendanceId: result.attendanceId };
+    }
+
+    /**
      * Process a push punch from the ADMS device: save raw log then immediately process.
      */
     async processPushPunch(payload: {
@@ -429,15 +466,26 @@ class BiometricAttendanceService {
             `[BiometricAttendance] Reset ${result.modifiedCount} skipped logs for enrollId="${biometricUserId}" — reprocessing`
         );
 
-        const sampleLog = await BiometricRawLog.findOne({
+        // Punches may have come from several devices: replay each one.
+        const deviceIds = await BiometricRawLog.distinct('deviceId', {
             tenantId: new mongoose.Types.ObjectId(tenantId),
             biometricUserId: { $in: searchIds },
             processed: false,
         });
-        if (sampleLog) {
-            await this.processUnprocessedLogs(tenantId, sampleLog.deviceId.toString());
+        for (const deviceId of deviceIds) {
+            await this.processUnprocessedLogs(tenantId, String(deviceId));
         }
         return result.modifiedCount;
+    }
+
+    private emitStaffEvent(tenantId: string, branchId: string | undefined, payload: any) {
+        try {
+            const ws = (global as any).websocketService;
+            if (ws) {
+                if (branchId && ws.broadcastToBranch) ws.broadcastToBranch(branchId, 'staff:punch', payload);
+                if (ws.broadcastToTenant) ws.broadcastToTenant(tenantId, 'staff:attendance:update', payload);
+            }
+        } catch { /* non-critical */ }
     }
 
     private emitPunchEvent(tenantId: string, branchId: string | undefined, payload: any) {

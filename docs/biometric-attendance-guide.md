@@ -93,7 +93,7 @@ On the device's own menu (exact path varies slightly by firmware — look for **
 2. Refresh the page. The device card should now show:
    - **Status: Online** (or a recent "Last Seen" time).
    - **Serial Number** auto-filled (confirms the device actually reached the server — if this stays blank, it hasn't connected yet; recheck Part 3).
-3. If it's still offline after a few minutes, use the **Test** button on the device card, and see Part 7 (Troubleshooting) below.
+3. If it's still offline after a few minutes, use the **Test** button on the device card, and see Part 9 (Troubleshooting) below.
 
 ---
 
@@ -132,7 +132,55 @@ Once one real punch shows up correctly, the setup is done — every future punch
 
 ---
 
-## Part 7 — Troubleshooting
+## Part 7 — Trainers and staff (attendance and salary)
+
+Trainers and other staff use the same device as members, but their punches become **staff attendance** and drive **salary**, not member check-ins.
+
+**Enrol a trainer**
+1. Sidebar → **Trainer Management** → click the **fingerprint** button on the trainer's row.
+2. Enter the **Device User ID** — the same ID you enrol the trainer's finger or face under on the device. Use an ID **no member has**; the platform rejects an ID already used by another staff member, a member enrolment, or a member's serial number.
+3. Set the trainer's **Shift timing** (for example 06:00–14:00). Leave it empty to use the gym-wide shift from **Staff → Deduction Settings**. Shifts must finish on the same day.
+4. Save. Punches the trainer made before being enrolled are picked up automatically.
+
+**What a punch does**
+- The **first** punch of the day is the check-in and the **last** is the check-out. Punches closer together than the dedupe window (default 5 minutes) are ignored.
+- Check-in later than shift start plus grace (default 10 minutes) is marked **late**. Check-out before shift end is marked **early departure**.
+- See it live on **Staff → Attendance** ("Today's Team", records with a Biometric badge) and on the trainer's row ("In since 09:12").
+
+**How salary is calculated** (Staff → Payroll)
+- Each attended day earns one day's pay (monthly salary ÷ working days, default 26). Paid leave earns the same.
+- The part of the shift **not worked** is deducted at the hourly rate (daily rate ÷ shift hours). Being short by no more than the grace period is forgiven.
+- Hours beyond the shift are paid as overtime (default 1.5×). A fixed fee per late arrival applies (default ₹50).
+- A day with a check-in but **no check-out** is not paid until an owner fixes it.
+- **Run Payroll** saves the month's payslips; **Mark as paid** freezes a payslip so later changes do not alter it.
+
+**Fixing a missed punch, or marking leave**
+- On **Staff → Attendance**, use **Add / fix day** or the pencil on a record. Set the check-in and check-out, or mark the day **Paid leave** or **Absent**. Hours, overtime and pay are recalculated and the record is noted as adjusted.
+
+**Trainers see their own record**
+- The trainer dashboard has **My Attendance & Pay**: today's check-in and check-out, the month's hours, and the pay earned so far.
+
+---
+
+## Part 8 — Any brand of machine (not only eSSL / ZKTeco)
+
+GymBodyFlow accepts punches from every common machine. There are three ways in; use the one your machine supports.
+
+| Your machine | How it connects |
+|---|---|
+| eSSL, ZKTeco, Biomax, other "ADMS / Cloud Server" firmware | Point the machine's server address at the backend (Part 2). Nothing else to set. |
+| Hikvision, Dahua, Suprema, Matrix COSEC, Mantra, Anviz, CP Plus, Secureye, or the vendor's own software/middleware | **Push URL.** On the device card click **Connect / Import**, copy the URL, and paste it as the HTTP / event-push / webhook address. JSON, XML, CSV and tab-separated text are all read. |
+| A machine that can only open a web link | Append `?id=<user>&time=<YYYY-MM-DD HH:MM:SS>[&status=0\|1]` to the push URL. |
+| A machine with no network push (USB export, vendor PC software, Excel) | **File import.** On the device card click **Connect / Import**, upload the export (.csv / .txt / .dat / .json) or paste rows. Re-importing the same file is safe because repeats are ignored. |
+
+Rules that apply to every route:
+- Each row needs a **user ID** and a **date and time**. In/Out is optional (the first punch of the day is check-in and the last is check-out).
+- Times with no timezone are read in the device's timezone (set on the device, default Asia/Kolkata). Times that carry an offset (`+05:30`, `Z`) or are Unix timestamps are used as they are. Dates like `05/10/2026` are read day-first.
+- The same device user ID rules as before apply: a trainer's ID must not match any member.
+- The push URL contains a secret. If it leaks, press the refresh button next to it to issue a new one; the old URL stops working at once.
+- IDs that are not linked to anyone yet are kept under **Unmatched punches** and applied once you link them.
+
+## Part 9 — Troubleshooting
 
 **Device shows offline, but is physically on and connected to the network:**
 - Re-check the Server Address/Port against what Part 1's "Test Server" button confirmed — a typo here is the most common cause.
@@ -142,6 +190,8 @@ Once one real punch shows up correctly, the setup is done — every future punch
 
 **Punches aren't becoming attendance records:**
 - Check **Unmatched Logs** first — the punch is very likely arriving fine, just with no member linked to that User ID yet (Part 5).
+- If it is a **trainer or staff member**, enrol their User ID from Trainer Management (Part 7). Their earlier punches are then processed automatically.
+- A trainer's day looks wrong or pay is missing: open **Staff → Attendance**, check for a day with no check-out (marked "no check-out yet"), and fix it with **Add / fix day**.
 - Confirm the device's Sync Mode isn't set to "Manual (Paused)."
 
 **A device that used to work now fails constantly:**

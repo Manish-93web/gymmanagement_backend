@@ -6,6 +6,10 @@ export interface ITrainer extends Document {
     branches?: mongoose.Types.ObjectId[];
     userId: mongoose.Types.ObjectId;
     specializations: string[];
+    shift?: {
+        startTime: string;   // "HH:mm" local
+        endTime: string;     // "HH:mm" local; earlier than start means the shift ends next day
+    };
     salary: {
         base: number;
         type: 'fixed' | 'revenue_share' | 'hybrid';
@@ -113,6 +117,10 @@ const TrainerSchema: Schema = new Schema(
                     validityDays: { type: Number, required: true },
                 },
             ],
+        },
+        shift: {
+            startTime: { type: String, match: /^([01]\d|2[0-3]):[0-5]\d$/ },
+            endTime:   { type: String, match: /^([01]\d|2[0-3]):[0-5]\d$/ },
         },
         salary: {
             base: { type: Number, default: 0 },

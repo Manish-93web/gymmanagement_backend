@@ -8,7 +8,11 @@ import BiometricSettings from '../models/BiometricSettings.model';
 import Attendance from '../models/Attendance.model';
 import Member from '../models/Member.model';
 import Branch from '../models/Branch.model';
-import BiometricAttendanceService from '../services/biometric-attendance.service';
+import BiometricStaff from '../models/BiometricStaff.model';
+import User from '../models/User.model';
+import BiometricAttendanceService, { normalizeBiometricId } from '../services/biometric-attendance.service';
+
+const STAFF_ENROLL_ROLES = ['trainer', 'staff', 'branch_manager', 'accountant'];
 
 class BiometricController {
     // ─── DEVICES ────────────────────────────────────────────────
@@ -100,6 +104,7 @@ class BiometricController {
 
             const device = await BiometricDevice.create({
                 ...body,
+                ingestToken: undefined,
                 deviceId: body.deviceId || new mongoose.Types.ObjectId().toString(),
                 tenantId,
                 branchId,
@@ -434,6 +439,15 @@ class BiometricController {
 
             const enrollId = biometricUserId || rfidCardId || String(memberId);
 
+            // A device user ID can belong to a staff member or a member, never both.
+            const staffClash = await BiometricStaff.findOne({
+                tenantId, active: true, biometricUserId: normalizeBiometricId(String(enrollId)),
+            }).lean();
+            if (staffClash) {
+                res.status(409).json({ success: false, message: `Device ID ${enrollId} is already assigned to a staff member. Use a different ID.` });
+                return;
+            }
+
             let enrollment = await BiometricMember.findOne({ tenantId, memberId });
 
             if (enrollment) {
@@ -501,6 +515,86 @@ class BiometricController {
                 await BiometricDevice.findByIdAndUpdate(dId, { $inc: { enrolledMembers: -1 } });
             }
             res.json({ success: true, message: 'Enrollment removed' });
+        } catch (error) { next(error); }
+    }
+
+    // ─── STAFF / TRAINER ENROLLMENT ──────────────────────────────
+
+    // GET /biometric/staff — staff and trainers mapped to a device user ID
+    async getEnrolledStaff(req: Request, res: Response, next: NextFunction) {
+        try {
+            const enrollments = await BiometricStaff.find({ tenantId: req.tenantId, active: true })
+                .populate('userId', 'firstName lastName role email')
+                .populate('assignedDeviceIds', 'name location')
+                .sort({ createdAt: -1 })
+                .lean();
+            res.json({ success: true, data: { mappings: enrollments, total: enrollments.length } });
+        } catch (error) { next(error); }
+    }
+
+    // POST /biometric/staff — map a trainer / staff member to a device user ID (upsert by userId)
+    async enrollStaff(req: Request, res: Response, next: NextFunction) {
+        try {
+            const tenantId = req.tenantId!;
+            const { userId, biometricUserId, deviceId } = req.body;
+            if (!userId || biometricUserId === undefined || String(biometricUserId).trim() === '') {
+                res.status(400).json({ success: false, message: 'userId and biometricUserId are required' });
+                return;
+            }
+
+            const user: any = await User.findOne({ _id: userId, tenantId }).select('role firstName lastName').lean();
+            if (!user) { res.status(404).json({ success: false, message: 'Staff member not found' }); return; }
+            if (!STAFF_ENROLL_ROLES.includes(user.role)) {
+                res.status(400).json({ success: false, message: 'Only trainers and staff can be enrolled here. Enrol members from the Members page.' });
+                return;
+            }
+
+            if (deviceId) {
+                const device = await BiometricDevice.findOne({ _id: deviceId, tenantId });
+                if (!device) { res.status(404).json({ success: false, message: 'Device not found' }); return; }
+            }
+
+            const enrollId = normalizeBiometricId(String(biometricUserId));
+
+            // Reject IDs already used by another staff member, a member enrolment, or a member's serial number
+            // (a member's sNo doubles as the device ID when no explicit enrolment exists).
+            const [otherStaff, memberEnrol, memberBySNo] = await Promise.all([
+                BiometricStaff.findOne({ tenantId, biometricUserId: enrollId, userId: { $ne: userId } }).lean(),
+                BiometricMember.findOne({ tenantId, biometricUserId: enrollId, active: true }).lean(),
+                /^\d+$/.test(enrollId) ? Member.findOne({ tenantId, sNo: parseInt(enrollId, 10) }).select('_id').lean() : null,
+            ]);
+            if (otherStaff || memberEnrol || memberBySNo) {
+                res.status(409).json({
+                    success: false,
+                    message: `Device ID ${enrollId} is already used by ${otherStaff ? 'another staff member' : 'a gym member'}. Pick an unused ID.`,
+                });
+                return;
+            }
+
+            const deviceIds = deviceId ? [new mongoose.Types.ObjectId(deviceId)] : [];
+            const enrollment = await BiometricStaff.findOneAndUpdate(
+                { tenantId, userId },
+                {
+                    $set: { biometricUserId: enrollId, active: true, enrolledBy: req.user!._id },
+                    $setOnInsert: { enrolledAt: new Date() },
+                    ...(deviceIds.length && { $addToSet: { assignedDeviceIds: { $each: deviceIds } } }),
+                },
+                { upsert: true, new: true }
+            );
+
+            // Punches that arrived before this enrolment were skipped as unmatched; replay them now.
+            BiometricAttendanceService.reprocessSkippedLogs(tenantId, enrollId).catch(() => {});
+
+            res.status(201).json({ success: true, message: `${user.firstName} enrolled for biometric attendance`, data: enrollment });
+        } catch (error) { next(error); }
+    }
+
+    // DELETE /biometric/staff/:userId — remove the device mapping (frees the ID for reuse)
+    async removeStaffEnrollment(req: Request, res: Response, next: NextFunction) {
+        try {
+            const removed = await BiometricStaff.findOneAndDelete({ tenantId: req.tenantId, userId: req.params.userId as string });
+            if (!removed) { res.status(404).json({ success: false, message: 'Enrolment not found' }); return; }
+            res.json({ success: true, message: 'Biometric enrolment removed' });
         } catch (error) { next(error); }
     }
 

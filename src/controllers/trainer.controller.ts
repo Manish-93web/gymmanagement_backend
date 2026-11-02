@@ -245,11 +245,17 @@ class TrainerController {
                 'pricing',
                 'revenueSharing',
                 'salary',
+                'shift',
                 'isActive',
             ];
 
+            // A trainer may edit their own profile but not what they are paid or when they must work.
+            const ownerOnly = ['revenueSharing', 'salary', 'shift', 'isActive'];
+            const isTrainerRole = (req as any).user?.role === 'trainer';
+
             const updates: Record<string, any> = {};
             for (const field of allowedFields) {
+                if (isTrainerRole && ownerOnly.includes(field)) continue;
                 if (req.body[field] !== undefined) {
                     updates[field] = req.body[field];
                 }
