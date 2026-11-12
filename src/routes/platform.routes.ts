@@ -33,6 +33,7 @@ import {
     updateTenantMenuPermissions,
     recordTenantPayment,
 } from '../controllers/platform.controller';
+import platformLeadController from '../controllers/platform-lead.controller';
 import { authenticate } from '../middleware/auth.middleware';
 import { requireRole } from '../middleware/role.middleware';
 
@@ -40,6 +41,11 @@ const router = express.Router();
 
 // Apply auth and strict role check for ALL routes
 router.use(authenticate, requireRole('super_admin', 'platform_admin'));
+
+// Website leads (gym owners asking to be contacted)
+router.get('/leads', platformLeadController.list.bind(platformLeadController));
+router.patch('/leads/:id', platformLeadController.update.bind(platformLeadController));
+router.delete('/leads/:id', platformLeadController.remove.bind(platformLeadController));
 
 router.get('/tenants', getAllTenants);
 router.get('/tenants/:tenantId', getTenantById);
