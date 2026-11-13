@@ -1,5 +1,7 @@
 # Biometric Attendance — Setup & Troubleshooting Guide
 
+> Gym owners: the plain-language walkthrough is in [biometric-setup-guide-for-gym-owners.md](biometric-setup-guide-for-gym-owners.md). This file is the longer reference.
+
 ## How it works (read this first)
 
 The physical device — on LAN cable or WiFi, doesn't matter which — dials **out** to this backend over the internet and pushes each punch the moment it happens. The backend never dials into the device. This is the only supported mode; there is no "the platform polls the device" option, and there never will be, because a cloud-hosted backend has no route into a gym's private network.
