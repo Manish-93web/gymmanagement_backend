@@ -172,6 +172,8 @@ Another way: open the member's profile → **Biometric** tab → type the **Devi
 
 ### For trainers and staff
 
+New trainer? You can pick their **Shift** right in **Trainer Management → Onboard New Trainer** (email is optional there). Do this step afterwards to link their machine ID.
+
 1. Sidebar → **Trainer Management**.
 2. On the trainer's row, click the **fingerprint** button.
 3. Fill in:
@@ -179,9 +181,37 @@ Another way: open the member's profile → **Biometric** tab → type the **Devi
 | Field | Required | What to enter |
 |---|---|---|
 | **Device User ID** | Yes | The exact User ID from Step 6, for example `901` |
-| **Shift timing** | Recommended | The trainer's shift, for example `06:00` to `14:00`. Leave empty to use the gym-wide shift from **Staff → Deduction Settings**. A shift must end on the same day |
+| **Shift** | Recommended | Pick the trainer's shift from the list. "Gym default hours" uses the gym-wide hours from **Staff → Deduction Settings**. Make shifts first (see Step 7b) |
 
 4. Save. Any punches the trainer made before this step are picked up automatically.
+
+### Step 7b: Make shifts and give them to trainers and staff
+
+Every trainer and staff member can work different hours. Open **Staff → Shifts & Weekly Off**.
+
+**Make a shift** (click **New shift**):
+
+| Field | What to enter |
+|---|---|
+| **Shift name** | For example `Morning`, `Evening`, `Split` |
+| **Working time** | A start and end time, on the same day. Quick buttons fill in Morning (06:00 to 14:00), Evening (14:00 to 22:00), General (09:00 to 18:00) and Split |
+| **Add another window** | For a **split shift** with a break, for example 06:00 to 10:00 and 17:00 to 21:00. Up to 3 windows. The break between them is not counted as work |
+
+**Give shifts to people** (table "Who works which shift"):
+
+1. Tick one person, several, or everyone.
+2. Choose the **Shift**, or "Gym default hours".
+3. Optional: tick **Also set weekly off days** and choose the days (for example Sunday). If you leave it unticked, each person keeps their own weekly off.
+4. Optional: **Starts on** a date. Leave it blank for today. A change from a future date shows as "From 2026-12-01: Evening" in the table.
+5. Click **Apply**.
+
+Good to know:
+
+- Days before the start date keep the old shift, so past attendance and salary are not changed when you move someone to a new shift.
+- A **weekly off** day has no late mark and no shortfall. If the person works that day anyway, all hours are paid as overtime, and no extra day's pay is added.
+- Editing a shift's times changes it for everyone on it, including days not yet paid. To change someone only from a date, make a new shift and assign it with a start date.
+- A shift that has ever been given to someone cannot be deleted, because past days are judged by it. Move people to another shift if you no longer use it.
+- Staff who are not trainers (reception, manager, accountant) get shifts here too. Their punches work the same way once their machine ID is linked.
 
 ---
 
@@ -248,6 +278,7 @@ Done. Every future punch works the same way with no action from you.
 
 | Situation | What GymBodyFlow does |
 |---|---|
+| Late and early are judged against | **That person's own shift** (first window start plus grace, last window end) |
 | First punch of the day | Check-in |
 | Last punch of the day | Check-out. Punches in between do no harm |
 | Two punches within 5 minutes | The second is ignored (accidental double punch) |

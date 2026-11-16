@@ -59,6 +59,27 @@ export function localMinutesOfDay(date: Date, tz: string): number {
     }
 }
 
+/** Calendar date ("YYYY-MM-DD") of an instant in `tz`. */
+export function localDateString(date: Date, tz: string): string {
+    try {
+        return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(date);
+    } catch {
+        return date.toISOString().slice(0, 10);
+    }
+}
+
+/** Day of week of an instant in `tz`: 0 = Sunday ... 6 = Saturday. */
+export function localWeekday(date: Date, tz: string): number {
+    const [y, m, d] = localDateString(date, tz).split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+/** 570 -> "09:30" */
+export function minutesToHHMM(min: number): string {
+    const m = Math.max(0, Math.round(min));
+    return `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
 /** "09:30" -> 570 */
 export function hhmmToMinutes(hhmm: string, fallback: number): number {
     const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || '');

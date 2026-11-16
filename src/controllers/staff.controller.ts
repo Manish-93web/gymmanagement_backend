@@ -1,5 +1,11 @@
+import { normalizeIndianMobile } from './platform-lead.controller';
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 import User, { IUser } from '../models/User.model';
+import Branch from '../models/Branch.model';
+import StaffFace from '../models/StaffFace.model';
+import StaffShiftService from '../services/staff-shift.service';
+import { placeholderEmail, placeholderMobile, withoutPlaceholders } from '../utils/placeholders';
 import { Types } from 'mongoose';
 
 export const getStaffList = async (req: Request, res: Response) => {
@@ -43,7 +49,7 @@ export const getStaffList = async (req: Request, res: Response) => {
         res.status(200).json({
             success: true,
             data: {
-                staff,
+                staff: staff.map(s => withoutPlaceholders(s)),
                 total,
                 page: Number(page),
                 totalPages: Math.ceil(total / Number(limit)),
@@ -103,7 +109,7 @@ export const getStaffMember = async (req: Request, res: Response) => {
             return res.status(404).json({ success: false, message: 'Staff member not found' });
         }
 
-        res.status(200).json({ success: true, data: staff });
+        res.status(200).json({ success: true, data: withoutPlaceholders(staff) });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Error fetching staff member', error: (error as Error).message });
     }
@@ -111,36 +117,65 @@ export const getStaffMember = async (req: Request, res: Response) => {
 
 export const createStaffMember = async (req: Request, res: Response) => {
     try {
-        const { email, password, role, ...otherData } = req.body;
+        const { email, password, role, firstName, lastName, mobile, salary, shiftId, branchId: bodyBranchId } = req.body;
         const tenantId = req.user?.role === 'super_admin' ? req.body.tenantId : req.user?.tenantId;
 
+        if (!tenantId) return res.status(400).json({ success: false, message: 'Tenant context required' });
         if (!['staff', 'trainer', 'branch_manager', 'accountant'].includes(role)) {
             return res.status(400).json({ success: false, message: 'Invalid role for staff member' });
         }
-
-        const existingUser = await User.findOne({ email });
-        if (existingUser) {
-            return res.status(400).json({ success: false, message: 'Email already exists' });
+        if (typeof firstName !== 'string' || !firstName.trim()) {
+            return res.status(400).json({ success: false, message: 'First name is required' });
         }
 
+        // Email and phone are optional. A typed phone must be a valid Indian mobile, and neither may belong to another account.
+        const cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+        if (cleanEmail && await User.exists({ email: cleanEmail })) {
+            return res.status(400).json({ success: false, message: 'Email already exists' });
+        }
+        const cleanMobile = mobile ? normalizeIndianMobile(mobile) : null;
+        if (mobile && !cleanMobile) {
+            return res.status(400).json({ success: false, message: 'Please enter a valid 10-digit mobile number.' });
+        }
+        if (cleanMobile && await User.exists({ mobile: cleanMobile })) {
+            return res.status(409).json({ success: false, message: 'This phone number is already used by another account.' });
+        }
+        const pay = Number(salary);
+        if (salary !== undefined && salary !== '' && !(pay >= 0)) {
+            return res.status(400).json({ success: false, message: 'Salary must be a positive number' });
+        }
+
+        // Checked before anything is created, so a bad choice leaves no half-made account behind.
+        if (shiftId && !(await StaffShiftService.exists(String(tenantId), shiftId))) {
+            return res.status(400).json({ success: false, message: 'The chosen shift was not found' });
+        }
+        let branchId = bodyBranchId || (req as any).branchId;
+        if (!branchId) branchId = (await Branch.findOne({ tenantId }).select('_id').lean() as any)?._id;
+        if (!branchId) return res.status(400).json({ success: false, message: 'No branch found for this gym. Please create a branch first.' });
+
         const newStaff = await User.create({
-            email,
-            // The Add Staff form does not collect a password (staff set their own on
-            // first login); fall back to a placeholder, matching the trainer onboarding
-            // flow in trainer.controller.ts. Password is hashed by the User model's
-            // pre-save hook either way.
-            password: password || 'Staff@123',
+            email: cleanEmail || placeholderEmail(),
+            mobile: cleanMobile || placeholderMobile(),
+            // Staff set their own password on first login. An account with no real email cannot be signed into,
+            // so it gets a random one rather than a known default.
+            password: password || (cleanEmail ? 'Staff@123' : crypto.randomBytes(18).toString('base64url')),
             role,
             tenantId,
-            ...otherData,
-        });
+            branchId,
+            firstName: firstName.trim(),
+            lastName: typeof lastName === 'string' ? lastName.trim() : '',
+            ...(pay > 0 && { salary: pay }),
+            isActive: true,
+        } as any);
 
-        const staffResponse = newStaff.toObject();
-        // @ts-ignore
+        if (shiftId) await StaffShiftService.assignFromToday(String(tenantId), String(newStaff._id), String(shiftId), req.user?._id?.toString());
+
+        const staffResponse: any = withoutPlaceholders(newStaff);
         delete staffResponse.password;
 
         res.status(201).json({ success: true, data: staffResponse, message: 'Staff member created successfully' });
-    } catch (error) {
+    } catch (error: any) {
+        if (error?.code === 11000) return res.status(409).json({ success: false, message: 'This phone number or email is already used by another account.' });
         res.status(500).json({ success: false, message: 'Error creating staff member', error: (error as Error).message });
     }
 };
@@ -163,6 +198,12 @@ export const updateStaffMember = async (req: Request, res: Response) => {
             delete updates.password;
         }
 
+        if (typeof updates.mobile === 'string' && updates.mobile.trim()) {
+            const clean = normalizeIndianMobile(updates.mobile);
+            if (!clean) return res.status(400).json({ success: false, message: 'Please enter a valid 10-digit mobile number.' });
+            updates.mobile = clean;
+        }
+
         const staff = await User.findOneAndUpdate(query, { $set: updates }, { new: true }).select('-password');
 
         if (!staff) {
@@ -170,7 +211,8 @@ export const updateStaffMember = async (req: Request, res: Response) => {
         }
 
         res.status(200).json({ success: true, data: staff, message: 'Staff member updated successfully' });
-    } catch (error) {
+    } catch (error: any) {
+        if (error?.code === 11000) return res.status(409).json({ success: false, message: 'This phone number or email is already used by another account.' });
         res.status(500).json({ success: false, message: 'Error updating staff member', error: (error as Error).message });
     }
 };
@@ -191,6 +233,8 @@ export const deleteStaffMember = async (req: Request, res: Response) => {
         if (!staff) {
             return res.status(404).json({ success: false, message: 'Staff member not found' });
         }
+
+        await StaffFace.deleteMany({ tenantId: staff.tenantId, staffId: staff._id });   // the face template goes with the person
 
         res.status(200).json({ success: true, data: staff, message: 'Staff member deleted successfully' });
     } catch (error) {
@@ -214,6 +258,9 @@ export const updateStaffStatus = async (req: Request, res: Response) => {
         if (!staff) {
             return res.status(404).json({ success: false, message: 'Staff member not found' });
         }
+
+        // someone made inactive no longer checks in, so their face template is not kept
+        if (!isActive) await StaffFace.deleteMany({ tenantId: staff.tenantId, staffId: staff._id });
 
         res.status(200).json({ success: true, data: staff, message: 'Staff status updated successfully' });
     } catch (error) {

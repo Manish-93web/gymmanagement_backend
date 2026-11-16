@@ -78,8 +78,10 @@ class StaffPayrollService {
         const earlyFactor: number = settings?.deductionPerEarlyDeparture ?? 0;
         const graceMinutes: number = settings?.graceMinutes ?? 10;
 
-        // The person's own shift (trainers) or the gym default decides what a full day is.
-        const shiftHours = (await StaffAttendanceService.rulesFor(tenantId, user._id)).stdHours;
+        // Each day is judged against the shift the person had that day (assigned shift, trainer's own shift,
+        // or the gym default), so changing a shift never rewrites months already worked.
+        const schedule = await StaffAttendanceService.schedule(tenantId, user._id);
+        const shiftHours = schedule.at(range.end).shiftHours;
 
         const records = await StaffAttendance.find({
             tenantId, staffId, date: { $gte: range.start, $lte: range.end },
@@ -87,26 +89,33 @@ class StaffPayrollService {
 
         const monthlySalary = await this.monthlySalaryFor(tenantId, user);
         const dailyRate = monthlySalary / workingDaysPerMonth;
-        const hourlyRate = dailyRate / shiftHours;
 
         const completed = records.filter(r => r.status !== 'absent' && r.status !== 'paid_leave' && r.clockOut);
         const totalHours = completed.reduce((s, r) => s + (r.hoursWorked || 0), 0);
-        const overtimeHours = completed.reduce((s, r) => s + Math.max(0, (r.hoursWorked || 0) - shiftHours), 0);
         const paidLeaveDays = records.filter(r => r.status === 'paid_leave').length;
         const absentDays = records.filter(r => r.status === 'absent').length;
 
-        // Every attended day (and paid leave) earns a full day's pay, capped at the monthly salary...
-        const basePay = Math.min(monthlySalary, dailyRate * (completed.length + paidLeaveDays));
-        const overtimePay = hourlyRate * otMultiplier * overtimeHours;
-
-        // ...then the part of the shift not worked is deducted at the hourly rate. Being a few minutes
-        // short (within the grace period) is forgiven.
+        // Per attended day: the rules of that day give the hourly rate, the overtime and the unworked time.
+        // Working a weekly off earns no extra day's pay: all of its hours are overtime.
         const graceHours = graceMinutes / 60;
-        const shortfallHours = completed.reduce((s, r) => {
-            const short = shiftHours - (r.hoursWorked || 0);
-            return short > graceHours ? s + short : s;
-        }, 0);
-        const shortfallDeduction = shortfallHours * hourlyRate;
+        let overtimeHours = 0, overtimePay = 0, shortfallHours = 0, shortfallDeduction = 0, paidDays = 0;
+        for (const r of completed) {
+            const rules = schedule.at(r.date);
+            const hourlyRate = dailyRate / (rules.shiftHours || shiftHours);
+            const worked = r.hoursWorked || 0;
+            const ot = Math.max(0, worked - rules.stdHours);
+            overtimeHours += ot;
+            overtimePay += ot * hourlyRate * otMultiplier;
+            if (!rules.offDay) {
+                paidDays++;
+                // Being a few minutes short (within the grace period) is forgiven.
+                const short = rules.stdHours - worked;
+                if (short > graceHours) { shortfallHours += short; shortfallDeduction += short * hourlyRate; }
+            }
+        }
+
+        // Every attended scheduled day (and paid leave) earns a full day's pay, capped at the monthly salary.
+        const basePay = Math.min(monthlySalary, dailyRate * (paidDays + paidLeaveDays));
 
         const lateCount = records.filter(r => r.status === 'late').length;
         const earlyRecords = completed.filter(r => r.earlyDeparture === true);
@@ -116,8 +125,9 @@ class StaffPayrollService {
         const lateDeduction = lateCount * lateFixed;
         const earlyDepartureDeduction = earlyRecords.length * dailyRate * earlyFactor;
 
-        const deductions = shortfallDeduction + absentDayDeduction + lateDeduction + earlyDepartureDeduction;
-        const netPay = Math.max(0, basePay + overtimePay - deductions);
+        // Round each line first, then add the rounded lines, so a printed payslip adds up to the paisa.
+        const deductions = round2(round2(shortfallDeduction) + round2(absentDayDeduction) + round2(lateDeduction) + round2(earlyDepartureDeduction));
+        const netPay = round2(Math.max(0, round2(basePay) + round2(overtimePay) - deductions));
 
         return {
             staffId: String(user._id),
@@ -142,8 +152,8 @@ class StaffPayrollService {
             absentDayDeduction: round2(absentDayDeduction),
             lateDeduction: round2(lateDeduction),
             earlyDepartureDeduction: round2(earlyDepartureDeduction),
-            deductions: round2(deductions),
-            netPay: round2(netPay),
+            deductions,
+            netPay,
             biometricDays: records.filter(r => r.source === 'biometric').length,
         };
     }

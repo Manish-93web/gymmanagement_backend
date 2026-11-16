@@ -4,6 +4,11 @@ import Trainer from '../models/Trainer.model';
 import User from '../models/User.model';
 import Branch from '../models/Branch.model';
 import Class from '../models/Class.model';
+import StaffFace from '../models/StaffFace.model';
+import StaffShiftService from '../services/staff-shift.service';
+import { placeholderEmail, placeholderMobile, shownEmail, shownMobile } from '../utils/placeholders';
+import { normalizeIndianMobile } from './platform-lead.controller';
+
 
 class TrainerController {
     // POST /trainers
@@ -29,6 +34,7 @@ class TrainerController {
                 revenueSharing,
                 salary,
                 branchId: bodyBranchId,
+                shiftId,
             } = req.body;
 
             const specializations: string[] = bodySpecs?.length
@@ -37,13 +43,27 @@ class TrainerController {
                     ? [specialization]
                     : [];
 
+            // Phone (where salary slips go): optional, but a typed one must be a valid Indian mobile number.
+            const cleanMobile = mobile ? normalizeIndianMobile(mobile) : null;
+            if (mobile && !cleanMobile) {
+                return res.status(400).json({ success: false, message: 'Please enter a valid 10-digit mobile number.' });
+            }
+            if (cleanMobile && await User.exists({ mobile: cleanMobile })) {
+                return res.status(409).json({ success: false, message: 'This phone number is already used by another account.' });
+            }
+
+            // The shift is checked before anything is created, so a bad choice leaves no half-made trainer behind.
+            if (shiftId && !(await StaffShiftService.exists(String(tenantId), shiftId))) {
+                return res.status(400).json({ success: false, message: 'The chosen shift was not found' });
+            }
+
             let userId = bodyUserId;
             let user: any;
 
             if (!userId) {
                 // Onboard mode: create a User account for the new trainer
-                if (!firstName || !email) {
-                    return res.status(400).json({ success: false, message: 'firstName and email are required to onboard a new trainer' });
+                if (!firstName) {
+                    return res.status(400).json({ success: false, message: 'firstName is required to onboard a new trainer' });
                 }
 
                 // Resolve branch
@@ -57,19 +77,18 @@ class TrainerController {
                 }
 
                 // Reuse existing user if email already registered under this tenant
-                const existing = await User.findOne({ email: email.toLowerCase(), tenantId });
+                const cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+                const existing = cleanEmail ? await User.findOne({ email: cleanEmail, tenantId }) : null;
                 if (existing) {
                     user = existing;
                     userId = existing._id.toString();
                 } else {
-                    const tenantSuffix = tenantId.toString().slice(-6);
-                    const placeholderMobile = mobile || `0000${tenantSuffix}`;
                     user = await (User as any).create({
                         tenantId,
                         branchId: resolvedBranch,
                         role: 'trainer',
-                        email: email.toLowerCase(),
-                        mobile: placeholderMobile,
+                        email: cleanEmail || placeholderEmail(),
+                        mobile: cleanMobile || placeholderMobile(),
                         password: 'Trainer@123',
                         firstName,
                         lastName: lastName || '',
@@ -124,6 +143,8 @@ class TrainerController {
                 await User.findByIdAndUpdate(userId, { role: 'trainer' });
             }
 
+            if (shiftId) await StaffShiftService.assignFromToday(String(tenantId), String(userId), String(shiftId), (req as any).user?._id?.toString());
+
             return res.status(201).json({ success: true, data: trainer });
         } catch (error: any) {
             return res.status(500).json({ success: false, message: error.message });
@@ -167,11 +188,12 @@ class TrainerController {
             const enriched = trainers.map((t: any) => {
                 const obj = t.toObject ? t.toObject() : { ...t };
                 const u = obj.userId as any;
+                if (u && typeof u === 'object') { u.email = shownEmail(u.email); u.mobile = shownMobile(u.mobile); }
                 obj.id = String(obj._id);
                 obj.firstName = u?.firstName ?? '';
                 obj.lastName = u?.lastName ?? '';
-                obj.email = u?.email ?? '';
-                obj.phone = u?.mobile ?? '';
+                obj.email = shownEmail(u?.email);
+                obj.phone = shownMobile(u?.mobile);
                 obj.name = `${obj.firstName} ${obj.lastName}`.trim() || obj.email || '—';
                 obj.rating = obj.ratings?.average ?? 0;
                 obj.clientCount = obj.kpis?.totalClients ?? 0;
@@ -212,11 +234,12 @@ class TrainerController {
 
             const trainerObj = (trainer as any).toObject ? (trainer as any).toObject() : trainer;
             const u = trainerObj.userId as any;
+            if (u && typeof u === 'object') { u.email = shownEmail(u.email); u.mobile = shownMobile(u.mobile); }
             trainerObj.id = String(trainerObj._id);
             trainerObj.firstName = u?.firstName ?? '';
             trainerObj.lastName = u?.lastName ?? '';
-            trainerObj.email = u?.email ?? '';
-            trainerObj.phone = u?.mobile ?? '';
+            trainerObj.email = shownEmail(u?.email);
+            trainerObj.phone = shownMobile(u?.mobile);
             trainerObj.name = `${trainerObj.firstName} ${trainerObj.lastName}`.trim() || trainerObj.email || '—';
             trainerObj.hourlyRate = trainerObj.pricing?.hourlyRate ?? 0;
             trainerObj.rating = trainerObj.ratings?.average ?? 0;
@@ -277,8 +300,13 @@ class TrainerController {
             const userUpdates: Record<string, any> = {};
             if (firstName !== undefined) userUpdates.firstName = firstName;
             if (lastName !== undefined) userUpdates.lastName = lastName;
-            if (email !== undefined) userUpdates.email = email;
-            if (mobile !== undefined) userUpdates.mobile = mobile;
+            // a blank email / mobile means "none": the account keeps its stand-in value
+            if (typeof email === 'string' && email.trim()) userUpdates.email = email.trim().toLowerCase();
+            if (typeof mobile === 'string' && mobile.trim()) {
+                const clean = normalizeIndianMobile(mobile);
+                if (!clean) return res.status(400).json({ success: false, message: 'Please enter a valid 10-digit mobile number.' });
+                userUpdates.mobile = clean;
+            }
 
             if (Object.keys(userUpdates).length > 0 && trainer.userId) {
                 const linkedUserId = (trainer.userId as any)._id ?? trainer.userId;
@@ -288,15 +316,17 @@ class TrainerController {
 
             const trainerObj: any = (trainer as any).toObject ? (trainer as any).toObject() : trainer;
             const u = trainerObj.userId as any;
+            if (u && typeof u === 'object') { u.email = shownEmail(u.email); u.mobile = shownMobile(u.mobile); }
             trainerObj.id = String(trainerObj._id);
             trainerObj.firstName = u?.firstName ?? '';
             trainerObj.lastName = u?.lastName ?? '';
-            trainerObj.email = u?.email ?? '';
-            trainerObj.phone = u?.mobile ?? '';
+            trainerObj.email = shownEmail(u?.email);
+            trainerObj.phone = shownMobile(u?.mobile);
             trainerObj.name = `${trainerObj.firstName} ${trainerObj.lastName}`.trim() || trainerObj.email || '—';
 
             return res.json({ success: true, data: trainerObj });
         } catch (error: any) {
+            if (error?.code === 11000) return res.status(409).json({ success: false, message: 'This phone number or email is already used by another account.' });
             return res.status(500).json({ success: false, message: error.message });
         }
     }
@@ -474,6 +504,9 @@ class TrainerController {
             if (!trainer) {
                 return res.status(404).json({ success: false, message: 'Trainer not found' });
             }
+
+            // the face template goes with the person
+            await StaffFace.deleteMany({ tenantId, staffId: trainer.userId });
 
             return res.json({ success: true, message: 'Trainer deactivated successfully' });
         } catch (error: any) {

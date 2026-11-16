@@ -141,7 +141,7 @@ Trainers and other staff use the same device as members, but their punches becom
 **Enrol a trainer**
 1. Sidebar → **Trainer Management** → click the **fingerprint** button on the trainer's row.
 2. Enter the **Device User ID** — the same ID you enrol the trainer's finger or face under on the device. Use an ID **no member has**; the platform rejects an ID already used by another staff member, a member enrolment, or a member's serial number.
-3. Set the trainer's **Shift timing** (for example 06:00–14:00). Leave it empty to use the gym-wide shift from **Staff → Deduction Settings**. Shifts must finish on the same day.
+3. Pick the trainer's **Shift**. Shifts (one window, or split shifts with up to 3 windows) and weekly off days are made on **Staff → Shifts & Weekly Off** and can be assigned to trainers and all other staff, many at a time, from a start date. "Gym default hours" uses the gym-wide shift from **Staff → Deduction Settings**. A window must finish on the same day.
 4. Save. Punches the trainer made before being enrolled are picked up automatically.
 
 **What a punch does**

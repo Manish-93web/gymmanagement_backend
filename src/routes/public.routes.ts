@@ -4,6 +4,7 @@ import platformLeadController from '../controllers/platform-lead.controller';
 import mongoose from 'mongoose';
 import GymReview from '../models/GymReview.model';
 import Tenant from '../models/Tenant.model';
+import PayslipService from '../services/payslip.service';
 import publicController from '../controllers/public.controller';
 
 const router = Router();
@@ -25,6 +26,19 @@ const leadLimiter = rateLimit({
     message: { success: false, message: 'Too many requests. Please try again in a little while.' },
 });
 router.post('/platform-leads', leadLimiter, platformLeadController.submit.bind(platformLeadController));
+// A salary slip opened from a WhatsApp link. The signed token is the only credential; it expires in 30 days.
+router.get('/payslips/:token', async (req: Request, res: Response) => {
+    const claim = PayslipService.readShareToken(String(req.params.token));
+    if (!claim) return res.status(404).type('text/plain').send('This salary slip link is invalid or has expired. Please ask your gym for a new one.');
+    try {
+        const { buffer, filename } = await PayslipService.build(claim.t, claim.s, claim.m, claim.y);
+        res.set({ 'Content-Type': 'application/pdf', 'Content-Length': String(buffer.length), 'Content-Disposition': `inline; filename="${filename}"`, 'Cache-Control': 'private, no-store', 'X-Robots-Tag': 'noindex' });
+        return res.send(buffer);
+    } catch {
+        return res.status(404).type('text/plain').send('This salary slip is not available.');
+    }
+});
+
 router.get('/pdf/:slug', publicController.getPublicPdf.bind(publicController));
 router.get('/gym/:slug', publicController.getGymProfile.bind(publicController));
 

@@ -9,7 +9,10 @@ import User from '../models/User.model';
 import BiometricSettings from '../models/BiometricSettings.model';
 import StaffPayrollService from '../services/staff-payroll.service';
 import StaffAttendanceService, { StaffAttendanceError } from '../services/staff-attendance.service';
-import { dayBoundsUTC, monthBoundsUTC } from '../utils/tz.utils';
+import staffShiftRoutes from './staff-shifts.routes';
+import staffFaceRoutes from './staff-face.routes';
+import PayslipService, { PayslipError } from '../services/payslip.service';
+import { dayBoundsUTC, monthBoundsUTC, minutesToHHMM } from '../utils/tz.utils';
 
 function safeObjectId(val: any): mongoose.Types.ObjectId | undefined {
     return val && mongoose.Types.ObjectId.isValid(val) ? new mongoose.Types.ObjectId(String(val)) : undefined;
@@ -18,6 +21,16 @@ function safeObjectId(val: any): mongoose.Types.ObjectId | undefined {
 const router = Router();
 
 router.use(authenticate);
+
+/** "06:00-10:00, 17:00-21:00" for a shift's windows; empty for the gym default hours. */
+const shiftLabel = (segments: { start: number; end: number }[]) =>
+  segments.map(g => `${minutesToHHMM(g.start)}-${minutesToHHMM(g.end)}`).join(', ');
+
+// Shift library and who works which shift
+router.use('/shifts', staffShiftRoutes);
+
+// Face check-in on the gym's phone
+router.use('/face', staffFaceRoutes);
 
 // Staff routes
 router.get('/', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), staffController.getStaffList);
@@ -76,7 +89,8 @@ router.get('/clock-status', async (req: Request, res: Response) => {
     const tenantId = safeObjectId((req as any).tenantId || (req as any).user?.tenantId?.toString());
     const staffId = safeObjectId(req.query.staffId as string || (req as any).user?._id?.toString());
     const { start: todayStart, end: todayEnd } = await StaffAttendanceService.dayWindow(tenantId as any, new Date());
-    const record = await StaffAttendance.findOne({ tenantId, staffId, date: { $gte: todayStart, $lte: todayEnd } });
+    const record = await StaffAttendance.findOne({ tenantId, staffId, date: { $gte: todayStart, $lte: todayEnd } })
+      ?? (await StaffAttendanceService.overnightRecordFor(tenantId as any, staffId as any, new Date()))?.record;
     if (!record) {
       return res.json({ success: true, data: { isClockedIn: false, clockInTime: null, hoursWorkedToday: 0 } });
     }
@@ -179,9 +193,16 @@ router.get('/attendance/today', requireAnyRole('gym_owner', 'branch_manager', 's
       StaffAttendance.find({ tenantId, date: { $gte: start, $lte: end } }).lean(),
     ]);
     const byStaff = new Map(records.map(r => [String(r.staffId), r]));
-    const board = users.map((u: any) => {
-      const r: any = byStaff.get(String(u._id));
+    const board = await Promise.all(users.map(async (u: any) => {
+      const sched = await StaffAttendanceService.schedule(tenantId, u._id);
+      let r: any = byStaff.get(String(u._id));
+      // after midnight, someone on a late shift is still on yesterday's record
+      if (!r) r = (await StaffAttendanceService.overnightRecordFor(tenantId, u._id, new Date(), sched))?.record;
+      const rules = sched.at(start);
       return {
+        shiftName: rules.shiftName ?? null,
+        shiftTime: rules.segments.length ? shiftLabel(rules.segments) : null,
+        offDay: rules.offDay,
         staffId: String(u._id),
         name: `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim(),
         role: u.role,
@@ -191,7 +212,7 @@ router.get('/attendance/today', requireAnyRole('gym_owner', 'branch_manager', 's
         status: r?.status ?? null,
         source: r?.source ?? null,
       };
-    });
+    }));
     return res.json({ success: true, data: board });
   } catch (err: any) {
     return res.status(500).json({ success: false, message: err.message });
@@ -278,14 +299,22 @@ router.get('/me/attendance', async (req: Request, res: Response) => {
     const { start, end } = monthBoundsUTC(year, month, tz);
     const today = await StaffAttendanceService.dayWindow(tenantId, new Date());
 
+    const todayRules = await StaffAttendanceService.rulesFor(tenantId, staffId, new Date());
     const [records, todayRecord, pay] = await Promise.all([
       StaffAttendance.find({ tenantId, staffId, date: { $gte: start, $lte: end } }).sort({ date: -1 }).lean(),
-      StaffAttendance.findOne({ tenantId, staffId, date: { $gte: today.start, $lte: today.end } }).lean(),
+      StaffAttendance.findOne({ tenantId, staffId, date: { $gte: today.start, $lte: today.end } }).lean()
+        .then(async r => r ?? (await StaffAttendanceService.overnightRecordFor(tenantId, staffId, new Date()))?.record?.toObject?.() ?? null),
       StaffPayrollService.getForStaff(tenantId, staffId, month, year),
     ]);
     return res.json({
       success: true,
       data: {
+        shift: {
+          name: todayRules.shiftName ?? null,
+          time: todayRules.segments.length ? shiftLabel(todayRules.segments) : null,
+          offDay: todayRules.offDay,
+          hours: todayRules.shiftHours,
+        },
         today: todayRecord
           ? { state: (todayRecord as any).clockOut ? 'checked_out' : 'checked_in', clockIn: (todayRecord as any).clockIn, clockOut: (todayRecord as any).clockOut ?? null, status: (todayRecord as any).status, source: (todayRecord as any).source }
           : { state: 'not_in', clockIn: null, clockOut: null, status: null, source: null },
@@ -405,6 +434,49 @@ router.put('/deduction-settings', requireAnyRole('gym_owner', 'branch_manager', 
 });
 
 // ─── Parameterised staff routes (must come after fixed-path routes) ───────────
+
+// ─── Salary slip (PDF) ────────────────────────────────────────────────────────
+
+/** Public address of this API, used in links sent to staff. */
+function publicBase(req: Request): string {
+  if (process.env.BACKEND_URL) return process.env.BACKEND_URL.replace(/\/$/, '');
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol).split(',')[0];
+  const host = String(req.headers['x-forwarded-host'] || req.get('host'));
+  return `${proto}://${host}`;
+}
+
+const monthYear = (req: Request) => {
+  const now = new Date();
+  return { month: Number(req.query.month ?? req.body?.month) || now.getMonth() + 1, year: Number(req.query.year ?? req.body?.year) || now.getFullYear() };
+};
+
+router.get('/:id/payslip.pdf', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), async (req: Request, res: Response) => {
+  try {
+    const { month, year } = monthYear(req);
+    const { buffer, filename } = await PayslipService.build((req as any).tenantId, String(req.params.id), month, year);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Length': String(buffer.length), 'Content-Disposition': `inline; filename="${filename}"`, 'Cache-Control': 'no-store' });
+    return res.send(buffer);
+  } catch (err: any) {
+    if (err instanceof PayslipError) return res.status(err.status).json({ success: false, message: err.message });
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// A signed link for WhatsApp: the trainer opens the PDF without logging in. The owner sends it from their own WhatsApp.
+router.post('/:id/payslip/share', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), async (req: Request, res: Response) => {
+  try {
+    const tenantId = String((req as any).tenantId);
+    const staffId = String(req.params.id);
+    const { month, year } = monthYear(req);
+    const url = `${publicBase(req)}/api/public/payslips/${PayslipService.shareToken(tenantId, staffId, month, year)}`;
+    const { phone, message } = await PayslipService.shareMessage(tenantId, staffId, month, year, url);
+    if (!phone) return res.status(400).json({ success: false, code: 'NO_PHONE', message: "Add this person's phone number first." });
+    return res.json({ success: true, data: { url, phone, message, whatsapp: `https://wa.me/91${phone}?text=${encodeURIComponent(message)}` } });
+  } catch (err: any) {
+    if (err instanceof PayslipError) return res.status(err.status).json({ success: false, message: err.message });
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 router.get('/:id', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), staffController.getStaffMember);
 router.put('/:id', requireAnyRole('gym_owner', 'branch_manager', 'super_admin'), staffController.updateStaffMember);

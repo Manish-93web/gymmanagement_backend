@@ -12,7 +12,7 @@ export interface IStaffAttendance extends Document {
   earlyDeparture?: boolean; // true if clocked out before shift end (18:00 default)
   status: 'present' | 'late' | 'absent' | 'half_day' | 'paid_leave';
   notes?: string;
-  source?: 'manual' | 'biometric'; // how the record was created
+  source?: 'manual' | 'biometric' | 'face'; // how the record was created
   deviceId?: mongoose.Types.ObjectId; // biometric device of the first punch
   punchCount?: number;               // biometric punches folded into this day
   createdAt: Date;
@@ -31,7 +31,7 @@ const StaffAttendanceSchema = new Schema({
   earlyDeparture: { type: Boolean, default: false },
   status: { type: String, enum: ['present', 'late', 'absent', 'half_day', 'paid_leave'], default: 'present' },
   notes: { type: String },
-  source: { type: String, enum: ['manual', 'biometric'], default: 'manual' },
+  source: { type: String, enum: ['manual', 'biometric', 'face'], default: 'manual' },
   deviceId: { type: Schema.Types.ObjectId, ref: 'BiometricDevice' },
   punchCount: { type: Number, default: 0 },
 }, { timestamps: true });
